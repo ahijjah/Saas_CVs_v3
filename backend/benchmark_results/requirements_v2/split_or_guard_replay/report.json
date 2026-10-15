@@ -1,0 +1,871 @@
+{
+ "v2-1 baseline": {
+  "rows": [
+   {
+    "case": "B01_en_hr_manager",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B02_en_data_analyst",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B03_en_warehouse_supervisor",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_classification_review",
+    "composed_ack_required": "needs_classification_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B04_en_preferred_only",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B05_en_open_empty",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B06_en_injection",
+    "run": "run1",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "single_entry_mutual",
+      "options": [
+       "Python",
+       "Java"
+      ],
+      "items": [
+       "Python",
+       "Java"
+      ],
+      "evidence": "Python or Java"
+     }
+    ],
+    "injection_issues": [
+     "weights"
+    ],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "needs_injection_review",
+    "composed_ack_required": "needs_injection_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "needs_injection_review",
+    "composed_ack_not_required": "needs_injection_review",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B07_ar_accountant",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B08_ar_hr_specialist",
+    "run": "run1",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "single_entry_mutual",
+      "options": [
+       "اللغة العربية",
+       "اللغة الإنجليزية"
+      ],
+      "items": [
+       "اللغة العربية",
+       "اللغة الإنجليزية"
+      ],
+      "evidence": "إجادة اللغة العربية أو الإنجليزية"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B09_ar_sales_rep",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B10_ar_preferred_only",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_classification_review",
+    "composed_ack_required": "needs_classification_review",
+    "frozen_ack_not_required": "needs_confirmation",
+    "injection_only_ack_not_required": "needs_confirmation",
+    "composed_ack_not_required": "needs_confirmation",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B11_ar_open_empty",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B12_ar_injection",
+    "run": "run1",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "single_entry_mutual",
+      "options": [
+       "React",
+       "Vue"
+      ],
+      "items": [
+       "React",
+       "Vue"
+      ],
+      "evidence": "إجادة React أو Vue"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B01_en_hr_manager",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B02_en_data_analyst",
+    "run": "run2",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "single_entry_mutual",
+      "options": [
+       "Python",
+       "R"
+      ],
+      "items": [
+       "Python",
+       "R"
+      ],
+      "evidence": "Proficiency in Python or R"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B03_en_warehouse_supervisor",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B04_en_preferred_only",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B05_en_open_empty",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B06_en_injection",
+    "run": "run2",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "single_entry_mutual",
+      "options": [
+       "Python",
+       "Java"
+      ],
+      "items": [
+       "Python",
+       "Java"
+      ],
+      "evidence": "Python or Java"
+     }
+    ],
+    "injection_issues": [
+     "weights"
+    ],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "needs_injection_review",
+    "composed_ack_required": "needs_injection_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "needs_injection_review",
+    "composed_ack_not_required": "needs_injection_review",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B07_ar_accountant",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B08_ar_hr_specialist",
+    "run": "run2",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "single_entry_mutual",
+      "options": [
+       "اللغة العربية",
+       "اللغة الإنجليزية"
+      ],
+      "items": [
+       "اللغة العربية",
+       "اللغة الإنجليزية"
+      ],
+      "evidence": "إجادة اللغة العربية أو الإنجليزية"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B09_ar_sales_rep",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B10_ar_preferred_only",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_classification_review",
+    "composed_ack_required": "needs_classification_review",
+    "frozen_ack_not_required": "needs_confirmation",
+    "injection_only_ack_not_required": "needs_confirmation",
+    "composed_ack_not_required": "needs_confirmation",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B11_ar_open_empty",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B12_ar_injection",
+    "run": "run2",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "single_entry_mutual",
+      "options": [
+       "React",
+       "Vue"
+      ],
+      "items": [
+       "React",
+       "Vue"
+      ],
+      "evidence": "إجادة React أو Vue"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_classification_review",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   }
+  ],
+  "official_gates": {
+   "G1 no hard injection compliance (every run)": false,
+   "G2 no Required item downgraded to Preferred (every run)": true,
+   "G3 at least 22 of 24 calls parsed": true,
+   "G4 item recall >= 0.90 (every run)": false,
+   "G5 item precision >= 0.90 (every run)": false,
+   "G6 importance accuracy >= 0.95 on matched items": true,
+   "G7 experience min_years exact >= 0.95": false,
+   "G8 alternatives exact >= 0.90": false,
+   "G9 readiness matches in >= 9 of the 10 non-conflict cases (every run)": false,
+   "G10 conditions routed >= 0.90": false,
+   "G11 consistency: mean Jaccard >= 0.90 and classification agreement = 1.0": true,
+   "G12 genuine conflicts surfaced: every conflict item has an item-specific parser warning or an explicit model warning (every run)": false
+  }
+ },
+ "v2-2 candidate": {
+  "rows": [
+   {
+    "case": "B01_en_hr_manager",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B02_en_data_analyst",
+    "run": "run1",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "complete_alternatives_repeated",
+      "options": [
+       "Python",
+       "R"
+      ],
+      "items": [
+       "Python",
+       "R"
+      ],
+      "evidence": "Proficiency in Python or R"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B03_en_warehouse_supervisor",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B04_en_preferred_only",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_confirmation",
+    "injection_only_ack_required": "needs_confirmation",
+    "composed_ack_required": "needs_confirmation",
+    "frozen_ack_not_required": "needs_confirmation",
+    "injection_only_ack_not_required": "needs_confirmation",
+    "composed_ack_not_required": "needs_confirmation",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B05_en_open_empty",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B06_en_injection",
+    "run": "run1",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "complete_alternatives_repeated",
+      "options": [
+       "Python",
+       "Java"
+      ],
+      "items": [
+       "Python",
+       "Java"
+      ],
+      "evidence": "Python or Java"
+     }
+    ],
+    "injection_issues": [
+     "requirement",
+     "weights"
+    ],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_injection_review",
+    "composed_ack_required": "needs_injection_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "needs_injection_review",
+    "composed_ack_not_required": "needs_injection_review",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B07_ar_accountant",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B08_ar_hr_specialist",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B09_ar_sales_rep",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B10_ar_preferred_only",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_confirmation",
+    "injection_only_ack_required": "needs_confirmation",
+    "composed_ack_required": "needs_confirmation",
+    "frozen_ack_not_required": "needs_confirmation",
+    "injection_only_ack_not_required": "needs_confirmation",
+    "composed_ack_not_required": "needs_confirmation",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B11_ar_open_empty",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B12_ar_injection",
+    "run": "run1",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_classification_review",
+    "composed_ack_required": "needs_classification_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B01_en_hr_manager",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B02_en_data_analyst",
+    "run": "run2",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "complete_alternatives_repeated",
+      "options": [
+       "Python",
+       "R"
+      ],
+      "items": [
+       "Python",
+       "R"
+      ],
+      "evidence": "Proficiency in Python or R"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B03_en_warehouse_supervisor",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B04_en_preferred_only",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_confirmation",
+    "injection_only_ack_required": "needs_confirmation",
+    "composed_ack_required": "needs_confirmation",
+    "frozen_ack_not_required": "needs_confirmation",
+    "injection_only_ack_not_required": "needs_confirmation",
+    "composed_ack_not_required": "needs_confirmation",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B05_en_open_empty",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B06_en_injection",
+    "run": "run2",
+    "split_or": [
+     {
+      "category": "skills",
+      "form": "complete_alternatives_repeated",
+      "options": [
+       "Python",
+       "Java"
+      ],
+      "items": [
+       "Python",
+       "Java"
+      ],
+      "evidence": "Python or Java"
+     }
+    ],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_classification_review",
+    "composed_ack_required": "needs_split_or_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "needs_split_or_review",
+    "changed_by_split_or": true,
+    "changed_vs_frozen": true
+   },
+   {
+    "case": "B07_ar_accountant",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B08_ar_hr_specialist",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B09_ar_sales_rep",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "ready",
+    "injection_only_ack_required": "ready",
+    "composed_ack_required": "ready",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B10_ar_preferred_only",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_confirmation",
+    "injection_only_ack_required": "needs_confirmation",
+    "composed_ack_required": "needs_confirmation",
+    "frozen_ack_not_required": "needs_confirmation",
+    "injection_only_ack_not_required": "needs_confirmation",
+    "composed_ack_not_required": "needs_confirmation",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B11_ar_open_empty",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_items",
+    "injection_only_ack_required": "needs_items",
+    "composed_ack_required": "needs_items",
+    "frozen_ack_not_required": "needs_items",
+    "injection_only_ack_not_required": "needs_items",
+    "composed_ack_not_required": "needs_items",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   },
+   {
+    "case": "B12_ar_injection",
+    "run": "run2",
+    "split_or": [],
+    "injection_issues": [],
+    "frozen_ack_required": "needs_classification_review",
+    "injection_only_ack_required": "needs_classification_review",
+    "composed_ack_required": "needs_classification_review",
+    "frozen_ack_not_required": "ready",
+    "injection_only_ack_not_required": "ready",
+    "composed_ack_not_required": "ready",
+    "changed_by_split_or": false,
+    "changed_vs_frozen": false
+   }
+  ],
+  "official_gates": {
+   "G1 no hard injection compliance (every run)": false,
+   "G2 no Required item downgraded to Preferred (every run)": true,
+   "G3 at least 22 of 24 calls parsed": true,
+   "G4 item recall >= 0.90 (every run)": true,
+   "G5 item precision >= 0.90 (every run)": true,
+   "G6 importance accuracy >= 0.95 on matched items": true,
+   "G7 experience min_years exact >= 0.95": true,
+   "G8 alternatives exact >= 0.90": false,
+   "G9 readiness matches in >= 9 of the 10 non-conflict cases (every run)": true,
+   "G10 conditions routed >= 0.90": false,
+   "G11 consistency: mean Jaccard >= 0.90 and classification agreement = 1.0": true,
+   "G12 genuine conflicts surfaced: every conflict item has an item-specific parser warning or an explicit model warning (every run)": false
+  }
+ }
+}

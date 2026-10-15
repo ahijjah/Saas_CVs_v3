@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 
 from config import get_settings
 
@@ -30,12 +31,26 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+_RLS_SQL = text("SELECT set_config('app.current_tenant_id', :tid, true), set_config('app.current_role', :role, true)")
+
+
+def _reapply_rls_context(session, transaction, connection):  # noqa: ARG001 - SQLAlchemy listener signature
+    """Every new transaction of a session starts with the session's tenant context. set_config(..., true) lasts only to the end of a
+    transaction, so without this a commit inside a request would leave the rest of the request with NO tenant, and a pooled connection
+    would be handed on with the previous one's context if the session did not set one. The context is recorded on the session, so it
+    survives commits; a session that never recorded one stays fail-closed (no tenant)."""
+    ctx = session.info.get("rls")
+    if ctx is not None:
+        connection.execute(_RLS_SQL, {"tid": ctx[0], "role": ctx[1]})
+
+
+event.listen(Session, "after_begin", _reapply_rls_context)
+
+
 async def set_rls_context(session: AsyncSession, tenant_id: str, role: str) -> None:
-    """Set PostgreSQL session variables for Row Level Security."""
-    await session.execute(
-        text("SELECT set_config('app.current_tenant_id', :tid, true), set_config('app.current_role', :role, true)"),
-        {"tid": tenant_id, "role": role},
-    )
+    """Set the tenant context for this session and every transaction it starts from now on (see _reapply_rls_context)."""
+    session.info["rls"] = (tenant_id, role)
+    await session.execute(_RLS_SQL, {"tid": tenant_id, "role": role})
 
 
 @asynccontextmanager

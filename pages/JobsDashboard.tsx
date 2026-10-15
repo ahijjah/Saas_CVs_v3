@@ -34,6 +34,7 @@ const T = {
     totalLabel: 'Total',
     qualLabel: 'Qual.',
     partLabel: 'Part.',
+    needsVerificationShort: 'to verify',
     rejLabel: 'Rej.',
     viewDetails: 'View Campaign Details',
     colCode: 'Job Code',
@@ -76,6 +77,7 @@ const T = {
     totalLabel: 'الإجمالي',
     qualLabel: 'مؤهل',
     partLabel: 'جزئي',
+    needsVerificationShort: 'بحاجة إلى تحقق',
     rejLabel: 'مرفوض',
     viewDetails: 'عرض تفاصيل الحملة',
     colCode: 'رمز الوظيفة',
@@ -468,6 +470,14 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                         >
                           {job.applications_qualified}
                         </button>
+                        {(job.applications_needs_verification ?? 0) > 0 && (
+                          <button
+                            onClick={() => handleViewApplicationsClick(job, 'needs_verification')}
+                            className="block text-[9px] font-bold text-amber-700 hover:underline"
+                          >
+                            {job.applications_needs_verification} {t.needsVerificationShort}
+                          </button>
+                        )}
                       </div>
                       <div>
                         <div className="text-[9px] font-black text-warning uppercase tracking-tighter mb-1">{t.partLabel}</div>
@@ -614,6 +624,14 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
                           >
                             {job.applications_qualified}
                           </button>
+                          {(job.applications_needs_verification ?? 0) > 0 && (
+                            <button
+                              onClick={() => handleViewApplicationsClick(job, 'needs_verification')}
+                              className="block mx-auto text-[10px] font-bold text-amber-700 hover:underline"
+                            >
+                              {job.applications_needs_verification} {t.needsVerificationShort}
+                            </button>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-center">
                           <button

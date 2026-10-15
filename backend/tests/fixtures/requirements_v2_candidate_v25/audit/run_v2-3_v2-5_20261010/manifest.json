@@ -1,0 +1,171 @@
+{
+ "pins": {
+  "candidate_sha256": "f1569a8b400257db20b1c0b24fd7728605fe472eef7fff993a384f12f0cbc8db",
+  "control_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+  "eval_set_manifest_sha256": "9f8bc060d9180f2ba4541a763838a28ce2644685694182cf8260d95b51c37166",
+  "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
+  "script_sha256": "999a94a25d5da14880b2c0b818a280bc29b94053c5f7fc95b23ed0926ec89c6b",
+  "compare_script_sha256": "fadd6381a166127869dea6d888b09ca969f1f1c47c9dddf3f29d7fb30f28a52a",
+  "tc20_eval_script_sha256": "1c40def472760b9b79b6878cfe3f3186080786d07668d4eadbfe7ae0f5825129",
+  "git_commit": "1e73231bda9e1061d5d78be29eb68bf3c1154e4b"
+ },
+ "pricing_status": "VERIFIED (owner-supplied from the official model page, https://developers.openai.com/api/docs/models/gpt-4.1): snapshot gpt-4.1-2025-04-14, standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request (a model that differs from the pinned one stops the run).",
+ "pricing_verified": true,
+ "disclosed_differences": [
+  "model: the same pinned snapshot for both arms (gpt-4.1-2025-04-14); only the prompt differs",
+  "pricing: the reservation uses the standard prices recorded in requirements_v2_tc20_compare.PRICING_STATUS (owner-supplied from the official page)",
+  "temperature 0.1, max_tokens 6000, response_format json_object and timeout 90 for both arms",
+  "the worst case estimates input tokens as characters/2, which overstates the real count",
+  "the TC20 JD is scored with the frozen official checks; the two new JDs are scored with the expected-output scorer below (separate groups)"
+ ],
+ "policy": "no retries; the run stops at the first failed call",
+ "plan": {
+  "model": "gpt-4.1-2025-04-14",
+  "calls": [
+   {
+    "jd": "tc20",
+    "arm": "v2-3",
+    "call": 1,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-3",
+    "call": 2,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-3",
+    "call": 3,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-3",
+    "call": 4,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-3",
+    "call": 5,
+    "worst_case_usd": 0.077468
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-5",
+    "call": 1,
+    "worst_case_usd": 0.082712
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-5",
+    "call": 2,
+    "worst_case_usd": 0.082712
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-5",
+    "call": 3,
+    "worst_case_usd": 0.082712
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-5",
+    "call": 4,
+    "worst_case_usd": 0.082712
+   },
+   {
+    "jd": "tc20",
+    "arm": "v2-5",
+    "call": 5,
+    "worst_case_usd": 0.082712
+   },
+   {
+    "jd": "eval_en_field_service_01",
+    "arm": "v2-3",
+    "call": 1,
+    "worst_case_usd": 0.072968
+   },
+   {
+    "jd": "eval_en_field_service_01",
+    "arm": "v2-3",
+    "call": 2,
+    "worst_case_usd": 0.072968
+   },
+   {
+    "jd": "eval_en_field_service_01",
+    "arm": "v2-3",
+    "call": 3,
+    "worst_case_usd": 0.072968
+   },
+   {
+    "jd": "eval_en_field_service_01",
+    "arm": "v2-5",
+    "call": 1,
+    "worst_case_usd": 0.078214
+   },
+   {
+    "jd": "eval_en_field_service_01",
+    "arm": "v2-5",
+    "call": 2,
+    "worst_case_usd": 0.078214
+   },
+   {
+    "jd": "eval_en_field_service_01",
+    "arm": "v2-5",
+    "call": 3,
+    "worst_case_usd": 0.078214
+   },
+   {
+    "jd": "eval_ar_facilities_01",
+    "arm": "v2-3",
+    "call": 1,
+    "worst_case_usd": 0.072734
+   },
+   {
+    "jd": "eval_ar_facilities_01",
+    "arm": "v2-3",
+    "call": 2,
+    "worst_case_usd": 0.072734
+   },
+   {
+    "jd": "eval_ar_facilities_01",
+    "arm": "v2-3",
+    "call": 3,
+    "worst_case_usd": 0.072734
+   },
+   {
+    "jd": "eval_ar_facilities_01",
+    "arm": "v2-5",
+    "call": 1,
+    "worst_case_usd": 0.077978
+   },
+   {
+    "jd": "eval_ar_facilities_01",
+    "arm": "v2-5",
+    "call": 2,
+    "worst_case_usd": 0.077978
+   },
+   {
+    "jd": "eval_ar_facilities_01",
+    "arm": "v2-5",
+    "call": 3,
+    "worst_case_usd": 0.077978
+   }
+  ],
+  "call_count": 22,
+  "worst_case_total_usd": 1.706582,
+  "cap_usd": 2.0,
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "response_format": "json_object",
+  "timeout_s": 90,
+  "retries": 0,
+  "price_in_usd_per_token": 2e-06,
+  "price_out_usd_per_token": 8e-06,
+  "pricing_status": "VERIFIED (owner-supplied from the official model page, https://developers.openai.com/api/docs/models/gpt-4.1): snapshot gpt-4.1-2025-04-14, standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request (a model that differs from the pinned one stops the run)."
+ },
+ "started": 1791663469.6358788
+}

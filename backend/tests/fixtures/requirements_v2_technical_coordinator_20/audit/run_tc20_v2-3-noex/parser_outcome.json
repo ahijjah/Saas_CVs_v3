@@ -1,0 +1,402 @@
+{
+ "v2-3-noex": [
+  {
+   "status": "draft",
+   "review": {},
+   "item_counts": {
+    "skills": 11,
+    "experience": 5,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 34,
+    "experience": 33,
+    "education": 33,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     null,
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 0,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 17
+  },
+  {
+   "status": "draft",
+   "review": {},
+   "item_counts": {
+    "skills": 11,
+    "experience": 5,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 34,
+    "experience": 33,
+    "education": 33,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     null,
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 0,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 17
+  },
+  {
+   "status": "draft",
+   "review": {},
+   "item_counts": {
+    "skills": 11,
+    "experience": 5,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 34,
+    "experience": 33,
+    "education": 33,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     null,
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 0,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 17
+  },
+  {
+   "status": "draft",
+   "review": {},
+   "item_counts": {
+    "skills": 11,
+    "experience": 5,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 34,
+    "experience": 33,
+    "education": 33,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     null,
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 0,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 17
+  },
+  {
+   "status": "draft",
+   "review": {},
+   "item_counts": {
+    "skills": 11,
+    "experience": 5,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 34,
+    "experience": 33,
+    "education": 33,
+    "certifications": 0,
+    "soft_skills": 0,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     null,
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 0,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 17
+  }
+ ],
+ "v2-3-stored": [
+  {
+   "status": "draft",
+   "review": {},
+   "item_counts": {
+    "skills": 4,
+    "experience": 4,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 7,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 30,
+    "experience": 40,
+    "education": 15,
+    "certifications": 0,
+    "soft_skills": 15,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     [
+      "Computer Science",
+      "Information Technology",
+      "Software Engineering",
+      "Information Systems",
+      "related field"
+     ],
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 0,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 16
+  },
+  {
+   "status": "draft",
+   "review": {
+    "source_text_not_found": 1
+   },
+   "item_counts": {
+    "skills": 4,
+    "experience": 4,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 7,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 30,
+    "experience": 40,
+    "education": 15,
+    "certifications": 0,
+    "soft_skills": 15,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     [
+      "Computer Science",
+      "Information Technology",
+      "Software Engineering",
+      "Information Systems",
+      "related field"
+     ],
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 3,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 16
+  },
+  {
+   "status": "draft",
+   "review": {
+    "source_text_not_found": 1
+   },
+   "item_counts": {
+    "skills": 4,
+    "experience": 4,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 7,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 30,
+    "experience": 30,
+    "education": 15,
+    "certifications": 0,
+    "soft_skills": 25,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     [
+      "Computer Science",
+      "Information Technology",
+      "Software Engineering",
+      "Information Systems",
+      "related field"
+     ],
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 4,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 16
+  },
+  {
+   "status": "draft",
+   "review": {},
+   "item_counts": {
+    "skills": 4,
+    "experience": 4,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 7,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 30,
+    "experience": 40,
+    "education": 15,
+    "certifications": 0,
+    "soft_skills": 15,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     [
+      "Computer Science",
+      "Information Technology",
+      "Software Engineering",
+      "Information Systems",
+      "related field"
+     ],
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 0,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 16
+  },
+  {
+   "status": "draft",
+   "review": {
+    "source_text_not_found": 1
+   },
+   "item_counts": {
+    "skills": 4,
+    "experience": 4,
+    "education": 1,
+    "certifications": 0,
+    "soft_skills": 7,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "applied_weights": {
+    "skills": 30,
+    "experience": 30,
+    "education": 20,
+    "certifications": 0,
+    "soft_skills": 20,
+    "domain_knowledge": 0,
+    "other_requirements": 0
+   },
+   "degree_item_alternatives": [
+    [
+     "Bachelor’s degree in Computer Science, I",
+     [
+      "Computer Science",
+      "Information Technology",
+      "Software Engineering",
+      "Information Systems",
+      "related field"
+     ],
+     "required"
+    ]
+   ],
+   "conditions_kept": {
+    "non_scoreable_requirements": 3,
+    "post_hiring_conditions": 0,
+    "informational_items": 0
+   },
+   "unmapped": 0,
+   "item_total": 16
+  }
+ ]
+}

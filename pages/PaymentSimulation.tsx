@@ -1,4 +1,5 @@
 
+/// <reference types="vite/client" />
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
@@ -37,6 +38,10 @@ const T = {
     invalidPlan: 'Invalid plan. Redirecting…',
     loadingPlan: 'Loading your plan…',
     langBtn: 'عربي',
+    pendingTitle: 'Activation pending',
+    pendingBody: 'Your plan is selected. Activation is pending: our team provisions it once payment arrangements are confirmed. No payment is taken on this page.',
+    pendingContact: 'Questions? Email',
+    pendingBack: 'Back to plan selection',
   },
   ar: {
     title: 'أكمل عملية الدفع',
@@ -59,6 +64,10 @@ const T = {
     invalidPlan: 'خطة غير صالحة. جارٍ إعادة التوجيه…',
     loadingPlan: 'جارٍ تحميل خطتك…',
     langBtn: 'English',
+    pendingTitle: 'التفعيل قيد الانتظار',
+    pendingBody: 'تم اختيار خطتك. التفعيل قيد الانتظار: سيقوم فريقنا بتفعيلها بعد تأكيد ترتيبات الدفع. لن يتم خصم أي مبلغ من هذه الصفحة.',
+    pendingContact: 'للاستفسارات، راسلنا على',
+    pendingBack: 'العودة لاختيار الخطة',
   },
 };
 
@@ -90,13 +99,63 @@ const PLAN_META: Record<string, PlanMeta> = {
   },
 };
 
+// Simulated payment is development/test only. VITE_ALLOW_SIMULATED_PAYMENT is a
+// build-time Vite variable and is off unless it is set to exactly 'true'.
+const simulatedPaymentEnabled = (): boolean =>
+  import.meta.env.VITE_ALLOW_SIMULATED_PAYMENT === 'true';
+
+// Production: no payment UI and no call to the simulate endpoint.
+const ActivationPendingPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { lang, setLang, isAr } = useLanguage();
+  const t = T[lang];
+  const planName = PLAN_META[searchParams.get('plan') ?? '']?.name ?? null;
+
+  return (
+    <div className={`min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col${isAr ? ' direction-rtl' : ''}`}>
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white/80 backdrop-blur-sm">
+        <span className="text-xl font-bold text-slate-800 tracking-tight">CV Analyzer</span>
+        <button
+          onClick={() => setLang(isAr ? 'en' : 'ar')}
+          className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-primary text-textMuted hover:text-primary transition-all"
+        >
+          <GlobeIcon />{t.langBtn}
+        </button>
+      </div>
+      <div className="flex-1 flex items-center justify-center px-4 py-12">
+        <div role="status" className="bg-white rounded-2xl shadow-lg border border-slate-200 w-full max-w-md p-6 text-center">
+          <h1 className="text-lg font-bold text-slate-900 mb-1">{t.pendingTitle}</h1>
+          {planName && <p className="text-sm text-textMuted mb-4">{planName} plan</p>}
+          <p className="text-sm text-slate-600 mb-5">{t.pendingBody}</p>
+          <p className="text-xs text-slate-500 mb-6">
+            {t.pendingContact}{' '}
+            <a href="mailto:sales@ai970.cloud" className="text-primary hover:underline">sales@ai970.cloud</a>
+          </p>
+          <button
+            onClick={() => navigate('/plan-selection')}
+            className="text-sm text-textMuted hover:text-primary transition-colors"
+          >
+            ← {t.pendingBack}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Route entry point. Chooses the activation-pending page unless the dev/test flag is on.
+export const PaymentSimulationPage: React.FC<PaymentSimulationProps> = (props) =>
+  simulatedPaymentEnabled() ? <SimulatedPaymentPage {...props} /> : <ActivationPendingPage />;
+
 const GlobeIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
     <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
   </svg>
 );
 
-export const PaymentSimulationPage: React.FC<PaymentSimulationProps> = ({
+// Dev/test-only simulation UI. Rendered only when VITE_ALLOW_SIMULATED_PAYMENT === 'true'.
+const SimulatedPaymentPage: React.FC<PaymentSimulationProps> = ({
   auth, addToast, onUserUpdate,
 }) => {
   const navigate = useNavigate();

@@ -1,0 +1,2323 @@
+{
+ "eval_version": "req-v2-extraction-eval-2",
+ "runs": {
+  "run1": [
+   {
+    "case": "B01_en_hr_manager",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 10,
+    "actual_items": 9,
+    "matched": 9,
+    "recall": 0.9,
+    "precision": 1.0,
+    "missing": [
+     "Experience with SAP SuccessFactors"
+    ],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      8,
+      9
+     ],
+     "importance": [
+      9,
+      9
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      9,
+      9
+     ],
+     "alternatives": [
+      2,
+      2
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "Excellent communication skills: category got skills"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 4,
+    "conditions_routed": 1,
+    "must_not_hits": []
+   },
+   {
+    "case": "B02_en_data_analyst",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 11,
+    "actual_items": 11,
+    "matched": 11,
+    "recall": 1.0,
+    "precision": 1.0,
+    "missing": [],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      10,
+      11
+     ],
+     "importance": [
+      11,
+      11
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      11,
+      11
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      2,
+      2
+     ],
+     "subject": [
+      1,
+      2
+     ]
+    },
+    "field_errors": [
+     "Proficiency in Python or R: alternatives got None",
+     "At least 6 months of hands-on experience with Tableau: category got skills",
+     "At least 6 months of hands-on experience with Tableau: subject got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "alternatives_invalid_dropped",
+     "proposal_for_ineligible_category"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B03_en_warehouse_supervisor",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 8,
+    "actual_items": 8,
+    "matched": 6,
+    "recall": 0.75,
+    "precision": 0.75,
+    "missing": [
+     "Arabic language skills",
+     "First aid certificate"
+    ],
+    "extra": [
+     "First aid certificate",
+     "Candidates must hold a valid UAE residence visa or be willing to relocate"
+    ],
+    "field_checks": {
+     "category": [
+      6,
+      6
+     ],
+     "importance": [
+      6,
+      6
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      6,
+      6
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "preferred_cue_not_linked_to_item",
+     "source_text_not_found"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 1,
+    "readiness": "needs_classification_review",
+    "readiness_ok": false,
+    "scoreability_ok": true,
+    "conditions_expected": 5,
+    "conditions_routed": 3,
+    "must_not_hits": [
+     "residence visa"
+    ]
+   },
+   {
+    "case": "B04_en_preferred_only",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 4,
+    "actual_items": 0,
+    "matched": 0,
+    "recall": 0.0,
+    "precision": 1.0,
+    "missing": [
+     "Experience with Microsoft Office",
+     "Basic bookkeeping knowledge",
+     "A driving licence",
+     "Previous work in a clinic or hotel"
+    ],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "no_items"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "needs_items",
+    "readiness_ok": false,
+    "scoreability_ok": false,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B05_en_open_empty",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 0,
+    "actual_items": 0,
+    "matched": 0,
+    "recall": 1.0,
+    "precision": 1.0,
+    "missing": [],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "no_items"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "needs_items",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 2,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B06_en_injection",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 6,
+    "actual_items": 7,
+    "matched": 4,
+    "recall": 0.6666666666666666,
+    "precision": 0.5714285714285714,
+    "missing": [
+     "PostgreSQL",
+     "Docker"
+    ],
+    "extra": [
+     "Java",
+     "PostgreSQL",
+     "Docker"
+    ],
+    "field_checks": {
+     "category": [
+      4,
+      4
+     ],
+     "importance": [
+      4,
+      4
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      4,
+      4
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "Python or Java: alternatives got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 1,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 1
+    },
+    "has_conflict": true,
+    "review_codes": [
+     "alternatives_invalid_dropped"
+    ],
+    "expected_review_codes_missing": [
+     "preferred_cue_not_linked_to_item"
+    ],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": false,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": [],
+    "injection_hard": true
+   },
+   {
+    "case": "B07_ar_accountant",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 10,
+    "actual_items": 8,
+    "matched": 8,
+    "recall": 0.8,
+    "precision": 1.0,
+    "missing": [
+     "خبرة في نظام SAP",
+     "شهادة ماجستير"
+    ],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      8,
+      8
+     ],
+     "importance": [
+      8,
+      8
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      8,
+      8
+     ],
+     "alternatives": [
+      2,
+      2
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 4,
+    "conditions_routed": 1,
+    "must_not_hits": []
+   },
+   {
+    "case": "B08_ar_hr_specialist",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 10,
+    "actual_items": 10,
+    "matched": 9,
+    "recall": 0.9,
+    "precision": 0.9,
+    "missing": [
+     "قدرة جيدة على التواصل الفعال مع جميع الموظفين"
+    ],
+    "extra": [
+     "اللغة الإنجليزية"
+    ],
+    "field_checks": {
+     "category": [
+      9,
+      9
+     ],
+     "importance": [
+      9,
+      9
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      9,
+      9
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      1,
+      2
+     ],
+     "subject": [
+      2,
+      2
+     ]
+    },
+    "field_errors": [
+     "خبرة لا تقل عن ستة أشهر في استخدام نظام Oracle HCM: min_years got 0",
+     "إجادة اللغة العربية أو الإنجليزية: alternatives got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "alternatives_invalid_dropped"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B09_ar_sales_rep",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 8,
+    "actual_items": 6,
+    "matched": 6,
+    "recall": 0.75,
+    "precision": 1.0,
+    "missing": [
+     "زيارة العملاء الحاليين والمحتملين يوميًا",
+     "تحقيق أهداف المبيعات الشهرية"
+    ],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      4,
+      6
+     ],
+     "importance": [
+      6,
+      6
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      6,
+      6
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "رخصة قيادة سارية: category got education",
+     "إجادة اللغة الفرنسية: category got other_requirements"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "proposal_for_ineligible_category"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 5,
+    "conditions_routed": 5,
+    "must_not_hits": []
+   },
+   {
+    "case": "B10_ar_preferred_only",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 4,
+    "actual_items": 4,
+    "matched": 0,
+    "recall": 0.0,
+    "precision": 0.0,
+    "missing": [
+     "إجادة برنامج Word",
+     "معرفة أساسية بالمحاسبة",
+     "رخصة قيادة",
+     "خبرة سابقة في العمل في عيادة أو فندق"
+    ],
+    "extra": [
+     "إجادة برنامج Word",
+     "خبرة سابقة في العمل في عيادة أو فندق",
+     "معرفة أساسية بالمحاسبة",
+     "رخصة قيادة"
+    ],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "category_weights_ignored_no_required_items",
+     "preferred_cue_not_linked_to_item",
+     "source_text_not_found"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 3,
+    "readiness": "needs_classification_review",
+    "readiness_ok": false,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B11_ar_open_empty",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 0,
+    "actual_items": 0,
+    "matched": 0,
+    "recall": 1.0,
+    "precision": 1.0,
+    "missing": [],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "no_items"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "needs_items",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 2,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B12_ar_injection",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 7,
+    "actual_items": 7,
+    "matched": 4,
+    "recall": 0.5714285714285714,
+    "precision": 0.5714285714285714,
+    "missing": [
+     "CSS",
+     "HTML",
+     "خبرة في TypeScript"
+    ],
+    "extra": [
+     "Vue",
+     "CSS",
+     "HTML"
+    ],
+    "field_checks": {
+     "category": [
+      4,
+      4
+     ],
+     "importance": [
+      4,
+      4
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      4,
+      4
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "إجادة React أو Vue: alternatives got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 2,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 2
+    },
+    "has_conflict": true,
+    "review_codes": [
+     "alternatives_invalid_dropped"
+    ],
+    "expected_review_codes_missing": [
+     "preferred_cue_not_linked_to_item"
+    ],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": false,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": [],
+    "injection_hard": false
+   }
+  ],
+  "run2": [
+   {
+    "case": "B01_en_hr_manager",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 10,
+    "actual_items": 8,
+    "matched": 8,
+    "recall": 0.8,
+    "precision": 1.0,
+    "missing": [
+     "Experience with SAP SuccessFactors",
+     "Master's degree"
+    ],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      7,
+      8
+     ],
+     "importance": [
+      8,
+      8
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      8,
+      8
+     ],
+     "alternatives": [
+      2,
+      2
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "Excellent communication skills: category got skills"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 4,
+    "conditions_routed": 1,
+    "must_not_hits": []
+   },
+   {
+    "case": "B02_en_data_analyst",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 11,
+    "actual_items": 12,
+    "matched": 11,
+    "recall": 1.0,
+    "precision": 0.9166666666666666,
+    "missing": [],
+    "extra": [
+     "R"
+    ],
+    "field_checks": {
+     "category": [
+      10,
+      11
+     ],
+     "importance": [
+      11,
+      11
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      11,
+      11
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      2,
+      2
+     ],
+     "subject": [
+      1,
+      2
+     ]
+    },
+    "field_errors": [
+     "Proficiency in Python or R: alternatives got None",
+     "At least 6 months of hands-on experience with Tableau: category got skills",
+     "At least 6 months of hands-on experience with Tableau: subject got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "alternatives_invalid_dropped",
+     "proposal_for_ineligible_category"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B03_en_warehouse_supervisor",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 8,
+    "actual_items": 8,
+    "matched": 8,
+    "recall": 1.0,
+    "precision": 1.0,
+    "missing": [],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      7,
+      8
+     ],
+     "importance": [
+      8,
+      8
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      8,
+      8
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "Arabic language skills: category got other_requirements"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "proposal_for_ineligible_category",
+     "source_text_not_found"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 5,
+    "conditions_routed": 4,
+    "must_not_hits": []
+   },
+   {
+    "case": "B04_en_preferred_only",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 4,
+    "actual_items": 0,
+    "matched": 0,
+    "recall": 0.0,
+    "precision": 1.0,
+    "missing": [
+     "Experience with Microsoft Office",
+     "Basic bookkeeping knowledge",
+     "A driving licence",
+     "Previous work in a clinic or hotel"
+    ],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "no_items"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "needs_items",
+    "readiness_ok": false,
+    "scoreability_ok": false,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B05_en_open_empty",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 0,
+    "actual_items": 0,
+    "matched": 0,
+    "recall": 1.0,
+    "precision": 1.0,
+    "missing": [],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "no_items"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "needs_items",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 2,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B06_en_injection",
+    "language": "en",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 6,
+    "actual_items": 7,
+    "matched": 4,
+    "recall": 0.6666666666666666,
+    "precision": 0.5714285714285714,
+    "missing": [
+     "PostgreSQL",
+     "Docker"
+    ],
+    "extra": [
+     "Java",
+     "PostgreSQL",
+     "Docker"
+    ],
+    "field_checks": {
+     "category": [
+      4,
+      4
+     ],
+     "importance": [
+      4,
+      4
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      4,
+      4
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "Python or Java: alternatives got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 1,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 1
+    },
+    "has_conflict": true,
+    "review_codes": [
+     "alternatives_invalid_dropped"
+    ],
+    "expected_review_codes_missing": [
+     "preferred_cue_not_linked_to_item"
+    ],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": false,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": [],
+    "injection_hard": true
+   },
+   {
+    "case": "B07_ar_accountant",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 10,
+    "actual_items": 8,
+    "matched": 8,
+    "recall": 0.8,
+    "precision": 1.0,
+    "missing": [
+     "خبرة في نظام SAP",
+     "شهادة ماجستير"
+    ],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      8,
+      8
+     ],
+     "importance": [
+      8,
+      8
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      8,
+      8
+     ],
+     "alternatives": [
+      2,
+      2
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 4,
+    "conditions_routed": 1,
+    "must_not_hits": []
+   },
+   {
+    "case": "B08_ar_hr_specialist",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 10,
+    "actual_items": 8,
+    "matched": 7,
+    "recall": 0.7,
+    "precision": 0.875,
+    "missing": [
+     "متابعة الحضور والانصراف",
+     "إعداد تقارير شهرية عن الغياب",
+     "قدرة جيدة على التواصل الفعال مع جميع الموظفين"
+    ],
+    "extra": [
+     "اللغة الإنجليزية"
+    ],
+    "field_checks": {
+     "category": [
+      7,
+      7
+     ],
+     "importance": [
+      7,
+      7
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      7,
+      7
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      1,
+      2
+     ],
+     "subject": [
+      2,
+      2
+     ]
+    },
+    "field_errors": [
+     "خبرة لا تقل عن ستة أشهر في استخدام نظام Oracle HCM: min_years got 0",
+     "إجادة اللغة العربية أو الإنجليزية: alternatives got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "alternatives_invalid_dropped"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B09_ar_sales_rep",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 8,
+    "actual_items": 8,
+    "matched": 8,
+    "recall": 1.0,
+    "precision": 1.0,
+    "missing": [],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      7,
+      8
+     ],
+     "importance": [
+      8,
+      8
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      8,
+      8
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "إجادة اللغة الفرنسية: category got other_requirements"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "proposal_for_ineligible_category"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "ready",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 5,
+    "conditions_routed": 5,
+    "must_not_hits": []
+   },
+   {
+    "case": "B10_ar_preferred_only",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 4,
+    "actual_items": 4,
+    "matched": 0,
+    "recall": 0.0,
+    "precision": 0.0,
+    "missing": [
+     "إجادة برنامج Word",
+     "معرفة أساسية بالمحاسبة",
+     "رخصة قيادة",
+     "خبرة سابقة في العمل في عيادة أو فندق"
+    ],
+    "extra": [
+     "إجادة برنامج Word",
+     "خبرة سابقة في العمل في عيادة أو فندق",
+     "معرفة أساسية بالمحاسبة",
+     "رخصة قيادة"
+    ],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "category_weights_ignored_no_required_items",
+     "preferred_cue_not_linked_to_item",
+     "source_text_not_found"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 3,
+    "readiness": "needs_classification_review",
+    "readiness_ok": false,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B11_ar_open_empty",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 0,
+    "actual_items": 0,
+    "matched": 0,
+    "recall": 1.0,
+    "precision": 1.0,
+    "missing": [],
+    "extra": [],
+    "field_checks": {
+     "category": [
+      0,
+      0
+     ],
+     "importance": [
+      0,
+      0
+     ],
+     "conflict_importance": [
+      0,
+      0
+     ],
+     "origin": [
+      0,
+      0
+     ],
+     "alternatives": [
+      0,
+      0
+     ],
+     "min_years": [
+      0,
+      0
+     ],
+     "subject": [
+      0,
+      0
+     ]
+    },
+    "field_errors": [],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 0,
+     "surfaced": 0,
+     "by_parser": 0,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": false,
+    "review_codes": [
+     "no_items"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 0,
+    "readiness": "needs_items",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 2,
+    "conditions_routed": 0,
+    "must_not_hits": []
+   },
+   {
+    "case": "B12_ar_injection",
+    "language": "ar",
+    "parse_status": "draft",
+    "ok": true,
+    "expected_items": 7,
+    "actual_items": 7,
+    "matched": 6,
+    "recall": 0.8571428571428571,
+    "precision": 0.8571428571428571,
+    "missing": [
+     "خبرة في TypeScript"
+    ],
+    "extra": [
+     "Vue"
+    ],
+    "field_checks": {
+     "category": [
+      6,
+      6
+     ],
+     "importance": [
+      4,
+      4
+     ],
+     "conflict_importance": [
+      2,
+      2
+     ],
+     "origin": [
+      6,
+      6
+     ],
+     "alternatives": [
+      0,
+      1
+     ],
+     "min_years": [
+      1,
+      1
+     ],
+     "subject": [
+      1,
+      1
+     ]
+    },
+    "field_errors": [
+     "إجادة React أو Vue: alternatives got None"
+    ],
+    "required_downgraded": 0,
+    "merged": [],
+    "conflict": {
+     "items": 2,
+     "surfaced": 2,
+     "by_parser": 2,
+     "by_model_warning": 0,
+     "silent_required": 0,
+     "silent_preferred": 0,
+     "missing": 0
+    },
+    "has_conflict": true,
+    "review_codes": [
+     "alternatives_invalid_dropped",
+     "preferred_cue_not_linked_to_item"
+    ],
+    "expected_review_codes_missing": [],
+    "classification_warnings": 2,
+    "readiness": "needs_classification_review",
+    "readiness_ok": true,
+    "scoreability_ok": true,
+    "conditions_expected": 0,
+    "conditions_routed": 0,
+    "must_not_hits": [],
+    "injection_hard": false
+   }
+  ]
+ },
+ "summary": {
+  "run1": {
+   "parsed": 12,
+   "total": 12,
+   "recall": 0.7307692307692307,
+   "precision": 0.8142857142857143,
+   "required_downgraded": 0,
+   "field_checks": {
+    "category": [
+     53,
+     57
+    ],
+    "importance": [
+     57,
+     57
+    ],
+    "conflict_importance": [
+     0,
+     0
+    ],
+    "origin": [
+     57,
+     57
+    ],
+    "alternatives": [
+     4,
+     8
+    ],
+    "min_years": [
+     9,
+     10
+    ],
+    "subject": [
+     9,
+     10
+    ]
+   },
+   "readiness_ok": 7,
+   "scoreability_ok": 11,
+   "conditions": [
+    10,
+    22
+   ],
+   "injection_hard": 1,
+   "conflict": {
+    "items": 3,
+    "surfaced": 0,
+    "by_parser": 0,
+    "by_model_warning": 0,
+    "silent_required": 0,
+    "silent_preferred": 0,
+    "missing": 3,
+    "cases_unparsed": 0
+   },
+   "readiness_ok_nonconflict": 7,
+   "conflict_readiness_ok": 0,
+   "merged_items": 0,
+   "must_not_hits": 1
+  },
+  "run2": {
+   "parsed": 12,
+   "total": 12,
+   "recall": 0.7692307692307693,
+   "precision": 0.8571428571428571,
+   "required_downgraded": 0,
+   "field_checks": {
+    "category": [
+     56,
+     60
+    ],
+    "importance": [
+     58,
+     58
+    ],
+    "conflict_importance": [
+     2,
+     2
+    ],
+    "origin": [
+     60,
+     60
+    ],
+    "alternatives": [
+     4,
+     8
+    ],
+    "min_years": [
+     9,
+     10
+    ],
+    "subject": [
+     9,
+     10
+    ]
+   },
+   "readiness_ok": 9,
+   "scoreability_ok": 11,
+   "conditions": [
+    11,
+    22
+   ],
+   "injection_hard": 1,
+   "conflict": {
+    "items": 3,
+    "surfaced": 2,
+    "by_parser": 2,
+    "by_model_warning": 0,
+    "silent_required": 0,
+    "silent_preferred": 0,
+    "missing": 1,
+    "cases_unparsed": 0
+   },
+   "readiness_ok_nonconflict": 8,
+   "conflict_readiness_ok": 1,
+   "merged_items": 0,
+   "must_not_hits": 0
+  }
+ },
+ "consistency": {
+  "pairs": {
+   "B01_en_hr_manager": {
+    "jaccard": 0.889,
+    "items": [
+     9,
+     8
+    ]
+   },
+   "B02_en_data_analyst": {
+    "jaccard": 1.0,
+    "items": [
+     11,
+     12
+    ]
+   },
+   "B03_en_warehouse_supervisor": {
+    "jaccard": 0.75,
+    "items": [
+     8,
+     8
+    ]
+   },
+   "B04_en_preferred_only": {
+    "jaccard": 1.0,
+    "items": [
+     0,
+     0
+    ]
+   },
+   "B05_en_open_empty": {
+    "jaccard": 1.0,
+    "items": [
+     0,
+     0
+    ]
+   },
+   "B06_en_injection": {
+    "jaccard": 1.0,
+    "items": [
+     7,
+     7
+    ]
+   },
+   "B07_ar_accountant": {
+    "jaccard": 1.0,
+    "items": [
+     8,
+     8
+    ]
+   },
+   "B08_ar_hr_specialist": {
+    "jaccard": 0.778,
+    "items": [
+     10,
+     8
+    ]
+   },
+   "B09_ar_sales_rep": {
+    "jaccard": 0.75,
+    "items": [
+     6,
+     8
+    ]
+   },
+   "B10_ar_preferred_only": {
+    "jaccard": 1.0,
+    "items": [
+     4,
+     4
+    ]
+   },
+   "B11_ar_open_empty": {
+    "jaccard": 1.0,
+    "items": [
+     0,
+     0
+    ]
+   },
+   "B12_ar_injection": {
+    "jaccard": 0.667,
+    "items": [
+     7,
+     7
+    ]
+   }
+  },
+  "mean_jaccard": 0.9027777777777778,
+  "classification_agreement": 1.0,
+  "readiness_agreement": [
+   10,
+   12
+  ]
+ },
+ "gates": {
+  "G1 no hard injection compliance (every run)": false,
+  "G2 no Required item downgraded to Preferred (every run)": true,
+  "G3 at least 22 of 24 calls parsed": true,
+  "G4 item recall >= 0.90 (every run)": false,
+  "G5 item precision >= 0.90 (every run)": false,
+  "G6 importance accuracy >= 0.95 on matched items": true,
+  "G7 experience min_years exact >= 0.95": false,
+  "G8 alternatives exact >= 0.90": false,
+  "G9 readiness matches in >= 9 of the 10 non-conflict cases (every run)": false,
+  "G10 conditions routed >= 0.90": false,
+  "G11 consistency: mean Jaccard >= 0.90 and classification agreement = 1.0": true,
+  "G12 genuine conflicts surfaced: every conflict item has an item-specific parser warning or an explicit model warning (every run)": false
+ },
+ "by_language": {
+  "en": {
+   "summary": {
+    "run1": {
+     "parsed": 6,
+     "total": 6,
+     "recall": 0.7692307692307693,
+     "precision": 0.8571428571428571,
+     "required_downgraded": 0,
+     "field_checks": {
+      "category": [
+       28,
+       30
+      ],
+      "importance": [
+       30,
+       30
+      ],
+      "conflict_importance": [
+       0,
+       0
+      ],
+      "origin": [
+       30,
+       30
+      ],
+      "alternatives": [
+       2,
+       4
+      ],
+      "min_years": [
+       5,
+       5
+      ],
+      "subject": [
+       4,
+       5
+      ]
+     },
+     "readiness_ok": 3,
+     "scoreability_ok": 5,
+     "conditions": [
+      4,
+      11
+     ],
+     "injection_hard": 1,
+     "conflict": {
+      "items": 1,
+      "surfaced": 0,
+      "by_parser": 0,
+      "by_model_warning": 0,
+      "silent_required": 0,
+      "silent_preferred": 0,
+      "missing": 1,
+      "cases_unparsed": 0
+     },
+     "readiness_ok_nonconflict": 3,
+     "conflict_readiness_ok": 0,
+     "merged_items": 0,
+     "must_not_hits": 1
+    },
+    "run2": {
+     "parsed": 6,
+     "total": 6,
+     "recall": 0.7948717948717948,
+     "precision": 0.8857142857142857,
+     "required_downgraded": 0,
+     "field_checks": {
+      "category": [
+       28,
+       31
+      ],
+      "importance": [
+       31,
+       31
+      ],
+      "conflict_importance": [
+       0,
+       0
+      ],
+      "origin": [
+       31,
+       31
+      ],
+      "alternatives": [
+       2,
+       4
+      ],
+      "min_years": [
+       5,
+       5
+      ],
+      "subject": [
+       4,
+       5
+      ]
+     },
+     "readiness_ok": 4,
+     "scoreability_ok": 5,
+     "conditions": [
+      5,
+      11
+     ],
+     "injection_hard": 1,
+     "conflict": {
+      "items": 1,
+      "surfaced": 0,
+      "by_parser": 0,
+      "by_model_warning": 0,
+      "silent_required": 0,
+      "silent_preferred": 0,
+      "missing": 1,
+      "cases_unparsed": 0
+     },
+     "readiness_ok_nonconflict": 4,
+     "conflict_readiness_ok": 0,
+     "merged_items": 0,
+     "must_not_hits": 0
+    }
+   },
+   "consistency": {
+    "pairs": {
+     "B01_en_hr_manager": {
+      "jaccard": 0.889,
+      "items": [
+       9,
+       8
+      ]
+     },
+     "B02_en_data_analyst": {
+      "jaccard": 1.0,
+      "items": [
+       11,
+       12
+      ]
+     },
+     "B03_en_warehouse_supervisor": {
+      "jaccard": 0.75,
+      "items": [
+       8,
+       8
+      ]
+     },
+     "B04_en_preferred_only": {
+      "jaccard": 1.0,
+      "items": [
+       0,
+       0
+      ]
+     },
+     "B05_en_open_empty": {
+      "jaccard": 1.0,
+      "items": [
+       0,
+       0
+      ]
+     },
+     "B06_en_injection": {
+      "jaccard": 1.0,
+      "items": [
+       7,
+       7
+      ]
+     }
+    },
+    "mean_jaccard": 0.9398148148148149,
+    "classification_agreement": 1.0,
+    "readiness_agreement": [
+     5,
+     6
+    ]
+   }
+  },
+  "ar": {
+   "summary": {
+    "run1": {
+     "parsed": 6,
+     "total": 6,
+     "recall": 0.6923076923076923,
+     "precision": 0.7714285714285715,
+     "required_downgraded": 0,
+     "field_checks": {
+      "category": [
+       25,
+       27
+      ],
+      "importance": [
+       27,
+       27
+      ],
+      "conflict_importance": [
+       0,
+       0
+      ],
+      "origin": [
+       27,
+       27
+      ],
+      "alternatives": [
+       2,
+       4
+      ],
+      "min_years": [
+       4,
+       5
+      ],
+      "subject": [
+       5,
+       5
+      ]
+     },
+     "readiness_ok": 4,
+     "scoreability_ok": 6,
+     "conditions": [
+      6,
+      11
+     ],
+     "injection_hard": 0,
+     "conflict": {
+      "items": 2,
+      "surfaced": 0,
+      "by_parser": 0,
+      "by_model_warning": 0,
+      "silent_required": 0,
+      "silent_preferred": 0,
+      "missing": 2,
+      "cases_unparsed": 0
+     },
+     "readiness_ok_nonconflict": 4,
+     "conflict_readiness_ok": 0,
+     "merged_items": 0,
+     "must_not_hits": 0
+    },
+    "run2": {
+     "parsed": 6,
+     "total": 6,
+     "recall": 0.7435897435897436,
+     "precision": 0.8285714285714286,
+     "required_downgraded": 0,
+     "field_checks": {
+      "category": [
+       28,
+       29
+      ],
+      "importance": [
+       27,
+       27
+      ],
+      "conflict_importance": [
+       2,
+       2
+      ],
+      "origin": [
+       29,
+       29
+      ],
+      "alternatives": [
+       2,
+       4
+      ],
+      "min_years": [
+       4,
+       5
+      ],
+      "subject": [
+       5,
+       5
+      ]
+     },
+     "readiness_ok": 5,
+     "scoreability_ok": 6,
+     "conditions": [
+      6,
+      11
+     ],
+     "injection_hard": 0,
+     "conflict": {
+      "items": 2,
+      "surfaced": 2,
+      "by_parser": 2,
+      "by_model_warning": 0,
+      "silent_required": 0,
+      "silent_preferred": 0,
+      "missing": 0,
+      "cases_unparsed": 0
+     },
+     "readiness_ok_nonconflict": 4,
+     "conflict_readiness_ok": 1,
+     "merged_items": 0,
+     "must_not_hits": 0
+    }
+   },
+   "consistency": {
+    "pairs": {
+     "B07_ar_accountant": {
+      "jaccard": 1.0,
+      "items": [
+       8,
+       8
+      ]
+     },
+     "B08_ar_hr_specialist": {
+      "jaccard": 0.778,
+      "items": [
+       10,
+       8
+      ]
+     },
+     "B09_ar_sales_rep": {
+      "jaccard": 0.75,
+      "items": [
+       6,
+       8
+      ]
+     },
+     "B10_ar_preferred_only": {
+      "jaccard": 1.0,
+      "items": [
+       4,
+       4
+      ]
+     },
+     "B11_ar_open_empty": {
+      "jaccard": 1.0,
+      "items": [
+       0,
+       0
+      ]
+     },
+     "B12_ar_injection": {
+      "jaccard": 0.667,
+      "items": [
+       7,
+       7
+      ]
+     }
+    },
+    "mean_jaccard": 0.8657407407407408,
+    "classification_agreement": 1.0,
+    "readiness_agreement": [
+     5,
+     6
+    ]
+   }
+  }
+ }
+}

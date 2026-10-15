@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
+import { getCreationAvailability } from '../services/requirementsV2Api';
 import { WEBHOOK_CONFIG } from '../config';
 import { User, ClientOrganization, Campaign, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
@@ -72,6 +73,12 @@ const T = {
     cancel: 'Cancel',
     creating: 'Creating…',
     submit: 'Create Job',
+    analysisLabel: 'Analysis format',
+    analysisLegacy: 'Standard analysis',
+    analysisLegacyHint: 'The current criteria workflow. Scoring and application intake work as before.',
+    analysisV2: 'Requirements v2 (review before use)',
+    analysisV2Hint: 'Extracts the requirements, then opens an editor where you review and correct them. Candidate scoring and application intake for these jobs are not available yet.',
+    toastV2Created: 'Job created. Requirements extraction has started.',
     errorTitle: 'Job title is required.',
     errorDesc: 'Job description is required.',
     qualityLabel: 'Description Quality',
@@ -133,6 +140,12 @@ const T = {
     cancel: 'إلغاء',
     creating: 'جارٍ الإنشاء…',
     submit: 'إنشاء الوظيفة',
+    analysisLabel: 'نوع التحليل',
+    analysisLegacy: 'التحليل المعتاد',
+    analysisLegacyHint: 'مسار المعايير الحالي. التقييم واستقبال الطلبات يعملان كما كانا.',
+    analysisV2: 'المتطلبات الإصدار 2 (مراجعة قبل الاستخدام)',
+    analysisV2Hint: 'يستخرج المتطلبات ثم يفتح محرراً تراجع فيه المتطلبات وتصححها. تقييم المرشحين واستقبال الطلبات لهذه الوظائف غير متاحين بعد.',
+    toastV2Created: 'تم إنشاء الوظيفة. بدأ استخراج المتطلبات.',
     errorTitle: 'المسمى الوظيفي مطلوب.',
     errorDesc: 'وصف الوظيفة مطلوب.',
     qualityLabel: 'جودة الوصف',
@@ -251,6 +264,9 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   const MAX_KNOCKOUT = 5;
 
   const [loading, setLoading] = useState(false);
+  // The v2 choice is offered only while the platform switch is on; with the switch off (or unknown) the screen is the existing one.
+  const [v2Enabled, setV2Enabled] = useState(false);
+  const [analysisFormat, setAnalysisFormat] = useState<'legacy' | 'v2'>('legacy');
   const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);
   const [clientOrgsLoading, setClientOrgsLoading] = useState(false);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -308,6 +324,14 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
         setCampaigns(list.filter(c => c.status === 'active' || c.status === 'draft'));
       })
       .catch(() => {});
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCreationAvailability(token)
+      .then(res => { if (!cancelled) setV2Enabled(!!res?.enabled); })
+      .catch(() => { /* switch unknown: keep the existing creation screen */ });
+    return () => { cancelled = true; };
   }, [token]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -386,6 +410,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       if (formData.application_deadline) payload.application_deadline = formData.application_deadline;
       const vac = parseInt(formData.vacancies_count);
       if (vac > 0) payload.vacancies_count = vac;
+      if (v2Enabled && analysisFormat === 'v2') payload.requirements_format = 'v2';
 
       if (showKnockout && knockoutQuestions.length > 0) {
         const questions = knockoutQuestions
@@ -402,8 +427,13 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               const numVal = parseFloat(q.passingValue ?? '');
               criteria = { operator: q.passingOperator || '>=', value: isNaN(numVal) ? 0 : numVal };
             }
+            // Guard: strip description text if it was accidentally prepended (e.g. browser autofill)
+            let questionText = q.question_text!.trim();
+            if (questionText.startsWith(description)) {
+              questionText = questionText.slice(description.length).trimStart();
+            }
             return {
-              question_text: q.question_text!.trim(),
+              question_text: questionText,
               question_type: qtype,
               is_required: q.is_required ?? true,
               options: opts,
@@ -414,7 +444,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       }
 
       const responseData = await apiService.post(WEBHOOK_CONFIG.CREATE_JOB_WEBHOOK_URL, payload, token);
-      addToast('Job created successfully!', 'success');
+      addToast(payload.requirements_format === 'v2' ? t.toastV2Created : 'Job created successfully!', 'success');
       onSuccess(responseData.job_id || '');
     } catch (err: any) {
       const errorMsg = err.name === 'TypeError' && err.message === 'Failed to fetch'
@@ -640,6 +670,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               <textarea
                 required
                 name="job_description"
+                autoComplete="off"
                 rows={7}
                 placeholder={t.jobDescPlaceholder}
                 className={`w-full px-4 py-3 border rounded-lg focus:ring-2 outline-none transition-all text-sm leading-relaxed ${
@@ -693,6 +724,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                         <div className="flex-1 space-y-2">
                           <input
                             type="text"
+                            name={`knockout_question_${idx}`}
+                            autoComplete="off"
                             value={q.question_text || ''}
                             onChange={e => updateKnockoutQuestion(idx, 'question_text', e.target.value)}
                             placeholder={(t as any).knockoutQuestionPlaceholder}
@@ -852,6 +885,20 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
             </div>
 
           </div>
+
+          {v2Enabled && (
+            <fieldset className="px-8 py-5 border-t border-border space-y-2" data-testid="analysis-format">
+              <legend className={labelCls}>{t.analysisLabel}</legend>
+              <label className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer ${analysisFormat === 'legacy' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <input type="radio" name="analysis_format" value="legacy" checked={analysisFormat === 'legacy'} onChange={() => setAnalysisFormat('legacy')} className="mt-1" data-testid="format-legacy" />
+                <span><span className="block text-sm font-bold text-textMain">{t.analysisLegacy}</span><span className="block text-xs text-textMuted">{t.analysisLegacyHint}</span></span>
+              </label>
+              <label className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer ${analysisFormat === 'v2' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <input type="radio" name="analysis_format" value="v2" checked={analysisFormat === 'v2'} onChange={() => setAnalysisFormat('v2')} className="mt-1" data-testid="format-v2" />
+                <span><span className="block text-sm font-bold text-textMain">{t.analysisV2}</span><span className="block text-xs text-textMuted">{t.analysisV2Hint}</span></span>
+              </label>
+            </fieldset>
+          )}
 
           {/* Footer */}
           <div className="px-8 py-5 bg-slate-50 border-t border-border flex flex-wrap justify-end items-center gap-4 sticky bottom-0 z-10">

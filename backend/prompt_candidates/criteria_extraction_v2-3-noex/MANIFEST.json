@@ -1,0 +1,15 @@
+{
+ "prompt_code": "criteria_extraction_v2",
+ "version": "criteria_extraction_v2-3-noex",
+ "file": "criteria_extraction_v2-3-noex.txt",
+ "sha256": "764d2ee4ad8a523e67ef27b143b41d01538853d8f7d3c8921f3adf4430b87d90",
+ "base_version": "criteria_extraction_v2-3",
+ "base_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+ "removed_span": "from the line 'EXAMPLES (illustrative only; never copy them into your answer)' to the end of the file (ADDITIONAL EXAMPLES included)",
+ "removed_span_sha256": "71e72b12bf873ef6d7cc0982235e41dc6201875a2a55166aaf4c568b2d20c322",
+ "rules_and_contract": "byte-identical: the variant is an exact byte prefix of criteria_extraction_v2-3.txt",
+ "scope": "control experiment: the worked examples are the only removed text",
+ "status": "offline candidate: not registered, not activated, not selectable in the active configuration, not run against any model in this commit",
+ "evidence_level": "byte identity only; no evidence of real-model compliance. The approved five-call run (scripts/requirements_v2_tc20_noexamples.py --execute) is the only measurement",
+ "created": "2026-10-10"
+}

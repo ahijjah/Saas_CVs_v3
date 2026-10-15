@@ -5,13 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from database import engine
+from auth.entitlements import RECRUITMENT_ACCESS
 from routers import (
     admin, ai_models, ai_prompts, ai_usage, analytics, applications, approvals, audit_logs, auth,
     campaigns, client_organizations, comments, dashboard, interviews, jobs, platform_config,
     platform_secrets, public, saved_views, subscription_plans, tenant, workflow_policies,
 )
+from routers.bulk_upload import router as bulk_upload_router
+from routers.job_requirements import router as job_requirements_router
 from routers.candidate_tags import app_router as candidate_tags_app, tag_router as candidate_tags_tags
 from routers.communication import automation_router as communication_automation, comm_router as communication_comm, template_router as communication_templates
+from routers.platform_features import router as platform_features_router
+from routers.tenant_modules import router as tenant_modules_router
 
 settings = get_settings()
 
@@ -42,14 +47,15 @@ app.add_middleware(
 app.include_router(public.router)           # no auth — must be before jobs/applications
 app.include_router(auth.router)
 app.include_router(dashboard.router)
-app.include_router(jobs.router)
-app.include_router(applications.router)
-app.include_router(comments.router)
-app.include_router(interviews.router)
-app.include_router(approvals.router)
-app.include_router(client_organizations.router)
-app.include_router(campaigns.router)
-app.include_router(saved_views.router)
+app.include_router(jobs.router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(job_requirements_router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(applications.router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(comments.router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(interviews.router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(approvals.router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(client_organizations.router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(campaigns.router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(saved_views.router, dependencies=RECRUITMENT_ACCESS)
 app.include_router(admin.router)
 app.include_router(platform_config.router)
 app.include_router(subscription_plans.router)
@@ -61,11 +67,14 @@ app.include_router(ai_models.router)
 app.include_router(ai_prompts.router)
 app.include_router(ai_usage.router)
 app.include_router(audit_logs.router)
-app.include_router(candidate_tags_app)
-app.include_router(candidate_tags_tags)
-app.include_router(communication_templates)
-app.include_router(communication_comm)
-app.include_router(communication_automation)
+app.include_router(candidate_tags_app, dependencies=RECRUITMENT_ACCESS)
+app.include_router(candidate_tags_tags, dependencies=RECRUITMENT_ACCESS)
+app.include_router(communication_templates, dependencies=RECRUITMENT_ACCESS)
+app.include_router(communication_comm, dependencies=RECRUITMENT_ACCESS)
+app.include_router(communication_automation, dependencies=RECRUITMENT_ACCESS)
+app.include_router(bulk_upload_router, dependencies=RECRUITMENT_ACCESS)
+app.include_router(platform_features_router)
+app.include_router(tenant_modules_router)
 
 
 @app.get("/health")

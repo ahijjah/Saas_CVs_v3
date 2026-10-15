@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, RequireWriteRole
 from database import get_db, set_rls_context
 
 router = APIRouter(prefix="/candidate-saved-views", tags=["candidate-saved-views"])
@@ -84,7 +84,7 @@ async def list_saved_views(
     return {"saved_views": views}
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def create_saved_view(
     body: CreateSavedViewRequest,
     current_user: CurrentUserDep,
@@ -125,7 +125,7 @@ async def create_saved_view(
     return {"success": True, "saved_view": _serialize(new_row, current_user.user_id)}
 
 
-@router.patch("/{view_id}")
+@router.patch("/{view_id}", dependencies=[RequireWriteRole])
 async def update_saved_view(
     view_id: str,
     body: UpdateSavedViewRequest,
@@ -188,7 +188,7 @@ async def update_saved_view(
     return {"success": True, "saved_view": _serialize(updated_row, current_user.user_id)}
 
 
-@router.delete("/{view_id}")
+@router.delete("/{view_id}", dependencies=[RequireWriteRole])
 async def delete_saved_view(
     view_id: str,
     current_user: CurrentUserDep,

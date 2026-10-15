@@ -1,0 +1,4098 @@
+{
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "inventory": {
+  "physical_lines": 58,
+  "blank_lines_skipped": 11,
+  "units": 47,
+  "requirement_units": 35,
+  "heading_units": 9,
+  "background_units": 3,
+  "soft_wrap_merged_lines": [],
+  "crlf_lines": 0
+ },
+ "cover_threshold": 0.9,
+ "title_words": [
+  "20",
+  "coordinator",
+  "technical"
+ ],
+ "paraphrase_share": 0.6,
+ "list_keys": [
+  "non_scoreable_requirements",
+  "post_hiring_conditions",
+  "informational_items"
+ ],
+ "sources": {
+  "repeat_gpt-4.1": [
+   {
+    "arm": "v2-3",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35,
+     "all_text_quoted": 34,
+     "clause_review_required": 1
+    },
+    "quote_counts": {
+     "unique": 36,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 0,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will",
+      "start": 2982,
+      "end": 3033,
+      "class": "intro_wording"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35,
+     "all_text_quoted": 33,
+     "clause_review_required": 2
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 2,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will",
+      "start": 2982,
+      "end": 3033,
+      "class": "intro_wording"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+      "start": 3178,
+      "end": 3319,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35,
+     "all_text_quoted": 34,
+     "clause_review_required": 1
+    },
+    "quote_counts": {
+     "unique": 37,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 0,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator.",
+      "start": 2982,
+      "end": 3028,
+      "class": "intro_wording"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35,
+     "all_text_quoted": 33,
+     "clause_review_required": 2
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 2,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will",
+      "start": 2982,
+      "end": 3033,
+      "class": "intro_wording"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+      "start": 3178,
+      "end": 3319,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35,
+     "all_text_quoted": 34,
+     "clause_review_required": 1
+    },
+    "quote_counts": {
+     "unique": 37,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 0,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will",
+      "start": 2982,
+      "end": 3033,
+      "class": "intro_wording"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": true,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35,
+     "all_text_quoted": 33,
+     "clause_review_required": 2
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 2,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will",
+      "start": 2982,
+      "end": 3033,
+      "class": "intro_wording"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+      "start": 3178,
+      "end": 3319,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35,
+     "all_text_quoted": 34,
+     "clause_review_required": 1
+    },
+    "quote_counts": {
+     "unique": 37,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 0,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator.",
+      "start": 2982,
+      "end": 3028,
+      "class": "intro_wording"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35,
+     "all_text_quoted": 33,
+     "clause_review_required": 2
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 2,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will",
+      "start": 2982,
+      "end": 3033,
+      "class": "intro_wording"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+      "start": 3178,
+      "end": 3319,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 18,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 16,
+     "requirement_units": 35,
+     "all_text_quoted": 18,
+     "clause_review_required": 17
+    },
+    "quote_counts": {
+     "unique": 21,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 16,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator.",
+      "start": 2982,
+      "end": 3028,
+      "class": "intro_wording"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": true,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35,
+     "all_text_quoted": 33,
+     "clause_review_required": 2
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "span_classes": {
+     "genuine_omission": 2,
+     "paraphrase": 0,
+     "intro_wording": 1,
+     "punctuation_only": 0
+    },
+    "uncovered": [
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator.",
+      "start": 2982,
+      "end": 3028,
+      "class": "intro_wording"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+      "start": 3178,
+      "end": 3319,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     }
+    ],
+    "duty_omissions": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   }
+  ],
+  "audit_gpt-4o-mini": [
+   {
+    "arm": "v2-3",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 0,
+     "ambiguous": 0,
+     "omitted": 20,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 16,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 20,
+     "paraphrase": 0,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "omitted",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+      "start": 2982,
+      "end": 3319,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 19,
+     "paraphrase": 1,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities.",
+      "start": 2982,
+      "end": 3177,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 34,
+      "status": "partial",
+      "text": "The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3519,
+      "end": 3735,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 16,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35,
+     "all_text_quoted": 1,
+     "clause_review_required": 19
+    },
+    "quote_counts": {
+     "unique": 19,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 19,
+     "paraphrase": 0,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "partial",
+      "text": "The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3519,
+      "end": 3735,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 0,
+     "ambiguous": 0,
+     "omitted": 20,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 16,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 20,
+     "paraphrase": 0,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "omitted",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+      "start": 2982,
+      "end": 3319,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 19,
+     "paraphrase": 1,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities.",
+      "start": 2982,
+      "end": 3177,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 34,
+      "status": "partial",
+      "text": "The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3519,
+      "end": 3735,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 19,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 17,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 19,
+     "paraphrase": 1,
+     "intro_wording": 0,
+     "punctuation_only": 16
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities.",
+      "start": 2982,
+      "end": 3177,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": ".",
+      "start": 3318,
+      "end": 3319,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 2,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 18,
+     "paraphrase": 2,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities.",
+      "start": 2982,
+      "end": 3177,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 34,
+      "status": "partial",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate.",
+      "start": 3321,
+      "end": 3518,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 19,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 17,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 19,
+     "paraphrase": 1,
+     "intro_wording": 0,
+     "punctuation_only": 16
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities.",
+      "start": 2982,
+      "end": 3177,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": ".",
+      "start": 3318,
+      "end": 3319,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 34,
+      "status": "omitted",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+      "start": 3321,
+      "end": 3735,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35,
+     "all_text_quoted": 0,
+     "clause_review_required": 20
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 2,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 18,
+     "paraphrase": 2,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 32,
+      "status": "partial",
+      "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities.",
+      "start": 2982,
+      "end": 3177,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 34,
+      "status": "partial",
+      "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate.",
+      "start": 3321,
+      "end": 3518,
+      "class": "paraphrase"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 17,
+     "partial": 0,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35,
+     "all_text_quoted": 2,
+     "clause_review_required": 18
+    },
+    "quote_counts": {
+     "unique": 20,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "span_classes": {
+     "genuine_omission": 18,
+     "paraphrase": 0,
+     "intro_wording": 0,
+     "punctuation_only": 15
+    },
+    "uncovered": [
+     {
+      "first_line": 12,
+      "status": "omitted",
+      "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+      "start": 998,
+      "end": 1136,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 13,
+      "status": "omitted",
+      "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+      "start": 1137,
+      "end": 1260,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 14,
+      "status": "omitted",
+      "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+      "start": 1261,
+      "end": 1405,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 15,
+      "status": "omitted",
+      "text": "Participate in functional, integration, and user acceptance testing activities.",
+      "start": 1406,
+      "end": 1485,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 16,
+      "status": "omitted",
+      "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+      "start": 1486,
+      "end": 1591,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 17,
+      "status": "omitted",
+      "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+      "start": 1592,
+      "end": 1714,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 18,
+      "status": "omitted",
+      "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+      "start": 1715,
+      "end": 1829,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 19,
+      "status": "omitted",
+      "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+      "start": 1830,
+      "end": 1956,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 20,
+      "status": "omitted",
+      "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+      "start": 1957,
+      "end": 2073,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 21,
+      "status": "omitted",
+      "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+      "start": 2074,
+      "end": 2231,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 22,
+      "status": "omitted",
+      "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+      "start": 2232,
+      "end": 2382,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 24,
+      "status": "omitted",
+      "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+      "start": 2424,
+      "end": 2530,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 25,
+      "status": "omitted",
+      "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+      "start": 2531,
+      "end": 2600,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 26,
+      "status": "omitted",
+      "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+      "start": 2601,
+      "end": 2688,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 27,
+      "status": "omitted",
+      "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+      "start": 2689,
+      "end": 2816,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 28,
+      "status": "omitted",
+      "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+      "start": 2817,
+      "end": 2953,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 41,
+      "status": "covered",
+      "text": ".",
+      "start": 3938,
+      "end": 3939,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 42,
+      "status": "covered",
+      "text": ".",
+      "start": 4078,
+      "end": 4079,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 43,
+      "status": "covered",
+      "text": ".",
+      "start": 4219,
+      "end": 4220,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 44,
+      "status": "covered",
+      "text": ".",
+      "start": 4361,
+      "end": 4362,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 45,
+      "status": "covered",
+      "text": ".",
+      "start": 4475,
+      "end": 4476,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 46,
+      "status": "covered",
+      "text": ".",
+      "start": 4551,
+      "end": 4552,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 48,
+      "status": "omitted",
+      "text": "Good understanding of business applications, digital platforms, and software support processes.",
+      "start": 4577,
+      "end": 4672,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 49,
+      "status": "omitted",
+      "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+      "start": 4673,
+      "end": 4778,
+      "class": "genuine_omission"
+     },
+     {
+      "first_line": 50,
+      "status": "covered",
+      "text": ".",
+      "start": 4883,
+      "end": 4884,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 51,
+      "status": "covered",
+      "text": ".",
+      "start": 4950,
+      "end": 4951,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 52,
+      "status": "covered",
+      "text": ".",
+      "start": 5050,
+      "end": 5051,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 53,
+      "status": "covered",
+      "text": ".",
+      "start": 5212,
+      "end": 5213,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 54,
+      "status": "covered",
+      "text": ".",
+      "start": 5269,
+      "end": 5270,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 55,
+      "status": "covered",
+      "text": ".",
+      "start": 5316,
+      "end": 5317,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 56,
+      "status": "covered",
+      "text": ".",
+      "start": 5357,
+      "end": 5358,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 57,
+      "status": "covered",
+      "text": ".",
+      "start": 5414,
+      "end": 5415,
+      "class": "punctuation_only"
+     },
+     {
+      "first_line": 58,
+      "status": "covered",
+      "text": ".",
+      "start": 5545,
+      "end": 5546,
+      "class": "punctuation_only"
+     }
+    ],
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   }
+  ]
+ }
+}

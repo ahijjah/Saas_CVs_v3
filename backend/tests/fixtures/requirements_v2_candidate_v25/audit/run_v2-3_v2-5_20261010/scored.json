@@ -1,0 +1,265 @@
+{
+ "run": {
+  "spent_usd": 0.625308,
+  "calls_attempted": 22,
+  "successful_calls": 22,
+  "stopped": null
+ },
+ "report": {
+  "v2-3": {
+   "tc20": {
+    "status": "scored",
+    "successful_calls": 5,
+    "scorer": "official TC20 checks (frozen labels)",
+    "failed_checks_per_call": [
+     [
+      "C_RESP",
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_REPORTING",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_LOCATION",
+      "C_AND"
+     ]
+    ]
+   },
+   "eval_en_field_service_01": {
+    "status": "scored",
+    "successful_calls": 3,
+    "scorer": "expected-output scorer (frozen before calls)",
+    "invalid_json": 0,
+    "expected_entries_per_call": 13,
+    "failures_total_by_group": {
+     "omissions": 3,
+     "categories": 5,
+     "or_and": 2,
+     "importance": 0,
+     "routing": 0,
+     "invented": 0,
+     "extra_items": 0
+    },
+    "failures_per_call": [
+     {
+      "omissions": 1,
+      "categories": 1,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 0
+     },
+     {
+      "omissions": 1,
+      "categories": 2,
+      "or_and": 1,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 0
+     },
+     {
+      "omissions": 1,
+      "categories": 2,
+      "or_and": 1,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 0
+     }
+    ]
+   },
+   "eval_ar_facilities_01": {
+    "status": "scored",
+    "successful_calls": 3,
+    "scorer": "expected-output scorer (frozen before calls)",
+    "invalid_json": 0,
+    "expected_entries_per_call": 12,
+    "failures_total_by_group": {
+     "omissions": 22,
+     "categories": 1,
+     "or_and": 0,
+     "importance": 0,
+     "routing": 6,
+     "invented": 3,
+     "extra_items": 17
+    },
+    "failures_per_call": [
+     {
+      "omissions": 12,
+      "categories": 0,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 6,
+      "invented": 3,
+      "extra_items": 8
+     },
+     {
+      "omissions": 9,
+      "categories": 0,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 9
+     },
+     {
+      "omissions": 1,
+      "categories": 1,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 0
+     }
+    ]
+   }
+  },
+  "v2-5": {
+   "tc20": {
+    "status": "scored",
+    "successful_calls": 5,
+    "scorer": "official TC20 checks (frozen labels)",
+    "failed_checks_per_call": [
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_REPORTING",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_REPORTING",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_REPORTING",
+      "C_AND"
+     ],
+     [
+      "C_EXP_OR",
+      "C_FAM_OR",
+      "C_REPORTING",
+      "C_AND"
+     ]
+    ]
+   },
+   "eval_en_field_service_01": {
+    "status": "scored",
+    "successful_calls": 3,
+    "scorer": "expected-output scorer (frozen before calls)",
+    "invalid_json": 0,
+    "expected_entries_per_call": 13,
+    "failures_total_by_group": {
+     "omissions": 0,
+     "categories": 6,
+     "or_and": 0,
+     "importance": 0,
+     "routing": 0,
+     "invented": 0,
+     "extra_items": 0
+    },
+    "failures_per_call": [
+     {
+      "omissions": 0,
+      "categories": 2,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 0
+     },
+     {
+      "omissions": 0,
+      "categories": 3,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 0
+     },
+     {
+      "omissions": 0,
+      "categories": 1,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 0,
+      "invented": 0,
+      "extra_items": 0
+     }
+    ]
+   },
+   "eval_ar_facilities_01": {
+    "status": "scored",
+    "successful_calls": 3,
+    "scorer": "expected-output scorer (frozen before calls)",
+    "invalid_json": 0,
+    "expected_entries_per_call": 12,
+    "failures_total_by_group": {
+     "omissions": 0,
+     "categories": 3,
+     "or_and": 0,
+     "importance": 0,
+     "routing": 3,
+     "invented": 0,
+     "extra_items": 0
+    },
+    "failures_per_call": [
+     {
+      "omissions": 0,
+      "categories": 1,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 1,
+      "invented": 0,
+      "extra_items": 0
+     },
+     {
+      "omissions": 0,
+      "categories": 1,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 1,
+      "invented": 0,
+      "extra_items": 0
+     },
+     {
+      "omissions": 0,
+      "categories": 1,
+      "or_and": 0,
+      "importance": 0,
+      "routing": 1,
+      "invented": 0,
+      "extra_items": 0
+     }
+    ]
+   }
+  }
+ }
+}

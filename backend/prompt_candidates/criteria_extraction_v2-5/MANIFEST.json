@@ -1,0 +1,14 @@
+{
+ "prompt_code": "criteria_extraction_v2",
+ "version": "criteria_extraction_v2-5",
+ "file": "criteria_extraction_v2-5.txt",
+ "sha256": "f1569a8b400257db20b1c0b24fd7728605fe472eef7fff993a384f12f0cbc8db",
+ "base_version": "criteria_extraction_v2-3",
+ "base_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+ "frozen_baseline_commit": "059c56b",
+ "diff": "DIFF.patch (exact unified diff against criteria_extraction_v2-3.txt)",
+ "scope": "coverage pass (section by section, sub-headed duties), technical versus soft skills, complete OR alternatives and separate AND items, item-level importance, one new worked example (Example 5) in unrelated vocabulary. Output contract (OUTPUT FORMAT, ITEM, CONDITION) is byte-identical to v2-3; rules 1-13 keep their numbers.",
+ "status": "offline candidate: not registered, not activated, not selectable in the active configuration, not run against any model in this commit",
+ "evidence_level": "text and offline-test consistency only (contract identity, diff, vocabulary guard, examples checked against the rules, expected-output scorer checked with reference and mutated answers). No evidence of real-model compliance; the bounded evaluation in EVALUATION.md is the only measurement",
+ "created": "2026-10-10"
+}

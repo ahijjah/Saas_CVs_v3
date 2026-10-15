@@ -1,0 +1,75 @@
+{
+ "sheet_rows": 114,
+ "queued_rows": 44,
+ "batches": 9,
+ "review_status": {
+  "resolved": 42,
+  "resolved_by_children": 2
+ },
+ "by_jd": {
+  "TC20": 12,
+  "B02_en_data_analyst": 5,
+  "B03_en_warehouse_supervisor": 7,
+  "B07_ar_accountant": 7,
+  "B08_ar_hr_specialist": 5,
+  "B12_ar_injection": 8
+ },
+ "by_priority": {
+  "1": 25,
+  "2": 7,
+  "3": 12
+ },
+ "by_type": {
+  "background": 4,
+  "heading": 16,
+  "uncertain": 5,
+  "requirement": 19
+ },
+ "jd_by_priority": {
+  "TC20|P1": 9,
+  "B02_en_data_analyst|P1": 2,
+  "B03_en_warehouse_supervisor|P1": 3,
+  "B07_ar_accountant|P1": 4,
+  "B08_ar_hr_specialist|P1": 2,
+  "B12_ar_injection|P1": 5,
+  "TC20|P2": 1,
+  "B02_en_data_analyst|P2": 1,
+  "B03_en_warehouse_supervisor|P2": 2,
+  "B07_ar_accountant|P2": 1,
+  "B08_ar_hr_specialist|P2": 1,
+  "B12_ar_injection|P2": 1,
+  "TC20|P3": 2,
+  "B02_en_data_analyst|P3": 2,
+  "B03_en_warehouse_supervisor|P3": 2,
+  "B07_ar_accountant|P3": 2,
+  "B08_ar_hr_specialist|P3": 2,
+  "B12_ar_injection|P3": 2
+ },
+ "jd_by_type": {
+  "TC20|background": 3,
+  "TC20|heading": 6,
+  "B02_en_data_analyst|uncertain": 1,
+  "B02_en_data_analyst|heading": 1,
+  "B03_en_warehouse_supervisor|uncertain": 1,
+  "B03_en_warehouse_supervisor|heading": 2,
+  "B07_ar_accountant|background": 1,
+  "B07_ar_accountant|heading": 3,
+  "B08_ar_hr_specialist|uncertain": 1,
+  "B08_ar_hr_specialist|heading": 1,
+  "B12_ar_injection|uncertain": 2,
+  "B12_ar_injection|heading": 3,
+  "TC20|requirement": 3,
+  "B02_en_data_analyst|requirement": 3,
+  "B03_en_warehouse_supervisor|requirement": 4,
+  "B07_ar_accountant|requirement": 3,
+  "B08_ar_hr_specialist|requirement": 3,
+  "B12_ar_injection|requirement": 3
+ },
+ "sheet_sha256": "f71cb861d4c072e6e9000077bfd29b21771da8d1de94a39a5664d63f9949c6c8",
+ "next_batch": [],
+ "child_units": {
+  "total": 8,
+  "decided": 8,
+  "pending_semantic_role": 0
+ }
+}

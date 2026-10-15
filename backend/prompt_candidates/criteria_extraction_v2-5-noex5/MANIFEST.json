@@ -1,0 +1,15 @@
+{
+ "prompt_code": "criteria_extraction_v2",
+ "version": "criteria_extraction_v2-5-noex5",
+ "file": "criteria_extraction_v2-5-noex5.txt",
+ "sha256": "7cf171c84d65ce74b2531c2ca1f3049c7e539774121c0faae347dc7bf0466e62",
+ "base_version": "criteria_extraction_v2-5",
+ "base_sha256": "f1569a8b400257db20b1c0b24fd7728605fe472eef7fff993a384f12f0cbc8db",
+ "removed_span": "from the line 'Example 5 (EN: duties under two sub-headings' to the end of the file (Example 5 question and answer)",
+ "removed_span_sha256": "33bdd1dcfc0dd3fc761ea719e773ab1bd8db3909950e68cbded19fe8b99e31e6",
+ "removed_span_bytes": 3223,
+ "variant_bytes": 27207,
+ "identity": "the variant is the exact byte prefix of criteria_extraction_v2-5.txt before the Example 5 header; base = variant + removed span",
+ "status": "offline experiment variant: not registered, not activated, not selectable in production; only for the Example 5 removal experiment",
+ "created": "2026-10-11"
+}

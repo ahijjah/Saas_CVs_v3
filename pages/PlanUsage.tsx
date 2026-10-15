@@ -10,6 +10,7 @@ interface Props {
 }
 
 interface UsageData {
+  access?: { state: string; can_write: boolean; message: string };
   plan_code: string;
   plan_name: string;
   subscription_status: string;
@@ -62,7 +63,7 @@ const T = {
     subEnds: 'Renews',
     adminOnly: 'Only tenant admins can change the subscription plan.',
     confirmSubscribe: 'Switch to the {plan} plan?',
-    subscribeSuccess: 'Plan updated successfully',
+    subscribeSuccess: 'Plan selected. Activation is pending.',
     errorLoad: 'Failed to load usage data',
     errorSubscribe: 'Failed to update plan',
     statusLabels: {
@@ -104,7 +105,7 @@ const T = {
     subEnds: 'يتجدد',
     adminOnly: 'فقط مسؤول المستأجر يمكنه تغيير خطة الاشتراك.',
     confirmSubscribe: 'التحويل إلى خطة {plan}؟',
-    subscribeSuccess: 'تم تحديث الخطة',
+    subscribeSuccess: 'تم اختيار الخطة. التفعيل قيد الانتظار.',
     errorLoad: 'فشل تحميل بيانات الاستخدام',
     errorSubscribe: 'فشل تحديث الخطة',
     statusLabels: {
@@ -253,7 +254,8 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
     if (!window.confirm(t.confirmSubscribe.replace('{plan}', planName))) return;
     setSubscribing(planCode);
     try {
-      await apiService.post(WEBHOOK_CONFIG.SUBSCRIPTION_SUBSCRIBE_URL, { plan_code: planCode }, auth.token!);
+      // Selecting a plan does not activate it; activation is provisioned by the platform team.
+      await apiService.post(WEBHOOK_CONFIG.SELECT_PLAN_URL, { plan: planCode }, auth.token!);
       addToast(t.subscribeSuccess, 'success');
       await loadAll();
     } catch (err: any) {
@@ -293,6 +295,14 @@ export const PlanUsagePage: React.FC<Props> = ({ auth, addToast }) => {
         <h2 className="text-xl font-black text-textMain">{t.title}</h2>
         <p className="text-xs text-textMuted mt-0.5">{t.subtitle}</p>
       </div>
+
+      {/* ── Read-only access banner (backend decides; not shown for not_activated) ── */}
+      {usage?.access && !usage.access.can_write && usage.access.state !== 'not_activated' && (
+        <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <strong className="font-semibold">{lang === 'ar' ? 'وصول للقراءة فقط.' : 'Read-only access.'}</strong>{' '}
+          {usage.access.message}
+        </div>
+      )}
 
       {/* ── Current Plan Banner ── */}
       {usage && (

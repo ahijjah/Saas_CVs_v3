@@ -33,3 +33,4 @@ venv/
 
 backend/.env
 .env
+.claude/

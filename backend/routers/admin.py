@@ -12,6 +12,7 @@ from auth.dependencies import CurrentUserDep, RequireSuperAdmin
 from auth.password import hash_password
 from config import get_settings
 from database import get_db, set_rls_context
+from services.audit_service import log_action
 from services.email_service import send_invite_email
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -47,9 +48,42 @@ class UpdateTenantStatusRequest(BaseModel):
 
 
 class UpdateTenantSubscriptionRequest(BaseModel):
-    action: str          # assign_plan | extend_trial | suspend | reactivate
+    action: str          # assign_plan | suspend | reactivate (the trial is fixed at 14 days; no extension)
     plan_code: str | None = None
-    trial_end_at: str | None = None   # ISO date string for extend_trial
+    expires_at: str | None = None     # ISO 8601, must be in the future: required for assign_plan and reactivate
+    reason: str                       # required for every action: why the platform changed this subscription
+
+
+# The trial is fixed at 14 days from its start (activate-trial, once per email domain). There is no extension action: an extension beyond that
+# duration is not an approved exception, so the platform cannot grant one.
+PROVISIONING_ACTIONS = frozenset({"assign_plan", "suspend", "reactivate"})
+ACTIONS_NEEDING_EXPIRY = frozenset({"assign_plan", "reactivate"})
+_SUBSCRIPTION_FIELDS = """
+    SELECT plan, pending_plan, subscription_status, trial_end_at, subscription_ends_at
+    FROM tenants WHERE tenant_id = CAST(:tid AS uuid)
+"""
+
+
+def _parse_future_expiry(raw: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail="expires_at must be a valid ISO 8601 date or datetime")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if parsed <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=422, detail="expires_at must be in the future")
+    return parsed
+
+
+def _state_dict(row) -> dict[str, Any]:
+    return {
+        "plan": row["plan"],
+        "pending_plan": row["pending_plan"],
+        "subscription_status": row["subscription_status"],
+        "trial_end_at": row["trial_end_at"].isoformat() if row["trial_end_at"] else None,
+        "subscription_ends_at": row["subscription_ends_at"].isoformat() if row["subscription_ends_at"] else None,
+    }
 
 
 class InviteUserRequest(BaseModel):
@@ -579,19 +613,31 @@ async def update_tenant_subscription(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
-    """Assign plan, extend trial, suspend, or reactivate a tenant subscription."""
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
+    """Platform provisioning. Activation is recorded here, not by the tenant. Each change is written with its audit row in ONE transaction:
+    if the audit row cannot be written, the change is not applied. Records the actor, the tenant, the previous and new plan and status,
+    the expiry and the reason."""
+    if body.action not in PROVISIONING_ACTIONS:
+        raise HTTPException(status_code=422, detail="action must be one of: assign_plan, suspend, reactivate (the trial is fixed at 14 days)")
+    reason = (body.reason or "").strip()
+    if not 5 <= len(reason) <= 500:
+        raise HTTPException(status_code=422, detail="reason is required (5 to 500 characters)")
 
-    existing = await db.execute(
-        text("SELECT tenant_id FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
-        {"tid": tenant_id},
-    )
-    if not existing.first():
+    expires: datetime | None = None
+    if body.action in ACTIONS_NEEDING_EXPIRY:
+        raw = body.expires_at
+        if not raw:
+            raise HTTPException(status_code=422, detail="expires_at is required and must be a future date for this action")
+        expires = _parse_future_expiry(raw)
+    if body.action == "assign_plan" and not body.plan_code:
+        raise HTTPException(status_code=422, detail="plan_code required for assign_plan")
+
+    await set_rls_context(db, current_user.tenant_id, "super_admin")
+    previous_row = (await db.execute(text(_SUBSCRIPTION_FIELDS + " FOR UPDATE"), {"tid": tenant_id})).mappings().first()
+    if previous_row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
+    previous = _state_dict(previous_row)
 
     if body.action == "assign_plan":
-        if not body.plan_code:
-            raise HTTPException(status_code=422, detail="plan_code required for assign_plan")
         plan_check = await db.execute(
             text("SELECT plan_id FROM subscription_plans WHERE plan_code = :code AND status = 'active'"),
             {"code": body.plan_code},
@@ -602,59 +648,56 @@ async def update_tenant_subscription(
             text("""
                 UPDATE tenants SET
                     plan = :plan_code,
+                    pending_plan = NULL,
                     subscription_status = 'active',
-                    subscription_started_at = COALESCE(subscription_started_at, now())
+                    subscription_started_at = COALESCE(subscription_started_at, now()),
+                    subscription_ends_at = :expires
                 WHERE tenant_id = CAST(:tid AS uuid)
             """),
-            {"plan_code": body.plan_code, "tid": tenant_id},
+            {"plan_code": body.plan_code, "expires": expires, "tid": tenant_id},
         )
-
-    elif body.action == "extend_trial":
-        if not body.trial_end_at:
-            raise HTTPException(status_code=422, detail="trial_end_at required for extend_trial")
-        try:
-            new_end = datetime.fromisoformat(body.trial_end_at.replace("Z", "+00:00"))
-        except ValueError:
-            raise HTTPException(status_code=422, detail="trial_end_at must be a valid ISO date")
-        await db.execute(
-            text("""
-                UPDATE tenants SET
-                    subscription_status = 'trial',
-                    trial_start_at = COALESCE(trial_start_at, now()),
-                    trial_end_at = :end_at
-                WHERE tenant_id = CAST(:tid AS uuid)
-            """),
-            {"end_at": new_end, "tid": tenant_id},
-        )
-
     elif body.action == "suspend":
         await db.execute(
-            text("""
-                UPDATE tenants SET subscription_status = 'suspended'
-                WHERE tenant_id = CAST(:tid AS uuid)
-            """),
+            text("UPDATE tenants SET subscription_status = 'suspended' WHERE tenant_id = CAST(:tid AS uuid)"),
             {"tid": tenant_id},
         )
-
-    elif body.action == "reactivate":
+    else:  # reactivate
+        if previous_row["plan"] is None:
+            raise HTTPException(status_code=409, detail="The tenant has no plan to reactivate; assign a plan instead")
         await db.execute(
             text("""
                 UPDATE tenants SET
                     subscription_status = 'active',
-                    subscription_started_at = COALESCE(subscription_started_at, now())
+                    subscription_started_at = COALESCE(subscription_started_at, now()),
+                    subscription_ends_at = :expires
                 WHERE tenant_id = CAST(:tid AS uuid)
             """),
-            {"tid": tenant_id},
+            {"expires": expires, "tid": tenant_id},
         )
 
-    else:
-        raise HTTPException(
-            status_code=422,
-            detail="action must be one of: assign_plan, extend_trial, suspend, reactivate",
+    new_row = (await db.execute(text(_SUBSCRIPTION_FIELDS), {"tid": tenant_id})).mappings().first()
+    new = _state_dict(new_row)
+    try:
+        await log_action(
+            db, tenant_id, current_user.user_id, current_user.email,
+            f"subscription_{body.action}", "tenant", tenant_id,
+            {"reason": reason, "previous": previous, "new": new, "expires_at": expires.isoformat() if expires else None,
+             "actor_role": current_user.role, "plan_code": body.plan_code},
+            strict=True,
         )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=503, detail="The change was not recorded, so it was not applied. Try again.")
 
-    await db.commit()
-    return {"success": True, "action": body.action}
+    # Access may have returned (a new validity date): resume any work paused for this tenant. Idempotent, and never fails the change.
+    from services.paused_work_service import resume_paused_applications
+    from services.extraction_gate import resume_paused_extraction
+    resumed = await resume_paused_applications(db, tenant_id)
+    resumed_extraction = await resume_paused_extraction(db, tenant_id)
+
+    return {"success": True, "action": body.action, "previous": previous, "new": new, "resumed_applications": resumed,
+            "resumed_extraction": resumed_extraction}
 
 
 class UpdateTenantFeaturesRequest(BaseModel):

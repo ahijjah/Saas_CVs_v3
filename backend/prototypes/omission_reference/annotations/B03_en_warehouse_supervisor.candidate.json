@@ -1,0 +1,93 @@
+{
+ "jd_id": "B03_en_warehouse_supervisor",
+ "status": "CLAUDE-GENERATED CANDIDATE - NOT HUMAN-CONFIRMED",
+ "jd_sha256": "0fc3081a294ac8cd9692c0402d108d68c4e8a2836988a21c5a206e642affd793",
+ "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B03_en_warehouse_supervisor.json",
+ "source_file_sha256": "36e09f9e8aed175dce37bd532d29bc83db8f61ef2a80d35aa208af3a34b32da8",
+ "lines": [
+  {
+   "first_line": 1,
+   "text": "Warehouse Shift Supervisor",
+   "proposed_type": "heading",
+   "reason": "title line of the posting"
+  },
+  {
+   "first_line": 3,
+   "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
+   "proposed_type": "uncertain",
+   "reason": "introduction; names the work location (Jebel Ali) which would be a non-scoreable location condition"
+  },
+  {
+   "first_line": 5,
+   "text": "Required:",
+   "proposed_type": "heading",
+   "reason": "section heading 'Required:'"
+  },
+  {
+   "first_line": 6,
+   "text": "- Valid forklift operator licence is mandatory.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Required'"
+  },
+  {
+   "first_line": 7,
+   "text": "- Two years of experience supervising a warehouse team.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Required'"
+  },
+  {
+   "first_line": 8,
+   "text": "- Fluent English, spoken and written.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Required'"
+  },
+  {
+   "first_line": 9,
+   "text": "- Working knowledge of inventory management systems.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Required'"
+  },
+  {
+   "first_line": 11,
+   "text": "Preferred:",
+   "proposed_type": "heading",
+   "reason": "section heading 'Preferred:'"
+  },
+  {
+   "first_line": 12,
+   "text": "- Arabic language skills.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Preferred'"
+  },
+  {
+   "first_line": 13,
+   "text": "- First aid certificate.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Preferred'"
+  },
+  {
+   "first_line": 15,
+   "text": "Duties:",
+   "proposed_type": "heading",
+   "reason": "section heading 'Duties:'"
+  },
+  {
+   "first_line": 16,
+   "text": "- Assign tasks to a team of 12 operators each shift.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Duties'"
+  },
+  {
+   "first_line": 17,
+   "text": "- Check inbound deliveries against purchase orders.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Duties'"
+  },
+  {
+   "first_line": 19,
+   "text": "Terms: rotating night shifts, occasional travel to the Abu Dhabi depot, and candidates must hold a valid UAE residence visa or be willing to relocate. A background check and two professional references will be requested before the start date. We offer a transport allowance.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Duties'"
+  }
+ ]
+}

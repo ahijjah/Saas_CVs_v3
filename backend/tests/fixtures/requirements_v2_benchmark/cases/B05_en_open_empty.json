@@ -1,0 +1,41 @@
+{
+ "id": "B05_en_open_empty",
+ "language": "en",
+ "title": "Community Volunteer Coordinator Assistant",
+ "tags": [
+  "empty",
+  "informational"
+ ],
+ "job_metadata": {
+  "title": "Community Volunteer Coordinator Assistant"
+ },
+ "jd": "Community Volunteer Coordinator Assistant\n\nThis role is open to people from any background. No specific qualifications, certificates or experience are required; we will train you.\n\nAbout the team: we are a small neighbourhood charity.\nWe offer flexible hours, a friendly team and free lunch on Fridays.\n",
+ "expected": {
+  "scoreability": "open_broad",
+  "readiness": "needs_items",
+  "review_codes": [],
+  "category_weights_hint": {},
+  "items": [],
+  "conditions": [
+   {
+    "list": "informational_items",
+    "category": "company_description",
+    "evidence": "About the team: we are a small neighbourhood charity.",
+    "text": "Small neighbourhood charity"
+   },
+   {
+    "list": "informational_items",
+    "category": "benefits",
+    "evidence": "We offer flexible hours, a friendly team and free lunch on Fridays.",
+    "text": "Flexible hours, friendly team, free lunch"
+   }
+  ],
+  "must_not_extract": [
+   "No specific qualifications",
+   "we will train you",
+   "any background"
+  ],
+  "model_warnings_expected": false,
+  "notes": "No requirement may be invented from 'no qualifications are required'."
+ }
+}

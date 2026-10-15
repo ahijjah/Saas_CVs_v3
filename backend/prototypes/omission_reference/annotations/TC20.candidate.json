@@ -1,0 +1,291 @@
+{
+ "jd_id": "TC20",
+ "status": "CLAUDE-GENERATED CANDIDATE - NOT HUMAN-CONFIRMED",
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "source_file": "tests/fixtures/requirements_v2_technical_coordinator_20/evidence.json",
+ "source_file_sha256": "86a9abe7991ac55899296eb37e2133c5a51280c6d0067b106269bd8777b56590",
+ "lines": [
+  {
+   "first_line": 1,
+   "text": "Objective of the Assignment",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 3,
+   "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery.",
+   "proposed_type": "background",
+   "reason": "objective or lead-in paragraph (candidate background)"
+  },
+  {
+   "first_line": 5,
+   "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services.",
+   "proposed_type": "background",
+   "reason": "objective or lead-in paragraph (candidate background)"
+  },
+  {
+   "first_line": 7,
+   "text": " Responsibilities",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 9,
+   "text": "The Coordinator will support the implementation, stabilization, enhancement, and continuous improvement of ABRS services and related digital platforms through the following activities:",
+   "proposed_type": "background",
+   "reason": "objective or lead-in paragraph (candidate background)"
+  },
+  {
+   "first_line": 11,
+   "text": "ABRS Service Implementation, Stabilization, and Enhancement",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 12,
+   "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 13,
+   "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 14,
+   "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 15,
+   "text": "Participate in functional, integration, and user acceptance testing activities.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 16,
+   "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 17,
+   "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 18,
+   "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 19,
+   "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 20,
+   "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 21,
+   "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 22,
+   "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'ABRS Service Implementation, Stabilization, and Enhancement'"
+  },
+  {
+   "first_line": 23,
+   "text": "Knowledge Transfer and Capacity Building",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 24,
+   "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Knowledge Transfer and Capacity Building'"
+  },
+  {
+   "first_line": 25,
+   "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Knowledge Transfer and Capacity Building'"
+  },
+  {
+   "first_line": 26,
+   "text": "Support the preparation of operational guides, procedures, and technical documentation.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Knowledge Transfer and Capacity Building'"
+  },
+  {
+   "first_line": 27,
+   "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Knowledge Transfer and Capacity Building'"
+  },
+  {
+   "first_line": 28,
+   "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Knowledge Transfer and Capacity Building'"
+  },
+  {
+   "first_line": 30,
+   "text": "Reporting and Supervision",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 32,
+   "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Reporting and Supervision'"
+  },
+  {
+   "first_line": 34,
+   "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Reporting and Supervision'"
+  },
+  {
+   "first_line": 37,
+   "text": "متطلبات الوظيفة",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 38,
+   "text": "Qualifications",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 40,
+   "text": "Qualifications and Professional Experience:",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 41,
+   "text": "Bachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Qualifications and Professional Experience'"
+  },
+  {
+   "first_line": 42,
+   "text": "1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Qualifications and Professional Experience'"
+  },
+  {
+   "first_line": 43,
+   "text": "Experience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms is an advantage.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Qualifications and Professional Experience'"
+  },
+  {
+   "first_line": 44,
+   "text": "Familiarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications is an advantage.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Qualifications and Professional Experience'"
+  },
+  {
+   "first_line": 45,
+   "text": "Basic knowledge of web technologies and scripting languages, particularly JavaScript, is considered an advantage.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Qualifications and Professional Experience'"
+  },
+  {
+   "first_line": 46,
+   "text": "Knowledge of the local business and regulatory environment is an advantage.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Qualifications and Professional Experience'"
+  },
+  {
+   "first_line": 47,
+   "text": "Skills and Competencies",
+   "proposed_type": "heading",
+   "reason": "section heading in the posting"
+  },
+  {
+   "first_line": 48,
+   "text": "Good understanding of business applications, digital platforms, and software support processes.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 49,
+   "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 50,
+   "text": "Strong organizational skills with the ability to plan, prioritize, and manage multiple tasks effectively.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 51,
+   "text": "Strong attention to detail and commitment to accuracy and quality.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 52,
+   "text": "Ability to work effectively under pressure and meet deadlines in a dynamic operational environment.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 53,
+   "text": "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 54,
+   "text": "Strong communication, coordination, and teamwork skills.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 55,
+   "text": "Good analytical and problem-solving abilities.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 56,
+   "text": "Good documentation and reporting skills.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 57,
+   "text": "Good working knowledge of Microsoft Office applications.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  },
+  {
+   "first_line": 58,
+   "text": "Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Skills and Competencies'"
+  }
+ ]
+}

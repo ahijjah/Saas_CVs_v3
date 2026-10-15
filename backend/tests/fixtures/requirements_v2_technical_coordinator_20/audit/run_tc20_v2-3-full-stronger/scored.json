@@ -1,0 +1,55 @@
+{
+ "run": {
+  "spent_usd": 0.14685,
+  "calls_attempted": 5,
+  "successful_calls": 5,
+  "stopped": null
+ },
+ "report": {
+  "status": "scored",
+  "successful_calls": 5,
+  "calls_attempted": 5,
+  "errors": [],
+  "groups_reported_separately": true,
+  "official_scores_of_stored_runs_unchanged": true,
+  "summary": {
+   "answers": 5,
+   "valid_json": 5,
+   "official_checks_pass": {
+    "C_RESP": 2,
+    "C_COMP": 5,
+    "C_EXP_OR": 2,
+    "C_FAM_OR": 0,
+    "C_LOCAL": 5,
+    "C_LOCATION": 5,
+    "C_REPORTING": 5,
+    "C_AND": 0
+   },
+   "weights_usable": 5,
+   "weights_total_is_100": 5,
+   "education_alternatives_retained": 5,
+   "schema_compliant": 5,
+   "schema_problem_codes": {}
+  },
+  "by_category": {
+   "omissions": {
+    "C_RESP": "2/5",
+    "C_COMP": "5/5"
+   },
+   "alternatives": {
+    "C_EXP_OR": "2/5",
+    "C_FAM_OR": "0/5"
+   },
+   "categories": {
+    "C_LOCAL": "5/5"
+   },
+   "routing": {
+    "C_LOCATION": "5/5",
+    "C_REPORTING": "5/5"
+   },
+   "and_splitting": {
+    "C_AND": "0/5"
+   }
+  }
+ }
+}

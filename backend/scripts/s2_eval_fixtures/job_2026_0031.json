@@ -1,0 +1,18 @@
+{
+  "_comment": "Real-job RequirementSpec fixture for the OFFLINE S2 evaluation of JOB-2026-0031 (Construction_Project_Manager). Manual fixture (S1 does not exist). criterion_text is the actual pipeline criterion. required_years is used by S4/S5 only; S2 sees the criterion with the threshold masked as [N]. review_terms only drive the harness review flags and are never sent to S2.",
+  "job_code": "JOB-2026-0031",
+  "spec_version": "eval-job-2026-0031-1",
+  "criteria": [
+    {
+      "criterion_id": "JOB-2026-0031.experience.1",
+      "policy": "explicit_role",
+      "required_years": 5,
+      "criterion_text": "Minimum 5 years of experience in a relevant role (Construction Project Manager or Assistant Project Manager)",
+      "targets": ["Construction Project Manager", "Assistant Project Manager"],
+      "setting": "construction",
+      "source_spans": ["Construction Project Manager", "Assistant Project Manager"],
+      "review_terms": ["construction", "project manager", "project management", "site", "contractor", "contracting",
+                       "budget", "safety", "quality", "civil", "building", "infrastructure"]
+    }
+  ]
+}

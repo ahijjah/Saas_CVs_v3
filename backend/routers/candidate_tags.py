@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, RequireWriteRole
 from database import get_db, set_rls_context
 
 app_router = APIRouter(prefix="/applications", tags=["candidates"])
@@ -71,7 +71,7 @@ async def get_application_tags(
     return {"tags": tags}
 
 
-@app_router.post("/{application_id}/tags")
+@app_router.post("/{application_id}/tags", dependencies=[RequireWriteRole])
 async def add_tags_to_application(
     application_id: str,
     body: TagAddRequest,
@@ -134,7 +134,7 @@ async def add_tags_to_application(
     return {"status": "tags added"}
 
 
-@app_router.delete("/{application_id}/tags/{tag_id}")
+@app_router.delete("/{application_id}/tags/{tag_id}", dependencies=[RequireWriteRole])
 async def remove_tag_from_application(
     application_id: str,
     tag_id: str,
@@ -176,7 +176,7 @@ async def remove_tag_from_application(
 # ── Talent Pool Endpoints ──────────────────────────────────────────────────
 
 
-@app_router.post("/{application_id}/talent-pool")
+@app_router.post("/{application_id}/talent-pool", dependencies=[RequireWriteRole])
 async def toggle_talent_pool(
     application_id: str,
     body: TalentPoolRequest,
@@ -269,7 +269,7 @@ async def list_talent_pool(
     }
 
 
-@app_router.post("/{application_id}/reuse-to-job")
+@app_router.post("/{application_id}/reuse-to-job", dependencies=[RequireWriteRole])
 async def reuse_candidate_to_job(
     application_id: str,
     body: ReuseToJobRequest,
@@ -387,7 +387,7 @@ async def list_tenant_tags(
     return {"tags": tags}
 
 
-@tag_router.post("/")
+@tag_router.post("/", dependencies=[RequireWriteRole])
 async def create_tag(
     body: TagCreateRequest,
     current_user: CurrentUserDep,

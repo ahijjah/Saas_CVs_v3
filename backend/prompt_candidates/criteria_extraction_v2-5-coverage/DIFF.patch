@@ -1,0 +1,11 @@
+--- a/criteria_extraction_v2-5.txt
++++ b/criteria_extraction_v2-5-coverage.txt
+@@ -44,7 +44,7 @@
+ 
+ RULES
+ 
+-COVERAGE. Before you write the answer, go through the job description section by section, in the order the sections appear: each heading, each list and each sentence, in both languages. Every requirement, duty and competency line found in a section becomes an item (rules 4 to 8) or a condition (rule 9). A heading groups the lines under it and is never an item itself. A group of duties under a sub-heading (a heading followed by its own list) belongs to the duties of its section: extract every line of every group, and never stop a group because another heading follows. This pass decides what you output; it is not written into the answer.
++COVERAGE. Before you write the answer, go through the job description section by section, in the order the sections appear: each heading, each list and each sentence, in both languages. Every requirement, duty and competency line found in a section becomes an item (rules 4 to 8) or, when rule 9 applies, a condition in one of its three lists (non-scoreable requirements, post-hiring conditions or informational statements). A heading groups the lines under it and is never an item itself. A group of duties under a sub-heading (a heading followed by its own list) belongs to the duties of its section: extract every line of every group, and never stop a group because another heading follows. This pass decides what you output; it is not written into the answer.
+ 
+ 1. Extract only what the job description says. Never invent, infer or add a requirement that is not stated. Never merge two different requirements into one and never drop one (options joined by "or" are one requirement: rule 4). Preferred items are requirements: extract every one of them with the same care as Required items, including when the job has no Required item at all.
+ 

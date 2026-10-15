@@ -1,0 +1,196 @@
+{
+  "_comment": "SYNTHETIC fixture: the job description is invented and `ai_response` is hand-written to look like a model answer. It is not the output of any real model call.",
+  "language": "en",
+  "job_metadata": {
+    "title": "Recruitment Specialist",
+    "location": "Amman"
+  },
+  "jd": "Recruitment Specialist\n\nAbout us: Northwind Staffing is a growing regional agency. We offer private health insurance and 25 days of leave.\n\nResponsibilities:\n- Manage end-to-end hiring for engineering roles.\n- Screen CVs and run structured phone interviews.\n- Maintain candidate records in the applicant tracking system.\n\nRequirements:\n- Five years of recruitment experience.\n- Bachelor's degree in Human Resources or Business Administration.\n- CIPD certification is mandatory.\n- Proficiency in Excel and ATS tools.\n- Fluent English and Arabic.\n- Strong communication and attention to detail.\n\nNice to have:\n- LinkedIn Recruiter\n- Knowledge of the staffing industry\n\nMust have a valid work permit. Successful candidates will undergo a background check.",
+  "ai_response": {
+    "scoreability": {
+      "status": "scoreable",
+      "reason": ""
+    },
+    "categories": {
+      "skills": [
+        {
+          "text": "Excel",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Proficiency in Excel and ATS tools",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "ATS tools",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Proficiency in Excel and ATS tools",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "Fluent English",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Fluent English and Arabic",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "Fluent Arabic",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Fluent English and Arabic",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "LinkedIn Recruiter",
+          "importance": "preferred",
+          "importance_cue": "Nice to have",
+          "source_text": "LinkedIn Recruiter",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "experience": [
+        {
+          "text": "Five years of recruitment experience",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Five years of recruitment experience.",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": {
+            "subject": "recruitment",
+            "min_years": 5
+          }
+        },
+        {
+          "text": "Manage end-to-end hiring for engineering roles",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Manage end-to-end hiring for engineering roles.",
+          "origin": "from_responsibilities",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "Screen CVs and run structured phone interviews",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Screen CVs and run structured phone interviews.",
+          "origin": "from_responsibilities",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "Maintain candidate records in the applicant tracking system",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Maintain candidate records in the applicant tracking system.",
+          "origin": "from_responsibilities",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "education": [
+        {
+          "text": "Bachelor's degree in Human Resources or Business Administration",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Bachelor's degree in Human Resources or Business Administration.",
+          "origin": "stated",
+          "alternatives": [
+            "Human Resources",
+            "Business Administration"
+          ],
+          "experience": null
+        }
+      ],
+      "certifications": [
+        {
+          "text": "CIPD certification",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "CIPD certification is mandatory.",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "soft_skills": [
+        {
+          "text": "Strong communication",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Strong communication and attention to detail.",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        },
+        {
+          "text": "Attention to detail",
+          "importance": "required",
+          "importance_cue": null,
+          "source_text": "Strong communication and attention to detail.",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "domain_knowledge": [
+        {
+          "text": "Knowledge of the staffing industry",
+          "importance": "preferred",
+          "importance_cue": "Nice to have",
+          "source_text": "Knowledge of the staffing industry",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "other_requirements": []
+    },
+    "category_weights": {
+      "skills": 30,
+      "experience": 35,
+      "education": 10,
+      "certifications": 10,
+      "soft_skills": 10,
+      "domain_knowledge": 5,
+      "other_requirements": 0
+    },
+    "non_scoreable_requirements": [
+      {
+        "text": "Valid work permit",
+        "category": "work_authorization",
+        "reason": "Eligibility condition",
+        "source_text": "Must have a valid work permit."
+      }
+    ],
+    "post_hiring_conditions": [
+      {
+        "text": "Background check",
+        "category": "background_check",
+        "reason": "Post-hiring check",
+        "source_text": "Successful candidates will undergo a background check."
+      }
+    ],
+    "informational_items": [
+      {
+        "text": "Private health insurance and 25 days of leave",
+        "category": "benefits",
+        "reason": "Benefits",
+        "source_text": "We offer private health insurance and 25 days of leave."
+      }
+    ],
+    "warnings": []
+  }
+}

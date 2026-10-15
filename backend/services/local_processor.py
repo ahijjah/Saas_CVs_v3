@@ -271,6 +271,7 @@ def run_gatekeeper(
     semantic_threshold: float = 0.40,    # below this → reject without LLM
     skill_threshold: float = 80.0,       # rapidfuzz partial_ratio threshold (0–100)
     min_skill_ratio: float = 0.0,        # min % of required skills that must match (0–100); 0 = disabled
+    requirements_schema_version=None,    # job_criteria marker: a requirements-v2 job is refused (legacy-only component)
 ) -> GatekeeperResult:
     """
     Run the full local pre-filtering pipeline.
@@ -284,6 +285,9 @@ def run_gatekeeper(
     All three parameters are runtime-configurable via system_config (Super Admin).
     Cost impact: ~40-60% of CVs never reach the LLM in typical hiring funnels.
     """
+    from services.requirements_guard import assert_legacy_component
+    assert_legacy_component(component="run_gatekeeper", marker=requirements_schema_version)
+
     cleaned_cv = clean_text(cv_text)
     cleaned_jd = clean_text(job_description)
 

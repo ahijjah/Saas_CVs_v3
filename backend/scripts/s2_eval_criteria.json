@@ -1,0 +1,126 @@
+{
+  "_comment": "Manually defined RequirementSpec fixtures for the OFFLINE S2 semantic evaluation only (S1 does not exist). criterion_id/policy/required_years/targets/setting/criterion_text/source_spans are what S2 sees (threshold masked). review_terms are NEVER sent to S2: they only drive the harness's review flags. Every source_span must be verbatim in criterion_text.",
+  "spec_version": "eval-1",
+  "criteria": [
+    {
+      "criterion_id": "C01_dba",
+      "policy": "explicit_role",
+      "required_years": 3,
+      "criterion_text": "Minimum 3 years of experience as a Database Administrator",
+      "targets": ["Database Administrator"],
+      "setting": null,
+      "source_spans": ["Database Administrator"],
+      "review_terms": ["database administrator", "dba", "database", "oracle", "sql server", "postgresql", "mysql", "backup"]
+    },
+    {
+      "criterion_id": "C02_project_manager",
+      "policy": "explicit_role",
+      "required_years": 5,
+      "criterion_text": "At least 5 years of experience as a Project Manager",
+      "targets": ["Project Manager"],
+      "setting": null,
+      "source_spans": ["Project Manager"],
+      "review_terms": ["project manager", "project management", "programme manager", "program manager", "project"]
+    },
+    {
+      "criterion_id": "C03_accountant",
+      "policy": "explicit_role",
+      "required_years": 2,
+      "criterion_text": "2+ years of experience as an Accountant",
+      "targets": ["Accountant"],
+      "setting": null,
+      "source_spans": ["Accountant"],
+      "review_terms": ["accountant", "accounting", "accounts", "bookkeeping", "ledger", "financial statements", "reconciliation"]
+    },
+    {
+      "criterion_id": "C04_software_engineer",
+      "policy": "explicit_role",
+      "required_years": null,
+      "criterion_text": "Proven experience as a Software Developer or Software Engineer",
+      "targets": ["Software Developer", "Software Engineer"],
+      "setting": null,
+      "source_spans": ["Software Developer", "Software Engineer"],
+      "review_terms": ["software developer", "software engineer", "developer", "programmer", "software development", "backend", "frontend", "full stack"]
+    },
+    {
+      "criterion_id": "C05_recruitment",
+      "policy": "functional",
+      "required_years": 3,
+      "criterion_text": "At least 3 years of experience in recruitment and talent acquisition",
+      "targets": ["recruitment", "talent acquisition"],
+      "setting": null,
+      "source_spans": ["recruitment", "talent acquisition"],
+      "review_terms": ["recruitment", "recruiter", "recruiting", "talent acquisition", "hiring", "sourcing", "interview"]
+    },
+    {
+      "criterion_id": "C06_b2b_sales",
+      "policy": "functional",
+      "required_years": 4,
+      "criterion_text": "Minimum 4 years of experience in B2B sales",
+      "targets": ["B2B sales"],
+      "setting": null,
+      "source_spans": ["B2B sales"],
+      "review_terms": ["b2b", "sales", "business development", "account manager", "key accounts", "corporate clients"]
+    },
+    {
+      "criterion_id": "C07_call_center_cs",
+      "policy": "functional",
+      "required_years": 2,
+      "criterion_text": "2 years of experience in customer service in a call center environment",
+      "targets": ["customer service"],
+      "setting": "call center",
+      "source_spans": ["customer service", "call center"],
+      "review_terms": ["customer service", "call center", "call centre", "contact center", "customer support", "inbound calls", "helpdesk"]
+    },
+    {
+      "criterion_id": "C08_team_management",
+      "policy": "functional",
+      "required_years": null,
+      "criterion_text": "Experience managing and supervising a team",
+      "targets": ["managing and supervising a team"],
+      "setting": null,
+      "source_spans": ["managing and supervising a team"],
+      "review_terms": ["team", "supervis", "managed", "manager", "head of", "team leader", "led a team", "staff"]
+    },
+    {
+      "criterion_id": "C09_logistics",
+      "policy": "functional",
+      "required_years": 5,
+      "criterion_text": "5 years of experience in logistics and supply chain operations",
+      "targets": ["logistics", "supply chain operations"],
+      "setting": null,
+      "source_spans": ["logistics", "supply chain operations"],
+      "review_terms": ["logistics", "supply chain", "warehouse", "procurement", "inventory", "shipment", "transport", "fleet"]
+    },
+    {
+      "criterion_id": "C10_banking_sector",
+      "policy": "sector",
+      "required_years": 2,
+      "criterion_text": "At least 2 years of experience in the banking sector",
+      "targets": ["banking sector"],
+      "setting": null,
+      "source_spans": ["banking sector"],
+      "review_terms": ["bank", "banking", "microfinance", "financial institution", "credit", "loan"]
+    },
+    {
+      "criterion_id": "C11_healthcare_sector",
+      "policy": "sector",
+      "required_years": null,
+      "criterion_text": "Experience in the healthcare sector (hospital or clinic)",
+      "targets": ["healthcare sector"],
+      "setting": null,
+      "source_spans": ["healthcare sector", "hospital or clinic"],
+      "review_terms": ["health", "healthcare", "hospital", "clinic", "medical", "nurse", "patient", "pharmacy"]
+    },
+    {
+      "criterion_id": "C12_ngo_sector",
+      "policy": "sector",
+      "required_years": 3,
+      "criterion_text": "3 years of experience in the NGO / humanitarian sector",
+      "targets": ["NGO / humanitarian sector"],
+      "setting": null,
+      "source_spans": ["NGO / humanitarian sector"],
+      "review_terms": ["ngo", "humanitarian", "unicef", "undp", "unhcr", "wfp", "who", "red cross", "red crescent", "nrc", "irc", "save the children", "oxfam", "relief", "united nations", "un "]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+Data Analyst (Reporting)
+
+Requirements
+- 3-5 years of experience in data analysis.
+- At least 6 months of hands-on experience with Tableau.
+- Proficiency in Python or R.
+- SQL and Power BI.
+- Ability to explain findings to non-technical colleagues.
+- Understanding of retail sales metrics is an advantage.
+
+What you will do
+- Build weekly sales dashboards for regional managers.
+- Write SQL queries to validate data quality.
+- Present monthly findings to the commercial team.
+
+Also important: clear communication of findings to non-technical colleagues is expected from everyone on the team.

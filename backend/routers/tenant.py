@@ -15,7 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
 from auth.password import hash_password
+from config import get_settings
 from database import get_db, set_rls_context
+from services.entitlement_service import load_entitlement
+from services.plan_request_service import PlanRequestError, request_plan
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -443,12 +446,14 @@ async def get_tenant_usage(
     cv_pct   = pct(usage["processed_cvs_this_month"], limits["max_processed_cvs_per_month"])
     camp_pct = pct(usage["active_campaigns"],         limits["max_campaigns"])
 
+    access = await load_entitlement(db, current_user.tenant_id)
     return {
         "plan_code":    tenant["plan"],
         "pending_plan": tenant["pending_plan"],
         "plan_name":    plan["plan_name"] if plan else tenant["plan"],
         "tenant_type":  tenant["tenant_type"] or "organization",
         "subscription_status": tenant["subscription_status"] or "trial",
+        "access": access.as_dict(),
         "trial_end_at": tenant["trial_end_at"].isoformat() if tenant["trial_end_at"] else None,
         "subscription_started_at": (
             tenant["subscription_started_at"].isoformat()
@@ -586,40 +591,16 @@ async def select_plan(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    """Select a plan. The plan is requested, not activated: activation is provisioned by the platform (see admin subscription routes)."""
     _require_tenant_admin(current_user)
     await set_rls_context(db, current_user.tenant_id, current_user.role)
-
-    tenant_row = await db.execute(
-        text("SELECT subscription_status FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
-        {"tid": current_user.tenant_id},
-    )
-    tenant = tenant_row.mappings().first()
-    if not tenant:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found")
-
-    if body.plan == "enterprise":
-        new_status = "pending_sales_contact"
-        message = "Your enterprise enquiry has been received. Our sales team will contact you shortly."
-    else:
-        new_status = "pending_payment"
-        message = "Plan selected. Complete payment to activate your subscription."
-
-    # Store the chosen plan as pending_plan only — plan and limits are set on payment success.
-    await db.execute(
-        text("""
-            UPDATE tenants
-            SET pending_plan        = :pending_plan,
-                subscription_status = :sub_status
-            WHERE tenant_id = CAST(:tid AS uuid)
-        """),
-        {
-            "pending_plan": body.plan,
-            "sub_status":   new_status,
-            "tid":          current_user.tenant_id,
-        },
-    )
-    await db.commit()
-    return {"success": True, "subscription_status": new_status, "message": message}
+    try:
+        return await request_plan(
+            db, current_user.tenant_id, body.plan,
+            user_id=current_user.user_id, user_email=current_user.email,
+        )
+    except PlanRequestError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
 
 
 class SimulatePaymentRequest(BaseModel):
@@ -649,6 +630,20 @@ class SimulatePaymentRequest(BaseModel):
         return v
 
 
+SIMULATED_PAYMENT_ENVIRONMENTS = frozenset({"development", "test"})
+
+
+def _require_simulated_payment_allowed() -> None:
+    """Refuse simulated payment unless the environment is development or test AND the operator opted in explicitly. Checked before any database
+    statement, so a refusal changes nothing. Production never reaches the simulated activation."""
+    cfg = get_settings()
+    if cfg.environment not in SIMULATED_PAYMENT_ENVIRONMENTS or not cfg.allow_simulated_payment:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Simulated payment is disabled in this environment. Subscription activation requires the approved billing path.",
+        )
+
+
 @router.post("/subscription/simulate-payment")
 async def simulate_payment(
     body: SimulatePaymentRequest,
@@ -656,6 +651,7 @@ async def simulate_payment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     _require_tenant_admin(current_user)
+    _require_simulated_payment_allowed()
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     tenant_row = await db.execute(

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, RequireSuperAdmin
 from database import get_db, set_rls_context
+from services.plan_request_service import PlanRequestError, request_plan
 
 router = APIRouter(tags=["subscription-plans"])
 
@@ -377,34 +378,19 @@ async def subscribe_to_plan(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
-    """Allow a tenant admin to select / change their subscription plan."""
+    """Select a plan. A tenant admin may REQUEST a plan; it is activated only by platform provisioning (payment integration is not built).
+    This route never sets the subscription to active, and it cannot start the trial (that is activate-trial, once per email domain)."""
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only tenant admins can change subscription plans")
 
-    plan_code: str = body.plan_code
-
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
-
-    plan_row = await db.execute(
-        text("SELECT plan_id, plan_code FROM subscription_plans WHERE plan_code = :code AND status = 'active'"),
-        {"code": plan_code},
-    )
-    plan = plan_row.mappings().first()
-    if not plan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found or inactive")
-
-    await db.execute(
-        text("""
-            UPDATE tenants
-            SET plan = :plan_code,
-                subscription_status = 'active',
-                subscription_started_at = NOW()
-            WHERE tenant_id = CAST(:tid AS uuid)
-        """),
-        {"plan_code": plan_code, "tid": current_user.tenant_id},
-    )
-    await db.commit()
-    return {"success": True, "plan_code": plan_code}
+    await set_rls_context(db, current_user.tenant_id, current_user.role)
+    try:
+        return await request_plan(
+            db, current_user.tenant_id, body.plan_code,
+            user_id=current_user.user_id, user_email=current_user.email,
+        )
+    except PlanRequestError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
 
 
 def _plan_params(body: PlanRequest, user_id: str) -> dict[str, Any]:

@@ -1,0 +1,20 @@
+{
+ "description": "Baseline run of criteria_extraction_v2-1 (24 real calls, supplied by the operator from the VPS run). Synthetic job descriptions only; no secrets.",
+ "prompt_version": "criteria_extraction_v2-1",
+ "prompt_sha256": "f2017d2879554935baa5d0d4f51d53fa0600e18858cc875d4a791c5ac0678b04",
+ "model": "gpt-4o-mini-2024-07-18",
+ "frozen_benchmark_commit": "059c56b",
+ "executor_commit": "4dcb2f8",
+ "settings": {
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "response_format": {
+   "type": "json_object"
+  }
+ },
+ "files": {
+  "calls.jsonl": "157b91eff3846a01c3eb818522ea24d947e7417ec7fee83db7463d8ca5b0e4cd",
+  "results.json": "4dd691916a43bd7c02538e8b147065e5fe075ad4a75b092f552576d481193982"
+ },
+ "note": "Per-call records predate the prompt metadata fields; version and hash are recorded here instead. Read-only reference data: do not edit."
+}

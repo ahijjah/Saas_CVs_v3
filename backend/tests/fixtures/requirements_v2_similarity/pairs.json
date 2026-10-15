@@ -1,0 +1,576 @@
+{
+ "note": "SYNTHETIC labelled pairs used to choose the lexical_v1 thresholds. expected null = no warning.",
+ "pairs": [
+  {
+   "id": "en-exact-cross-category",
+   "a": {
+    "text": "SQL",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "SQL",
+    "category": "domain_knowledge",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": "same word in two categories"
+  },
+  {
+   "id": "en-case-punct",
+   "a": {
+    "text": "Python programming.",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "python programming",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-reordered",
+   "a": {
+    "text": "Project management experience",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Experience in project management",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-apostrophe-plural",
+   "a": {
+    "text": "Bachelor's degree in computer science",
+    "category": "education",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Bachelors degrees in Computer Science",
+    "category": "education",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-function-words",
+   "a": {
+    "text": "Experience with Python programming",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Experience in Python programming",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-extra-qualifier",
+   "a": {
+    "text": "Proficiency in Python and Django development",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Proficiency in Python development",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "similar_requirement",
+   "differences": [],
+   "note": "one extra phrase"
+  },
+  {
+   "id": "en-different-years",
+   "a": {
+    "text": "4 years of experience in Python development",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "7 years of experience in Python development",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "similar_requirement",
+   "differences": [
+    "numbers"
+   ],
+   "note": "same wording, different duration"
+  },
+  {
+   "id": "en-different-years-structured",
+   "a": {
+    "text": "Maintenance Planner",
+    "category": "experience",
+    "alternatives": null,
+    "experience": {
+     "subject": "Maintenance Planner",
+     "min_years": 4
+    }
+   },
+   "b": {
+    "text": "Maintenance Planner",
+    "category": "experience",
+    "alternatives": null,
+    "experience": {
+     "subject": "Maintenance Planner",
+     "min_years": 7
+    }
+   },
+   "expected": "similar_requirement",
+   "differences": [
+    "numbers"
+   ],
+   "note": "wording identical, structured years differ"
+  },
+  {
+   "id": "en-alternatives-reordered",
+   "a": {
+    "text": "PostgreSQL or SQL",
+    "category": "skills",
+    "alternatives": [
+     "PostgreSQL",
+     "SQL"
+    ],
+    "experience": null
+   },
+   "b": {
+    "text": "SQL or PostgreSQL",
+    "category": "skills",
+    "alternatives": [
+     "SQL",
+     "PostgreSQL"
+    ],
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-alternatives-differ",
+   "a": {
+    "text": "SQL or PostgreSQL",
+    "category": "skills",
+    "alternatives": [
+     "SQL",
+     "PostgreSQL"
+    ],
+    "experience": null
+   },
+   "b": {
+    "text": "SQL or MySQL",
+    "category": "skills",
+    "alternatives": [
+     "SQL",
+     "MySQL"
+    ],
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": "different alternative sets are not reported"
+  },
+  {
+   "id": "en-one-has-alternatives",
+   "a": {
+    "text": "Python or Java",
+    "category": "skills",
+    "alternatives": [
+     "Python",
+     "Java"
+    ],
+    "experience": null
+   },
+   "b": {
+    "text": "Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-or-vs-and",
+   "a": {
+    "text": "Experience with SQL and PostgreSQL databases",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Experience with SQL or PostgreSQL databases",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "similar_requirement",
+   "differences": [
+    "connective"
+   ],
+   "note": ""
+  },
+  {
+   "id": "en-negation",
+   "a": {
+    "text": "Experience with cloud platforms",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "No experience with cloud platforms",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": "opposite polarity is suppressed"
+  },
+  {
+   "id": "en-shared-keyword-sql",
+   "a": {
+    "text": "SQL Server administration certification",
+    "category": "certifications",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Experience writing SQL queries",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-shared-keyword-experience",
+   "a": {
+    "text": "Experience with Java",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Experience with Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-single-token-vs-phrase",
+   "a": {
+    "text": "Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Python programming",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-shared-long-prefix",
+   "a": {
+    "text": "Experience designing REST APIs with Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Experience testing REST APIs with Java",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "en-different-subject",
+   "a": {
+    "text": "5 years of experience as a Nurse",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "5 years of experience as a Teacher",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "ar-exact-alef-variants",
+   "a": {
+    "text": "خبرة في إدارة المشاريع",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "خبرة في ادارة المشاريع",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "ar-diacritics-tatweel",
+   "a": {
+    "text": "الـتواصل الفعّال",
+    "category": "soft_skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "التواصل الفعال",
+    "category": "soft_skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "ar-cross-category",
+   "a": {
+    "text": "العمل ضمن فريق",
+    "category": "soft_skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "العمل ضمن فريق",
+    "category": "other_requirements",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "ar-different-years",
+   "a": {
+    "text": "خبرة 4 سنوات في تطوير البرمجيات",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "خبرة 7 سنوات في تطوير البرمجيات",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "similar_requirement",
+   "differences": [
+    "numbers"
+   ],
+   "note": ""
+  },
+  {
+   "id": "ar-indic-digits-same-years",
+   "a": {
+    "text": "خبرة ٤ سنوات في تطوير البرمجيات",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "خبرة 4 سنوات في تطوير البرمجيات",
+    "category": "experience",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "possible_duplicate",
+   "differences": [],
+   "note": "Arabic-Indic digits normalised"
+  },
+  {
+   "id": "ar-shared-keyword",
+   "a": {
+    "text": "خبرة في المحاسبة",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "خبرة في الموارد البشرية",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "ar-negation",
+   "a": {
+    "text": "خبرة في الإدارة",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "بدون خبرة في الإدارة",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": ""
+  },
+  {
+   "id": "ar-or-vs-and",
+   "a": {
+    "text": "خبرة في Java و Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "خبرة في Java أو Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": "similar_requirement",
+   "differences": [
+    "connective"
+   ],
+   "note": ""
+  },
+  {
+   "id": "cross-language",
+   "a": {
+    "text": "خبرة في بايثون",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Python experience",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": "never compared across languages (documented limitation)"
+  },
+  {
+   "id": "cross-language-translation",
+   "a": {
+    "text": "إدارة المشاريع",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Project management",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": "a translation is NOT detected (documented limitation)"
+  },
+  {
+   "id": "en-synonyms",
+   "a": {
+    "text": "Software developer",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "Software programmer",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": "synonyms are not recognised (documented limitation)"
+  },
+  {
+   "id": "en-number-words",
+   "a": {
+    "text": "Five years of Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "b": {
+    "text": "5 years of Python",
+    "category": "skills",
+    "alternatives": null,
+    "experience": null
+   },
+   "expected": null,
+   "differences": [],
+   "note": "number words are not read as numbers (documented limitation)"
+  }
+ ]
+}

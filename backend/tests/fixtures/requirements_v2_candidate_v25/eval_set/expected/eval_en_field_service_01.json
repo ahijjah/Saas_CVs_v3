@@ -1,0 +1,183 @@
+{
+ "eval_id": "eval_en_field_service_01",
+ "language": "en",
+ "title": "Field Service Technician",
+ "jd_file": "jds/eval_en_field_service_01.txt",
+ "scoreability": "scoreable",
+ "items": [
+  {
+   "key": "Inspect pumps",
+   "source": "Inspect pumps, valves and control panels on a fixed schedule.",
+   "category": "experience",
+   "importance": "required",
+   "origin": "from_responsibilities",
+   "alternatives": null,
+   "group": null
+  },
+  {
+   "key": "Repair faults",
+   "source": "Repair faults reported by the control room.",
+   "category": "experience",
+   "importance": "required",
+   "origin": "from_responsibilities",
+   "alternatives": null,
+   "group": null
+  },
+  {
+   "key": "Record every site visit",
+   "source": "Record every site visit in the maintenance log.",
+   "category": "experience",
+   "importance": "required",
+   "origin": "from_responsibilities",
+   "alternatives": null,
+   "group": null
+  },
+  {
+   "key": "Diploma",
+   "source": "Diploma in electrical engineering, mechanical engineering, or a related technical field.",
+   "category": "education",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": [
+    "electrical engineering",
+    "mechanical engineering",
+    "a related technical field"
+   ],
+   "group": null
+  },
+  {
+   "key": "Three years",
+   "source": "Three years of experience maintaining industrial pumping equipment.",
+   "category": "experience",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": null,
+   "group": null
+  },
+  {
+   "key": "schematics",
+   "source": "Ability to read electrical schematics.",
+   "category": "skills",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": null,
+   "group": null
+  },
+  {
+   "key": "Certified welder",
+   "source": "Certified welder or boilermaker certificate.",
+   "category": "certifications",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": [
+    "Certified welder",
+    "boilermaker certificate"
+   ],
+   "group": null
+  },
+  {
+   "key": "Communication",
+   "source": "Communication and teamwork skills.",
+   "category": "soft_skills",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": null,
+   "group": "AND"
+  },
+  {
+   "key": "Teamwork",
+   "source": "Communication and teamwork skills.",
+   "category": "soft_skills",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": null,
+   "group": "AND"
+  },
+  {
+   "key": "SCADA",
+   "source": "Familiarity with SCADA systems or PLC programming.",
+   "category": "skills",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": [
+    "SCADA systems",
+    "PLC programming"
+   ],
+   "group": null
+  },
+  {
+   "key": "water regulations",
+   "source": "Basic knowledge of local water regulations.",
+   "category": "domain_knowledge",
+   "importance": "required",
+   "origin": "stated",
+   "alternatives": null,
+   "group": null
+  },
+  {
+   "key": "remote monitoring",
+   "source": "Experience with remote monitoring tools.",
+   "category": "skills",
+   "importance": "preferred",
+   "origin": "stated",
+   "alternatives": null,
+   "group": null,
+   "importance_cue": "Preferred"
+  },
+  {
+   "key": "Arabic language",
+   "source": "Arabic language skills are an advantage.",
+   "category": "skills",
+   "importance": "preferred",
+   "origin": "stated",
+   "alternatives": null,
+   "group": null,
+   "importance_cue": "are an advantage"
+  }
+ ],
+ "conditions": [
+  {
+   "key": "fourteen pumping stations",
+   "source": "The utility keeps fourteen pumping stations running around the clock.",
+   "list": "informational_items",
+   "category": "company_description"
+  },
+  {
+   "key": "Northern depot",
+   "source": "Based at the Northern depot.",
+   "list": "non_scoreable_requirements",
+   "category": "location"
+  },
+  {
+   "key": "On-call duty",
+   "source": "On-call duty one week in four.",
+   "list": "non_scoreable_requirements",
+   "category": "schedule"
+  },
+  {
+   "key": "1,800",
+   "source": "Salary: 1,800 per month.",
+   "list": "non_scoreable_requirements",
+   "category": "salary"
+  },
+  {
+   "key": "Operations Manager",
+   "source": "Reports to the Operations Manager.",
+   "list": "informational_items",
+   "category": "reporting_line"
+  },
+  {
+   "key": "medical examination",
+   "source": "Successful candidates will undergo a medical examination before starting.",
+   "list": "post_hiring_conditions",
+   "category": "medical_check"
+  },
+  {
+   "key": "pension scheme",
+   "source": "Our staff benefit from a pension scheme.",
+   "list": "informational_items",
+   "category": "benefits"
+  }
+ ],
+ "jd_sha256": "1f13d8f87ef51ebd222948febafbdbf05ea497ceec03b558587b0105579603dc"
+}

@@ -1,0 +1,12 @@
+{
+ "prompt_code": "criteria_extraction_v2",
+ "version": "criteria_extraction_v2-2",
+ "file": "criteria_extraction_v2-2.txt",
+ "sha256": "40ea678b65a5782da3f74f1c0b52f4dbeb10cc369f78efd25f1e38827ff48dda",
+ "base_version": "criteria_extraction_v2-1",
+ "base_sha256": "f2017d2879554935baa5d0d4f51d53fa0600e18858cc875d4a791c5ac0678b04",
+ "frozen_baseline_commit": "059c56b",
+ "status": "offline candidate: not registered, not activated, not run against any model",
+ "evidence_level": "prompt-contract consistency only (text and examples checked offline against the real parser); no evidence of real-model performance",
+ "created": "2026-10-09"
+}

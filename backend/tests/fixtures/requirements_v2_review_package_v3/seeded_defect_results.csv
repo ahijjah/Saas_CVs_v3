@@ -1,0 +1,21 @@
+seed_set,language,defect,seed,expected_flag,flags_observed,detected,known_gap
+reference (development),en,wrong_list,location condition 'Based at the Northern depot.' moved to informational_items,wrong_list,ambiguous_heading_line;wrong_list,True,no
+reference (development),en,lost_or,alternatives set to null in category education,possible_lost_or,ambiguous_heading_line;possible_lost_or,True,no
+reference (development),en,shorter_verbatim_quote,"source_text shortened to its first two words: 'Inspect pumps,'",partial_quote,ambiguous_heading_line;partial_quote,True,no
+reference (development),en,non_verbatim_quote,' (edited)' appended to a source_text,source_not_verbatim,ambiguous_heading_line;source_not_verbatim;uncovered_statement,True,no
+reference (development),en,ambiguous_category_other,location category changed to 'other',unclassified_other,ambiguous_heading_line;unclassified_other,True,no
+reference (development),en,unknown_category,location category changed to 'perks',unknown_category,ambiguous_heading_line;unknown_category,True,no
+reference (development),en,omitted_section,all items whose source lies in the requirements section removed,uncovered_statement,ambiguous_heading_line;uncovered_statement,True,no
+reference (development),en,bundled_and,the two communication and teamwork items merged into one,possible_bundled_and,ambiguous_heading_line;possible_bundled_and,True,no
+reference (development),en,or_split,the education item with alternatives duplicated as a second item,possible_or_split,ambiguous_heading_line;possible_or_split,True,no
+reference (development),ar,wrong_list,location condition 'الموقع: مقر المشروع في عمّان.' moved to informational_items,wrong_list,ambiguous_heading_line;wrong_list,True,no
+reference (development),ar,lost_or,alternatives set to null in category education,possible_lost_or,ambiguous_heading_line;possible_lost_or,True,no
+reference (development),ar,shorter_verbatim_quote,source_text shortened to its first two words: 'فحص أجهزة',partial_quote,ambiguous_heading_line;partial_quote,True,no
+reference (development),ar,non_verbatim_quote,' (edited)' appended to a source_text,source_not_verbatim,ambiguous_heading_line;source_not_verbatim;uncovered_statement,True,no
+reference (development),ar,ambiguous_category_other,location category changed to 'other',unclassified_other,ambiguous_heading_line;unclassified_other,True,no
+reference (development),ar,unknown_category,location category changed to 'perks',unknown_category,ambiguous_heading_line;unknown_category,True,no
+reference (development),ar,omitted_section,all items whose source lies in the requirements section removed,uncovered_statement,ambiguous_heading_line;uncovered_statement,True,no
+reference (development),en,unpunctuated_requirement_quoted,bare line quoted by the answer,source_is_heading,ambiguous_heading_line;source_is_heading,True,no
+reference (development),en,unpunctuated_requirement_omitted,"bare line not quoted by the answer: surfaced as an ambiguous heading line, not as an omission",ambiguous_heading_line,ambiguous_heading_line,True,no
+reference (development),ar,bundled_and_attached_waw,two items for 'مهارات التواصل والعمل ضمن فريق' merged; the second removed,possible_attached_and,ambiguous_heading_line;possible_attached_and,True,no
+reference (development),ar,attached_waw_before_verb_limitation,an attached و before a verb (وتحتاج),possible_attached_and,,False,yes

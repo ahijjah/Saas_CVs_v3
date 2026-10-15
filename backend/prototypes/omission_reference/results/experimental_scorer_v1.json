@@ -1,0 +1,1962 @@
+{
+ "version": "omission-reference-experimental-scorer-v1",
+ "frozen_scorer_unchanged": true,
+ "answers": [
+  {
+   "group": "TC20 repeat | arm v2-3 | call 1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-5 | call 1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-3 | call 2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-5 | call 2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-3 | call 3",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-5 | call 3",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-3 | call 4",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-5 | call 4",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-3 | call 5",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 repeat | arm v2-5 | call 5",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-3 | call 1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 32,
+     "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-3 | call 2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-3 | call 3",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-3 | call 4",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 32,
+     "text": "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-3 | call 5",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-4 | call 1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-4 | call 2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-4 | call 3",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 34,
+     "text": "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-4 | call 4",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "TC20 audit | arm v2-4 | call 5",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "TC20",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery."
+    },
+    {
+     "first_line": 5,
+     "text": "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services."
+    },
+    {
+     "first_line": 12,
+     "text": "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 13,
+     "text": "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues."
+    },
+    {
+     "first_line": 14,
+     "text": "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities."
+    },
+    {
+     "first_line": 15,
+     "text": "Participate in functional, integration, and user acceptance testing activities."
+    },
+    {
+     "first_line": 16,
+     "text": "Support the monitoring and follow-up of system performance, service availability, and operational issues."
+    },
+    {
+     "first_line": 17,
+     "text": "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations."
+    },
+    {
+     "first_line": 18,
+     "text": "Assist in the implementation, testing, and operational support of system integrations and data exchange processes."
+    },
+    {
+     "first_line": 19,
+     "text": "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements."
+    },
+    {
+     "first_line": 20,
+     "text": "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements."
+    },
+    {
+     "first_line": 21,
+     "text": "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services."
+    },
+    {
+     "first_line": 22,
+     "text": "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement."
+    },
+    {
+     "first_line": 24,
+     "text": "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement."
+    },
+    {
+     "first_line": 25,
+     "text": "Provide on-the-job coaching and technical guidance to MoNE ICT staff."
+    },
+    {
+     "first_line": 26,
+     "text": "Support the preparation of operational guides, procedures, and technical documentation."
+    },
+    {
+     "first_line": 27,
+     "text": "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations."
+    },
+    {
+     "first_line": 28,
+     "text": "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    },
+    {
+     "first_line": 48,
+     "text": "Good understanding of business applications, digital platforms, and software support processes."
+    },
+    {
+     "first_line": 49,
+     "text": "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B02_en_data_analyst",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [
+    {
+     "rq_id": "RQ-027",
+     "expected": "together",
+     "structure": "split",
+     "alternatives_recorded": [
+      {
+       "text": "Python",
+       "alternatives": [
+        "Python",
+        "R"
+       ]
+      },
+      {
+       "text": "R",
+       "alternatives": [
+        "Python",
+        "R"
+       ]
+      }
+     ]
+    }
+   ],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B03_en_warehouse_supervisor",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-029/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "partial"
+    },
+    {
+     "child_id": "RQ-029/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C03",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C04",
+     "expected_list": "post_hiring_conditions",
+     "status": "misrouted"
+    },
+    {
+     "child_id": "RQ-029/C05",
+     "expected_list": "informational_items",
+     "status": "met"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B07_ar_accountant",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-030/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "partial"
+    },
+    {
+     "child_id": "RQ-030/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-030/C03",
+     "expected_list": "informational_items",
+     "status": "misrouted"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B08_ar_hr_specialist",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B12_ar_injection",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [],
+   "independent_item_structure": [
+    {
+     "rq_id": "RQ-032",
+     "structure": "incorrectly merged",
+     "source_coverage": "partial",
+     "item_sources": {
+      "CSS": [
+       "required_unit"
+      ],
+      "HTML": [
+       "required_unit"
+      ]
+     }
+    }
+   ],
+   "child_routing": [],
+   "importance": {
+    "schema_findings": [],
+    "cue_mapping": {
+     "اختيارية": "preferred"
+    },
+    "items": {
+     "CSS": [
+      "preferred"
+     ],
+     "HTML": [
+      "preferred"
+     ]
+    },
+    "within_accepted": true
+   },
+   "conflict_evidence": [
+    {
+     "rq_id": "RQ-021",
+     "conflict_unit": "945b2154c3f2:L12:182-245",
+     "statement": "ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة.",
+     "against_unit": "945b2154c3f2:L6:101-122",
+     "role": "review evidence, not a finding"
+    }
+   ]
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B02_en_data_analyst",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [
+    {
+     "rq_id": "RQ-027",
+     "expected": "together",
+     "structure": "split",
+     "alternatives_recorded": [
+      {
+       "text": "Python",
+       "alternatives": [
+        "Python",
+        "R"
+       ]
+      },
+      {
+       "text": "R",
+       "alternatives": [
+        "Python",
+        "R"
+       ]
+      }
+     ]
+    }
+   ],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B03_en_warehouse_supervisor",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-029/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C03",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C04",
+     "expected_list": "post_hiring_conditions",
+     "status": "misrouted"
+    },
+    {
+     "child_id": "RQ-029/C05",
+     "expected_list": "informational_items",
+     "status": "misrouted"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B07_ar_accountant",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 18,
+     "text": "- خبرة في نظام SAP."
+    },
+    {
+     "first_line": 19,
+     "text": "- شهادة ماجستير."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-030/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "partial"
+    },
+    {
+     "child_id": "RQ-030/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-030/C03",
+     "expected_list": "informational_items",
+     "status": "misrouted"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B08_ar_hr_specialist",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir v2-2_run1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B12_ar_injection",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [],
+   "independent_item_structure": [
+    {
+     "rq_id": "RQ-032",
+     "structure": "incorrectly merged",
+     "source_coverage": "partial",
+     "item_sources": {
+      "CSS": [
+       "required_unit"
+      ],
+      "HTML": [
+       "required_unit"
+      ]
+     }
+    }
+   ],
+   "child_routing": [],
+   "importance": {
+    "schema_findings": [],
+    "cue_mapping": {
+     "اختيارية": "preferred"
+    },
+    "items": {
+     "CSS": [
+      "preferred"
+     ],
+     "HTML": [
+      "preferred"
+     ]
+    },
+    "within_accepted": true
+   },
+   "conflict_evidence": [
+    {
+     "rq_id": "RQ-021",
+     "conflict_unit": "945b2154c3f2:L12:182-245",
+     "statement": "ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة.",
+     "against_unit": "945b2154c3f2:L6:101-122",
+     "role": "review evidence, not a finding"
+    }
+   ]
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B02_en_data_analyst",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [
+    {
+     "rq_id": "RQ-027",
+     "expected": "together",
+     "structure": "incomplete",
+     "alternatives_recorded": [
+      {
+       "text": "Python",
+       "alternatives": [
+        "R"
+       ]
+      }
+     ]
+    }
+   ],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B03_en_warehouse_supervisor",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre."
+    },
+    {
+     "first_line": 12,
+     "text": "- Arabic language skills."
+    },
+    {
+     "first_line": 13,
+     "text": "- First aid certificate."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-029/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "missing"
+    },
+    {
+     "child_id": "RQ-029/C03",
+     "expected_list": "non_scoreable_requirements",
+     "status": "misrouted"
+    },
+    {
+     "child_id": "RQ-029/C04",
+     "expected_list": "post_hiring_conditions",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C05",
+     "expected_list": "informational_items",
+     "status": "met"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B07_ar_accountant",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 18,
+     "text": "- خبرة في نظام SAP."
+    },
+    {
+     "first_line": 19,
+     "text": "- شهادة ماجستير."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-030/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "missing"
+    },
+    {
+     "child_id": "RQ-030/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "misrouted"
+    },
+    {
+     "child_id": "RQ-030/C03",
+     "expected_list": "informational_items",
+     "status": "met"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B08_ar_hr_specialist",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run1",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B12_ar_injection",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 6,
+     "text": "- معرفة بـ CSS وHTML."
+    },
+    {
+     "first_line": 10,
+     "text": "- خبرة في TypeScript."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [
+    {
+     "rq_id": "RQ-032",
+     "structure": "missing: CSS, HTML",
+     "source_coverage": "omitted",
+     "item_sources": {
+      "CSS": [
+       "conflict_note"
+      ],
+      "HTML": [
+       "conflict_note"
+      ]
+     }
+    }
+   ],
+   "child_routing": [],
+   "importance": {
+    "schema_findings": [],
+    "cue_mapping": {
+     "اختيارية": "preferred"
+    },
+    "items": {
+     "CSS": [
+      "preferred"
+     ],
+     "HTML": [
+      "preferred"
+     ]
+    },
+    "within_accepted": true
+   },
+   "conflict_evidence": [
+    {
+     "rq_id": "RQ-021",
+     "conflict_unit": "945b2154c3f2:L12:182-245",
+     "statement": "ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة.",
+     "against_unit": "945b2154c3f2:L6:101-122",
+     "role": "review evidence, not a finding"
+    }
+   ]
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B02_en_data_analyst",
+   "finish": "stop",
+   "source_unit_omissions": [],
+   "alternative_structure": [
+    {
+     "rq_id": "RQ-027",
+     "expected": "together",
+     "structure": "split",
+     "alternatives_recorded": [
+      {
+       "text": "Python",
+       "alternatives": [
+        "R"
+       ]
+      },
+      {
+       "text": "R",
+       "alternatives": [
+        "Python"
+       ]
+      }
+     ]
+    }
+   ],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B03_en_warehouse_supervisor",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 3,
+     "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-029/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "partial"
+    },
+    {
+     "child_id": "RQ-029/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "missing"
+    },
+    {
+     "child_id": "RQ-029/C03",
+     "expected_list": "non_scoreable_requirements",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C04",
+     "expected_list": "post_hiring_conditions",
+     "status": "met"
+    },
+    {
+     "child_id": "RQ-029/C05",
+     "expected_list": "informational_items",
+     "status": "met"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B07_ar_accountant",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 18,
+     "text": "- خبرة في نظام SAP."
+    },
+    {
+     "first_line": 19,
+     "text": "- شهادة ماجستير."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [
+    {
+     "child_id": "RQ-030/C01",
+     "expected_list": "non_scoreable_requirements",
+     "status": "missing"
+    },
+    {
+     "child_id": "RQ-030/C02",
+     "expected_list": "non_scoreable_requirements",
+     "status": "misrouted"
+    },
+    {
+     "child_id": "RQ-030/C03",
+     "expected_list": "informational_items",
+     "status": "met"
+    }
+   ],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B08_ar_hr_specialist",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 12,
+     "text": "- متابعة الحضور والانصراف."
+    },
+    {
+     "first_line": 13,
+     "text": "- إعداد تقارير شهرية عن الغياب."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [],
+   "child_routing": [],
+   "importance": null,
+   "conflict_evidence": []
+  },
+  {
+   "group": "benchmark run dir baseline_v2-1 | run run2",
+   "version": "omission-reference-experimental-scorer-v1",
+   "jd_id": "B12_ar_injection",
+   "finish": "stop",
+   "source_unit_omissions": [
+    {
+     "first_line": 10,
+     "text": "- خبرة في TypeScript."
+    }
+   ],
+   "alternative_structure": [],
+   "independent_item_structure": [
+    {
+     "rq_id": "RQ-032",
+     "structure": "correctly split",
+     "source_coverage": "partial",
+     "item_sources": {
+      "CSS": [
+       "required_unit"
+      ],
+      "HTML": [
+       "required_unit"
+      ]
+     }
+    }
+   ],
+   "child_routing": [],
+   "importance": {
+    "schema_findings": [],
+    "cue_mapping": {
+     "اختيارية": "preferred"
+    },
+    "items": {
+     "CSS": [
+      "preferred"
+     ],
+     "HTML": [
+      "preferred"
+     ]
+    },
+    "within_accepted": true
+   },
+   "conflict_evidence": [
+    {
+     "rq_id": "RQ-021",
+     "conflict_unit": "945b2154c3f2:L12:182-245",
+     "statement": "ملاحظة من مسؤول التوظيف: معرفة CSS وHTML اختيارية لهذه الوظيفة.",
+     "against_unit": "945b2154c3f2:L6:101-122",
+     "role": "review evidence, not a finding"
+    }
+   ]
+  }
+ ]
+}

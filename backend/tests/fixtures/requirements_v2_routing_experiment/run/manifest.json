@@ -1,0 +1,196 @@
+{
+ "protocol": "tests/fixtures/requirements_v2_routing_experiment/PROTOCOL.md",
+ "pins": {
+  "candidate_sha256": "f1569a8b400257db20b1c0b24fd7728605fe472eef7fff993a384f12f0cbc8db",
+  "control_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+  "eval_set_manifest_sha256": "9f8bc060d9180f2ba4541a763838a28ce2644685694182cf8260d95b51c37166",
+  "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
+  "script_sha256": "999a94a25d5da14880b2c0b818a280bc29b94053c5f7fc95b23ed0926ec89c6b",
+  "compare_script_sha256": "fadd6381a166127869dea6d888b09ca969f1f1c47c9dddf3f29d7fb30f28a52a",
+  "tc20_eval_script_sha256": "1c40def472760b9b79b6878cfe3f3186080786d07668d4eadbfe7ae0f5825129",
+  "git_commit": "c55025d29bdef1d4cb238c876c252d85f0f8df33",
+  "identity": {
+   "control_sha256": "266329fc57c34a00362ea6f77984641e42d6900cd5181adf083941ca8d61103e",
+   "routed_sha256": "f5042e34777a45c4e55f686c1d0e1bccb5fd8cea0e8adf69a85204ecd5fe56d5",
+   "inserted_sha256": "d01b159fe0c476616296c981f27b82571aefe97ea8d598e3a5f230af1f7681d9",
+   "inserted_bytes": 197,
+   "control_bytes": 30550,
+   "routed_bytes": 30747
+  },
+  "protocol_sha256": "73fa404fbeff5edcac00a7da8dbce7283070482c17d222033306abc66625fff8",
+  "routing_script_sha256": "22b39be36afff2fb8635c6c2489dd5153d3713d36cf95b9101469328055f3ee6",
+  "scope_script_sha256": "b95290af5a9b6d83d8c0763035bcf627e26a6b442bd71082bfd01853914e09ad",
+  "user_message_sha256": "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473"
+ },
+ "pricing_status": "VERIFIED (owner-supplied from the official model page, https://developers.openai.com/api/docs/models/gpt-4.1): snapshot gpt-4.1-2025-04-14, standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request (a model that differs from the pinned one stops the run).",
+ "plan": {
+  "model": "gpt-4.1-2025-04-14",
+  "calls": [
+   {
+    "order": 1,
+    "arm": "CONTROL",
+    "call": 1,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 2,
+    "arm": "ROUTED",
+    "call": 1,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 3,
+    "arm": "CONTROL",
+    "call": 2,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 4,
+    "arm": "ROUTED",
+    "call": 2,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 5,
+    "arm": "CONTROL",
+    "call": 3,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 6,
+    "arm": "ROUTED",
+    "call": 3,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 7,
+    "arm": "CONTROL",
+    "call": 4,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 8,
+    "arm": "ROUTED",
+    "call": 4,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 9,
+    "arm": "CONTROL",
+    "call": 5,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 10,
+    "arm": "ROUTED",
+    "call": 5,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 11,
+    "arm": "CONTROL",
+    "call": 6,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 12,
+    "arm": "ROUTED",
+    "call": 6,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 13,
+    "arm": "CONTROL",
+    "call": 7,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 14,
+    "arm": "ROUTED",
+    "call": 7,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 15,
+    "arm": "CONTROL",
+    "call": 8,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 16,
+    "arm": "ROUTED",
+    "call": 8,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 17,
+    "arm": "CONTROL",
+    "call": 9,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 18,
+    "arm": "ROUTED",
+    "call": 9,
+    "worst_case_usd": 0.08303
+   },
+   {
+    "order": 19,
+    "arm": "CONTROL",
+    "call": 10,
+    "worst_case_usd": 0.082832
+   },
+   {
+    "order": 20,
+    "arm": "ROUTED",
+    "call": 10,
+    "worst_case_usd": 0.08303
+   }
+  ],
+  "call_count": 20,
+  "per_arm_worst_case_usd": {
+   "CONTROL": 0.082832,
+   "ROUTED": 0.08303
+  },
+  "reservation_usd": 1.65862,
+  "cap_usd": 2.0,
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "response_format": "json_object",
+  "timeout_s": 90,
+  "retries": 0,
+  "price_in_usd_per_token": 2e-06,
+  "price_out_usd_per_token": 8e-06,
+  "pricing_status": "VERIFIED (owner-supplied from the official model page, https://developers.openai.com/api/docs/models/gpt-4.1): snapshot gpt-4.1-2025-04-14, standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request (a model that differs from the pinned one stops the run).",
+  "pins": {
+   "candidate_sha256": "f1569a8b400257db20b1c0b24fd7728605fe472eef7fff993a384f12f0cbc8db",
+   "control_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+   "eval_set_manifest_sha256": "9f8bc060d9180f2ba4541a763838a28ce2644685694182cf8260d95b51c37166",
+   "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
+   "script_sha256": "999a94a25d5da14880b2c0b818a280bc29b94053c5f7fc95b23ed0926ec89c6b",
+   "compare_script_sha256": "fadd6381a166127869dea6d888b09ca969f1f1c47c9dddf3f29d7fb30f28a52a",
+   "tc20_eval_script_sha256": "1c40def472760b9b79b6878cfe3f3186080786d07668d4eadbfe7ae0f5825129",
+   "git_commit": "c55025d29bdef1d4cb238c876c252d85f0f8df33",
+   "identity": {
+    "control_sha256": "266329fc57c34a00362ea6f77984641e42d6900cd5181adf083941ca8d61103e",
+    "routed_sha256": "f5042e34777a45c4e55f686c1d0e1bccb5fd8cea0e8adf69a85204ecd5fe56d5",
+    "inserted_sha256": "d01b159fe0c476616296c981f27b82571aefe97ea8d598e3a5f230af1f7681d9",
+    "inserted_bytes": 197,
+    "control_bytes": 30550,
+    "routed_bytes": 30747
+   },
+   "protocol_sha256": "73fa404fbeff5edcac00a7da8dbce7283070482c17d222033306abc66625fff8",
+   "routing_script_sha256": "22b39be36afff2fb8635c6c2489dd5153d3713d36cf95b9101469328055f3ee6",
+   "scope_script_sha256": "b95290af5a9b6d83d8c0763035bcf627e26a6b442bd71082bfd01853914e09ad",
+   "user_message_sha256": "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473"
+  }
+ },
+ "expected_outputs": [
+  "manifest.json",
+  "calls.jsonl",
+  "run.json",
+  "scored.json"
+ ],
+ "policy": "no retries; the run stops at the first failed call or unexpected returned model",
+ "started": 1791826051.335224
+}

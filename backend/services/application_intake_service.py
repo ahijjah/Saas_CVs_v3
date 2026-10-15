@@ -502,6 +502,40 @@ async def process_cv_intake(
     # scoring pipeline can look it up for unified pre-screening.  Intake no
     # longer blocks or rejects duplicates — it only saves and enqueues.
 
+    # ── Step 4-0: tenant entitlement ──────────────────────────────────────────
+    # Intake is refused while the tenant has no current access (suspended, expired, not activated, no end date). Nothing is stored or queued.
+    # The public response is generic, so a candidate learns nothing about the tenant's billing.
+    from services.entitlement_service import load_entitlement
+    entitlement = await load_entitlement(db, tenant_id)
+    if not entitlement.full:
+        log_id = await _safe_log(
+            db,
+            tenant_id=tenant_id,
+            job_id=job_id,
+            intake_method=intake_method,
+            status="INTAKE_BLOCKED",
+            candidate_email=candidate_email,
+            candidate_name=candidate_name,
+            original_filename=original_filename,
+            file_hash=file_hash,
+            file_size_bytes=len(content),
+            mime_type=content_type,
+            error_message=entitlement.message,
+            source_identifier=source_identifier,
+            source_message_id=source_message_id,
+            sender_email=sender_email,
+            recipient_email=recipient_email,
+            subject=subject,
+            processing_started_at=started,
+            received_at=received,
+        )
+        await db.commit()
+        return IntakeResult(
+            status="INTAKE_BLOCKED",
+            intake_log_id=log_id,
+            error_message=entitlement.message,
+        )
+
     # ── Step 4a: per-job applicant cap ───────────────────────────────────────
     job_limit_check = await check_job_applicant_limit(db, job_id)
     if not job_limit_check["allowed"]:
@@ -531,6 +565,40 @@ async def process_cv_intake(
             status="REJECTED",
             intake_log_id=log_id,
             error_message=job_limit_check.get("message", "Job applicant limit reached"),
+        )
+
+    # ── Step 4b-0: requirements-v2 jobs cannot be evaluated yet ───────────────
+    # Refused with an explicit reason before anything is stored or queued (never silently scored as zero).
+    from services.requirements_guard import UnsupportedEvaluationError, ensure_job_evaluable
+    try:
+        await ensure_job_evaluable(db, job_id, f"intake:{intake_method}")
+    except UnsupportedEvaluationError as unsupported:
+        log_id = await _safe_log(
+            db,
+            tenant_id=tenant_id,
+            job_id=job_id,
+            intake_method=intake_method,
+            status="REJECTED",
+            candidate_email=candidate_email,
+            candidate_name=candidate_name,
+            original_filename=original_filename,
+            file_hash=file_hash,
+            file_size_bytes=len(content),
+            mime_type=content_type,
+            error_message=unsupported.message,
+            source_identifier=source_identifier,
+            source_message_id=source_message_id,
+            sender_email=sender_email,
+            recipient_email=recipient_email,
+            subject=subject,
+            processing_started_at=started,
+            received_at=received,
+        )
+        await db.commit()
+        return IntakeResult(
+            status="INTAKE_BLOCKED",
+            intake_log_id=log_id,
+            error_message=unsupported.message,
         )
 
     # ── Step 4b: criteria analysis gate ──────────────────────────────────────

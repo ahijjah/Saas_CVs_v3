@@ -45,7 +45,13 @@ async def get_dashboard_summary(
     """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    params = {"tid": current_user.tenant_id}
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    tenant_filter = "" if is_super_admin else " WHERE j.tenant_id = CAST(:tid AS uuid)"
+    tenant_filter_direct = "" if is_super_admin else " WHERE tenant_id = CAST(:tid AS uuid)"
+
+    params: dict = {}
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
 
     # ── Workflow distribution + total applications ─────────────────────────────
     # IMPORTANT: awaiting_review counts ONLY recruiter-actionable candidates
@@ -53,7 +59,7 @@ async def get_dashboard_summary(
     # workflow_status = 'awaiting_review' as a DB default but must never appear
     # in recruiter queues — they are separated here at the query level.
     apps_row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 COUNT(a.application_id)                                                        AS total_applications,
                 COUNT(a.application_id) FILTER (
@@ -79,7 +85,7 @@ async def get_dashboard_summary(
                 )                                                                              AS hired_this_month
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
-            WHERE j.tenant_id = CAST(:tid AS uuid)
+            {tenant_filter}
         """),
         params,
     )
@@ -89,7 +95,7 @@ async def get_dashboard_summary(
     # Counts ALL system-stopped/failed applications regardless of workflow_status.
     # These are never recruiter-actionable and form their own operational category.
     failed_row = await db.execute(
-        text("""
+        text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE a.processing_status IN (
                     'failed', 'security_blocked', 'duplicate_blocked',
@@ -110,7 +116,7 @@ async def get_dashboard_summary(
                 )                                                         AS stopped_before_ai
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
-            WHERE j.tenant_id = CAST(:tid AS uuid)
+            {tenant_filter}
         """),
         params,
     )
@@ -118,10 +124,10 @@ async def get_dashboard_summary(
 
     # ── Active job count ───────────────────────────────────────────────────────
     jobs_row = await db.execute(
-        text("""
+        text(f"""
             SELECT COUNT(*) FILTER (WHERE LOWER(status) = 'active') AS active_jobs
             FROM jobs
-            WHERE tenant_id = CAST(:tid AS uuid)
+            {tenant_filter_direct}
         """),
         params,
     )
@@ -129,10 +135,10 @@ async def get_dashboard_summary(
 
     # ── Active campaign count ──────────────────────────────────────────────────
     campaigns_row = await db.execute(
-        text("""
+        text(f"""
             SELECT COUNT(*) FILTER (WHERE status = 'active') AS active_campaigns
             FROM job_campaigns
-            WHERE tenant_id = CAST(:tid AS uuid)
+            {tenant_filter_direct}
         """),
         params,
     )
@@ -187,11 +193,16 @@ async def get_dashboard_trends(
     """
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
+    is_super_admin = (current_user.role or "").lower() == "super_admin"
+    tenant_filter = "" if is_super_admin else " AND j.tenant_id = CAST(:tid AS uuid)"
+
     days = max(1, min(days, 90))
-    params = {"tid": current_user.tenant_id, "days": days}
+    params: dict = {"days": days}
+    if not is_super_admin:
+        params["tid"] = current_user.tenant_id
 
     rows = await db.execute(
-        text("""
+        text(f"""
             WITH day_series AS (
                 SELECT generate_series(
                     CURRENT_DATE - (:days - 1) * INTERVAL '1 day',
@@ -203,17 +214,17 @@ async def get_dashboard_trends(
                 SELECT a.created_at::date AS day, COUNT(*) AS cnt
                 FROM applications a
                 JOIN jobs j ON j.job_id = a.job_id
-                WHERE j.tenant_id = CAST(:tid AS uuid)
-                  AND a.created_at >= CURRENT_DATE - (:days - 1) * INTERVAL '1 day'
+                WHERE a.created_at >= CURRENT_DATE - (:days - 1) * INTERVAL '1 day'
+                  {tenant_filter}
                 GROUP BY a.created_at::date
             ),
             hired AS (
                 SELECT a.updated_at::date AS day, COUNT(*) AS cnt
                 FROM applications a
                 JOIN jobs j ON j.job_id = a.job_id
-                WHERE j.tenant_id = CAST(:tid AS uuid)
-                  AND a.workflow_status = 'hired'
+                WHERE a.workflow_status = 'hired'
                   AND a.updated_at >= CURRENT_DATE - (:days - 1) * INTERVAL '1 day'
+                  {tenant_filter}
                 GROUP BY a.updated_at::date
             )
             SELECT

@@ -1,0 +1,421 @@
+{
+ "run": {
+  "spent_usd": 0.391792,
+  "calls_attempted": 10,
+  "successful_calls": 10,
+  "stopped": null
+ },
+ "report": {
+  "status": "scored",
+  "successful_calls": 10,
+  "errors": [],
+  "per_call": [
+   {
+    "order": 1,
+    "arm": "v2-3",
+    "call": 1,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "failed": [
+     "C_FAM_OR",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": true,
+    "reporting_in_informational": true,
+    "informational_items": 2
+   },
+   {
+    "order": 2,
+    "arm": "v2-5",
+    "call": 1,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "failed": [
+     "C_EXP_OR",
+     "C_FAM_OR",
+     "C_REPORTING",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": false,
+    "reporting_in_informational": false,
+    "informational_items": 0
+   },
+   {
+    "order": 3,
+    "arm": "v2-3",
+    "call": 2,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "failed": [
+     "C_EXP_OR",
+     "C_FAM_OR",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": true,
+    "reporting_in_informational": true,
+    "informational_items": 3
+   },
+   {
+    "order": 4,
+    "arm": "v2-5",
+    "call": 2,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "failed": [
+     "C_EXP_OR",
+     "C_FAM_OR",
+     "C_REPORTING",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": false,
+    "reporting_in_informational": false,
+    "informational_items": 0
+   },
+   {
+    "order": 5,
+    "arm": "v2-3",
+    "call": 3,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": true,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "failed": [
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": true,
+    "reporting_in_informational": true,
+    "informational_items": 3
+   },
+   {
+    "order": 6,
+    "arm": "v2-5",
+    "call": 3,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "failed": [
+     "C_EXP_OR",
+     "C_FAM_OR",
+     "C_REPORTING",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": false,
+    "reporting_in_informational": false,
+    "informational_items": 0
+   },
+   {
+    "order": 7,
+    "arm": "v2-3",
+    "call": 4,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "failed": [
+     "C_FAM_OR",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": true,
+    "reporting_in_informational": true,
+    "informational_items": 3
+   },
+   {
+    "order": 8,
+    "arm": "v2-5",
+    "call": 4,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "failed": [
+     "C_EXP_OR",
+     "C_FAM_OR",
+     "C_REPORTING",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": false,
+    "reporting_in_informational": false,
+    "informational_items": 0
+   },
+   {
+    "order": 9,
+    "arm": "v2-3",
+    "call": 5,
+    "checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": true,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    },
+    "failed": [
+     "C_RESP",
+     "C_AND"
+    ],
+    "duty_lines_found": 0,
+    "reporting_present_in_answer": true,
+    "reporting_in_informational": true,
+    "informational_items": 3
+   },
+   {
+    "order": 10,
+    "arm": "v2-5",
+    "call": 5,
+    "checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    },
+    "failed": [
+     "C_EXP_OR",
+     "C_FAM_OR",
+     "C_REPORTING",
+     "C_AND"
+    ],
+    "duty_lines_found": 16,
+    "reporting_present_in_answer": false,
+    "reporting_in_informational": false,
+    "informational_items": 0
+   }
+  ],
+  "per_arm_now": {
+   "v2-3": {
+    "calls": 5,
+    "checks_passed": {
+     "C_RESP": 4,
+     "C_COMP": 5,
+     "C_EXP_OR": 4,
+     "C_FAM_OR": 2,
+     "C_LOCAL": 5,
+     "C_LOCATION": 5,
+     "C_REPORTING": 5,
+     "C_AND": 0
+    },
+    "duty_lines_found": [
+     16,
+     16,
+     16,
+     16,
+     0
+    ],
+    "reporting_present_in_answer": [
+     true,
+     true,
+     true,
+     true,
+     true
+    ],
+    "reporting_in_informational": [
+     true,
+     true,
+     true,
+     true,
+     true
+    ]
+   },
+   "v2-5": {
+    "calls": 5,
+    "checks_passed": {
+     "C_RESP": 5,
+     "C_COMP": 5,
+     "C_EXP_OR": 0,
+     "C_FAM_OR": 0,
+     "C_LOCAL": 5,
+     "C_LOCATION": 5,
+     "C_REPORTING": 0,
+     "C_AND": 0
+    },
+    "duty_lines_found": [
+     16,
+     16,
+     16,
+     16,
+     16
+    ],
+    "reporting_present_in_answer": [
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "reporting_in_informational": [
+     false,
+     false,
+     false,
+     false,
+     false
+    ]
+   }
+  },
+  "per_arm_previous_paired_run": {
+   "v2-3": {
+    "calls": 5,
+    "checks_passed": {
+     "C_RESP": 4,
+     "C_COMP": 5,
+     "C_EXP_OR": 0,
+     "C_FAM_OR": 0,
+     "C_LOCAL": 5,
+     "C_LOCATION": 4,
+     "C_REPORTING": 4,
+     "C_AND": 0
+    },
+    "duty_lines_found": [
+     0,
+     16,
+     16,
+     16,
+     16
+    ],
+    "reporting_present_in_answer": [
+     false,
+     true,
+     true,
+     true,
+     true
+    ],
+    "reporting_in_informational": [
+     false,
+     true,
+     true,
+     true,
+     true
+    ]
+   },
+   "v2-5": {
+    "calls": 5,
+    "checks_passed": {
+     "C_RESP": 5,
+     "C_COMP": 5,
+     "C_EXP_OR": 0,
+     "C_FAM_OR": 0,
+     "C_LOCAL": 5,
+     "C_LOCATION": 5,
+     "C_REPORTING": 1,
+     "C_AND": 0
+    },
+    "duty_lines_found": [
+     16,
+     16,
+     16,
+     16,
+     16
+    ],
+    "reporting_present_in_answer": [
+     true,
+     false,
+     false,
+     false,
+     false
+    ],
+    "reporting_in_informational": [
+     true,
+     false,
+     false,
+     false,
+     false
+    ]
+   }
+  },
+  "reading_rules": {
+   "duty_completeness_reproduced": true,
+   "reporting_regression_reproduced": true,
+   "reporting_missing_now": {
+    "v2-3": 0,
+    "v2-5": 5
+   },
+   "reporting_missing_previous": {
+    "v2-3": 1,
+    "v2-5": 4
+   },
+   "or_and_failed_calls_now": {
+    "v2-3": {
+     "C_EXP_OR": 1,
+     "C_FAM_OR": 3,
+     "C_AND": 5
+    },
+    "v2-5": {
+     "C_EXP_OR": 5,
+     "C_FAM_OR": 5,
+     "C_AND": 5
+    }
+   },
+   "status": "exploratory evidence of consistency; not a significance test; not deployment readiness; v2-5 stays inactive"
+  },
+  "scorer": "frozen TC20 checks (requirements_v2_tc20_eval.score_answer; labels unchanged)"
+ }
+}

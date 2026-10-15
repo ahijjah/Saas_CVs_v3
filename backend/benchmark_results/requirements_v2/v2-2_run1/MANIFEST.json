@@ -1,0 +1,21 @@
+{
+ "description": "First comparison run of the candidate prompt criteria_extraction_v2-2 (24 real calls, supplied by the operator from the VPS run). Synthetic job descriptions only; no secrets.",
+ "prompt_version": "criteria_extraction_v2-2",
+ "prompt_sha256": "40ea678b65a5782da3f74f1c0b52f4dbeb10cc369f78efd25f1e38827ff48dda",
+ "candidate_commit": "916d1058",
+ "model": "gpt-4o-mini-2024-07-18",
+ "frozen_benchmark_commit": "059c56b",
+ "executor_commit": "5615204",
+ "settings": {
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "response_format": {
+   "type": "json_object"
+  }
+ },
+ "files": {
+  "calls.jsonl": "4beac81b7aa08dfa6d12e68014acf6866b19a40417735d929396d4dae6e732f4",
+  "results.json": "044d08272edc62e581a3eadd403c9780ae2db1ed4ab1682e0baa19a5f8f4763f"
+ },
+ "note": "Read-only reference data (meta.json was not captured separately; run_meta is inside results.json). Do not edit."
+}

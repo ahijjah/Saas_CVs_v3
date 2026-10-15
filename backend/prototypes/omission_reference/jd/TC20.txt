@@ -1,0 +1,58 @@
+Objective of the Assignment
+
+The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery.
+
+The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services.
+
+ Responsibilities
+
+The Coordinator will support the implementation, stabilization, enhancement, and continuous improvement of ABRS services and related digital platforms through the following activities:
+
+ABRS Service Implementation, Stabilization, and Enhancement
+Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.
+Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.
+Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.
+Participate in functional, integration, and user acceptance testing activities.
+Support the monitoring and follow-up of system performance, service availability, and operational issues.
+Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.
+Assist in the implementation, testing, and operational support of system integrations and data exchange processes.
+Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.
+Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.
+Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.
+Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.
+Knowledge Transfer and Capacity Building
+Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.
+Provide on-the-job coaching and technical guidance to MoNE ICT staff.
+Support the preparation of operational guides, procedures, and technical documentation.
+Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.
+Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.
+
+Reporting and Supervision
+
+It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.
+
+The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.
+
+
+متطلبات الوظيفة
+Qualifications
+
+Qualifications and Professional Experience:
+Bachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field.
+1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects.
+Experience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms is an advantage.
+Familiarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications is an advantage.
+Basic knowledge of web technologies and scripting languages, particularly JavaScript, is considered an advantage.
+Knowledge of the local business and regulatory environment is an advantage.
+Skills and Competencies
+Good understanding of business applications, digital platforms, and software support processes.
+Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.
+Strong organizational skills with the ability to plan, prioritize, and manage multiple tasks effectively.
+Strong attention to detail and commitment to accuracy and quality.
+Ability to work effectively under pressure and meet deadlines in a dynamic operational environment.
+Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.
+Strong communication, coordination, and teamwork skills.
+Good analytical and problem-solving abilities.
+Good documentation and reporting skills.
+Good working knowledge of Microsoft Office applications.
+Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation.

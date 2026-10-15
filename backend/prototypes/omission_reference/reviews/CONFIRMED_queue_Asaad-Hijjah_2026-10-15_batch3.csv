@@ -1,0 +1,6 @@
+rq_id,jd_id,unit_id,first_line,source_text,candidate_type_preserved,confirmed_decision,reviewer,confirmed_date,reason,status,benchmark_use
+RQ-011,B02_en_data_analyst,964ec821ef2c:L3:26-38,3,Requirements,heading,heading,Asaad Hijjah,2026-10-15,“Requirements” only identifies the section.,resolved,confirmed heading type
+RQ-012,B03_en_warehouse_supervisor,0fc3081a294a:L3:28-109,3,We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.,uncertain,requirement,Asaad Hijjah,2026-10-15,"it contains the Jebel Ali work location, which must be retained and routed as a non-scoreable location condition.",resolved,confirmed requirement type
+RQ-013,B03_en_warehouse_supervisor,0fc3081a294a:L5:111-120,5,Required:,heading,heading,Asaad Hijjah,2026-10-15,“Required:” only identifies the section.,resolved,confirmed heading type
+RQ-014,B03_en_warehouse_supervisor,0fc3081a294a:L15:380-387,15,Duties:,heading,heading,Asaad Hijjah,2026-10-15,“Duties:” only identifies the section.,resolved,confirmed heading type
+RQ-015,B07_ar_accountant,30fb2f042757:L3:11-87,3,نبذة عن الشركة: شركة الأفق للتجارة شركة سعودية تعمل في قطاع المواد الغذائية.,background,background,Asaad Hijjah,2026-10-15,"optional company information, consistent with confirmed whole-unit judgment S004.",resolved,confirmed background type

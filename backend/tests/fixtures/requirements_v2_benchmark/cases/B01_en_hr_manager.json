@@ -1,0 +1,190 @@
+{
+ "id": "B01_en_hr_manager",
+ "language": "en",
+ "title": "Senior HR Manager",
+ "tags": [
+  "headings_required_preferred",
+  "experience_years",
+  "alternatives",
+  "responsibilities",
+  "mandatory_certification",
+  "employment_conditions",
+  "informational"
+ ],
+ "job_metadata": {
+  "title": "Senior HR Manager",
+  "job_type": "Full-time"
+ },
+ "jd": "Senior HR Manager\n\nAbout us: Nile Logistics is a regional logistics group with 400 employees.\n\nResponsibilities:\n- Lead the full recruitment cycle for operations and finance roles.\n- Design and run the annual performance review process.\n- Advise line managers on employee relations cases.\n\nRequirements:\n- Bachelor's degree in Human Resources or Business Administration.\n- At least five years of experience in HR management.\n- SHRM-CP or CIPD certification is mandatory.\n- Strong knowledge of labour law.\n- Excellent communication skills.\n\nNice to have:\n- Experience with SAP SuccessFactors.\n- Master's degree.\n\nConditions: Salary is paid in USD. The position is based in Cairo, on-site. Benefits include medical insurance and 25 days of annual leave.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "ready",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 5,
+   "experience": 40,
+   "education": 15,
+   "certifications": 20,
+   "soft_skills": 10,
+   "domain_knowledge": 10,
+   "other_requirements": 0
+  },
+  "items": [
+   {
+    "category": "experience",
+    "text": "Lead the full recruitment cycle for operations and finance roles",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Lead the full recruitment cycle for operations and finance roles.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "Design and run the annual performance review process",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Design and run the annual performance review process.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "Advise line managers on employee relations cases",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Advise line managers on employee relations cases.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "education",
+    "text": "Bachelor's degree in Human Resources or Business Administration",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Bachelor's degree in Human Resources or Business Administration.",
+    "origin": "stated",
+    "alternatives": [
+     "Human Resources",
+     "Business Administration"
+    ],
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "At least five years of experience in HR management",
+    "importance": "required",
+    "cue": null,
+    "evidence": "At least five years of experience in HR management.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "HR management",
+     "min_years": 5
+    },
+    "subject_variants": [
+     "HR management",
+     "human resources management"
+    ]
+   },
+   {
+    "category": "certifications",
+    "text": "SHRM-CP or CIPD certification",
+    "importance": "required",
+    "cue": null,
+    "evidence": "SHRM-CP or CIPD certification is mandatory.",
+    "origin": "stated",
+    "alternatives": [
+     "SHRM-CP",
+     "CIPD"
+    ],
+    "experience": null,
+    "note": "'mandatory' must stay Required"
+   },
+   {
+    "category": "domain_knowledge",
+    "text": "Strong knowledge of labour law",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Strong knowledge of labour law.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "domain_knowledge",
+     "skills"
+    ]
+   },
+   {
+    "category": "soft_skills",
+    "text": "Excellent communication skills",
+    "importance": "required",
+    "cue": null,
+    "evidence": "Excellent communication skills.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "skills",
+    "text": "Experience with SAP SuccessFactors",
+    "importance": "preferred",
+    "cue": "Nice to have",
+    "evidence": "Experience with SAP SuccessFactors.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "skills",
+     "domain_knowledge"
+    ]
+   },
+   {
+    "category": "education",
+    "text": "Master's degree",
+    "importance": "preferred",
+    "cue": "Nice to have",
+    "evidence": "Master's degree.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   }
+  ],
+  "conditions": [
+   {
+    "list": "non_scoreable_requirements",
+    "category": "salary",
+    "evidence": "Salary is paid in USD.",
+    "text": "Salary is paid in USD"
+   },
+   {
+    "list": "non_scoreable_requirements",
+    "category": "location",
+    "evidence": "The position is based in Cairo, on-site.",
+    "text": "Position based in Cairo, on-site"
+   },
+   {
+    "list": "informational_items",
+    "category": "company_description",
+    "evidence": "Nile Logistics is a regional logistics group with 400 employees.",
+    "text": "Company description"
+   },
+   {
+    "list": "informational_items",
+    "category": "benefits",
+    "evidence": "Benefits include medical insurance and 25 days of annual leave.",
+    "text": "Benefits"
+   }
+  ],
+  "must_not_extract": [
+   "USD",
+   "Cairo",
+   "medical insurance",
+   "400 employees"
+  ],
+  "model_warnings_expected": false
+ }
+}

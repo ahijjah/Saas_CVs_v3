@@ -1,0 +1,166 @@
+{
+ "id": "B09_ar_sales_rep",
+ "language": "ar",
+ "title": "مندوب مبيعات",
+ "tags": [
+  "experience_years",
+  "responsibilities",
+  "languages",
+  "employment_conditions",
+  "post_hiring",
+  "informational",
+  "inline_cue"
+ ],
+ "job_metadata": {
+  "title": "مندوب مبيعات"
+ },
+ "jd": "مندوب مبيعات\n\nالمطلوب:\n- إجادة اللغة الإنجليزية تحدثًا وكتابة.\n- خبرة سنتان في مبيعات التجزئة.\n- رخصة قيادة سارية.\n- مهارات التفاوض.\n- معرفة بنظام CRM تعتبر ميزة.\n- إجادة اللغة الفرنسية ميزة إضافية.\n\nالمهام:\n- زيارة العملاء الحاليين والمحتملين يوميًا.\n- تحقيق أهداف المبيعات الشهرية.\n\nالشروط: الدوام بنظام الورديات مع السفر داخل المملكة أحيانًا، ويشترط أن يكون المتقدم حاصلًا على إقامة سارية أو مستعدًا للانتقال. سيُطلب فحص أمني وصورة من الشهادات قبل مباشرة العمل. نقدم عمولة مجزية.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "ready",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 40,
+   "experience": 40,
+   "education": 0,
+   "certifications": 0,
+   "soft_skills": 10,
+   "domain_knowledge": 0,
+   "other_requirements": 10
+  },
+  "items": [
+   {
+    "category": "skills",
+    "text": "إجادة اللغة الإنجليزية تحدثًا وكتابة",
+    "importance": "required",
+    "cue": null,
+    "evidence": "إجادة اللغة الإنجليزية تحدثًا وكتابة.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "note": "language skill (rule 8); one item"
+   },
+   {
+    "category": "experience",
+    "text": "خبرة سنتان في مبيعات التجزئة",
+    "importance": "required",
+    "cue": null,
+    "evidence": "خبرة سنتان في مبيعات التجزئة.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "مبيعات التجزئة",
+     "min_years": 2
+    }
+   },
+   {
+    "category": "certifications",
+    "text": "رخصة قيادة سارية",
+    "importance": "required",
+    "cue": null,
+    "evidence": "رخصة قيادة سارية.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "certifications",
+     "other_requirements"
+    ]
+   },
+   {
+    "category": "skills",
+    "text": "مهارات التفاوض",
+    "importance": "required",
+    "cue": null,
+    "evidence": "مهارات التفاوض.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "skills",
+     "soft_skills"
+    ]
+   },
+   {
+    "category": "skills",
+    "text": "معرفة بنظام CRM",
+    "importance": "preferred",
+    "cue": "تعتبر ميزة",
+    "evidence": "معرفة بنظام CRM تعتبر ميزة.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "skills",
+     "domain_knowledge"
+    ]
+   },
+   {
+    "category": "skills",
+    "text": "إجادة اللغة الفرنسية",
+    "importance": "preferred",
+    "cue": "ميزة إضافية",
+    "evidence": "إجادة اللغة الفرنسية ميزة إضافية.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "زيارة العملاء الحاليين والمحتملين يوميًا",
+    "importance": "required",
+    "cue": null,
+    "evidence": "زيارة العملاء الحاليين والمحتملين يوميًا.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "تحقيق أهداف المبيعات الشهرية",
+    "importance": "required",
+    "cue": null,
+    "evidence": "تحقيق أهداف المبيعات الشهرية.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   }
+  ],
+  "conditions": [
+   {
+    "list": "non_scoreable_requirements",
+    "category": "schedule",
+    "evidence": "الدوام بنظام الورديات",
+    "text": "الدوام بنظام الورديات"
+   },
+   {
+    "list": "non_scoreable_requirements",
+    "category": "travel",
+    "evidence": "السفر داخل المملكة أحيانًا",
+    "text": "السفر داخل المملكة أحيانًا"
+   },
+   {
+    "list": "non_scoreable_requirements",
+    "category": "work_authorization",
+    "evidence": "ويشترط أن يكون المتقدم حاصلًا على إقامة سارية أو مستعدًا للانتقال",
+    "text": "إقامة سارية أو الاستعداد للانتقال"
+   },
+   {
+    "list": "post_hiring_conditions",
+    "category": "background_check",
+    "evidence": "سيُطلب فحص أمني وصورة من الشهادات قبل مباشرة العمل.",
+    "text": "فحص أمني وصورة من الشهادات قبل مباشرة العمل"
+   },
+   {
+    "list": "informational_items",
+    "category": "benefits",
+    "evidence": "نقدم عمولة مجزية.",
+    "text": "عمولة مجزية"
+   }
+  ],
+  "must_not_extract": [
+   "إقامة سارية"
+  ],
+  "model_warnings_expected": false
+ }
+}

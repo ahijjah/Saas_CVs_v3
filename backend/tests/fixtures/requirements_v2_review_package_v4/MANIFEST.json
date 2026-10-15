@@ -1,0 +1,495 @@
+{
+ "builder": "scripts/requirements_v2_review_package.py",
+ "builder_sha256": "c42d69582d399d89c3d112cbf7ddb5902183f2575d149b21bcf37528791169c6",
+ "checker_sha256": "608a74cf90d20f191eb4bab014ac608adb45f32fd9cc40587bdb17d2ec2063bb",
+ "development_status": "every case is development evidence; no held-out set exists",
+ "human_judgments": "none filled; every reviewer choice cell is blank",
+ "outputs_sha256": {
+  "INSTRUCTIONS.md": "514f74febbfb3a2f545a763f0e85957177c431be56308e975900d863e2785d5c",
+  "review_sheet_v2.csv": "38fe449d8984b903fa3f59fc37340683269c3492c8f156da1dbb61f18bc60852",
+  "seeded_defect_results.csv": "22adaaddd7ee481e8ce581bffd8baf22b071cf343826b64ebaca02dc7101f98b",
+  "starter_review_sheet_v2.csv": "986364da447acd1f8d6861885fe5250d23ec05028fd8991f7a30ef2c0de0b86f"
+ },
+ "package": "requirements_v2 staged-validation checker, human review, version 4 (offline)",
+ "precision_recall_or_readiness": "not computed: no human judgments exist and the sample is not a validation",
+ "selection": {
+  "answers": "benchmark run1 (12, one per case); TC20 routing CONTROL call 1 and scope CLARIFIED call 2; eval v2-3 and v2-5 call 1 (EN and AR)",
+  "starter": "fixed strata and rules in section 7 of INSTRUCTIONS.md (two English and two Arabic rows per stratum)"
+ },
+ "source_provenance": {
+  "sources/benchmark_v2-2_run1_calls.jsonl": {
+   "derived_from": "7e3511c3-calls.jsonl (attachment)",
+   "derived_from_sha256": "4beac81b7aa08dfa6d12e68014acf6866b19a40417735d929396d4dae6e732f4",
+   "rows_kept": "the 12 rows with run == run1"
+  },
+  "sources/eval_gpt-4.1_calls.jsonl": {
+   "derived_from": "1e1fcb97-calls.jsonl (attachment)",
+   "derived_from_sha256": "7a176b8ba6b78f1285187c1b72713b93aea76d2250f6b22e9b53e985c5df6f73",
+   "rows_kept": "the 12 rows whose jd is an eval JD"
+  }
+ },
+ "sources_sha256": {
+  "benchmark cases/B01_en_hr_manager.json": "becd0fc2e257a1a306232ae17519e17f06bdee4be4e90eefa753ff4910df6e56",
+  "benchmark cases/B02_en_data_analyst.json": "dd0bc07dd030b3d7776487ff90d709cb7ce23bfad3bd05f75c7d05ec7cef26c4",
+  "benchmark cases/B03_en_warehouse_supervisor.json": "36e09f9e8aed175dce37bd532d29bc83db8f61ef2a80d35aa208af3a34b32da8",
+  "benchmark cases/B04_en_preferred_only.json": "311bd2c90eb61150c36f6a5b29e0a9b20f133d39292f8c314d43195fb034f67d",
+  "benchmark cases/B05_en_open_empty.json": "b09f12d11ee40261e1864a6dddb4857fe87ad3da2d525ec8a814e5a7313e1afe",
+  "benchmark cases/B06_en_injection.json": "14ae7c792f7ff87a8fe8842910f74b7cbde18b8571ea2078c144020df71a5dd9",
+  "benchmark cases/B07_ar_accountant.json": "246228338b4cd2455a3e300712692fa2c3b7efa3ee0b67d48d0dc9ecc22eb616",
+  "benchmark cases/B08_ar_hr_specialist.json": "3cc6cac557f221801cb74edfd006c440a4b102c421ff40174309f278dab5fee2",
+  "benchmark cases/B09_ar_sales_rep.json": "0106211ee3172d934b7a616bd69ad49bc0183a82cd3cb30b9a0cd151019593fa",
+  "benchmark cases/B10_ar_preferred_only.json": "ef1b8a988f8db24b398cd0dcb1c60be8d8ca3cf86950f2a1d9a0c513d14f227c",
+  "benchmark cases/B11_ar_open_empty.json": "9a139099d0563cdb834ef4e172cd4ad0c51997fbb52a5356779c978ec7995980",
+  "benchmark cases/B12_ar_injection.json": "70db264fdd8f809275c65e90f29c5d6f8a86b1456852da882e8b2c5fbdf30e13",
+  "eval set/expected/eval_ar_facilities_01.json": "35cde3501264bf6ffdcf112a48348293324ec00d9f5850a6049b442785ad730d",
+  "eval set/expected/eval_en_field_service_01.json": "5aeb8a6be6b01f26c5c8083b90b8ac62b83d6a3f76e2aade334cdbe93f51c002",
+  "eval set/jds/eval_ar_facilities_01.txt": "272260768005aa155ab8632dd6fbb3e2ebf293510775cb7f00ba9cb0885aad43",
+  "eval set/jds/eval_en_field_service_01.txt": "1f13d8f87ef51ebd222948febafbdbf05ea497ceec03b558587b0105579603dc",
+  "sources/benchmark_v2-2_run1_calls.jsonl": "cfcfb5dfa8261ba44a76eef8189f34a199d9876ee902323ff8f0e6193d4ecc0c",
+  "sources/eval_gpt-4.1_calls.jsonl": "b7840494960bed6bb83b57754dc9ca130c6deb734560c0c6dc99036fedebbee7"
+ },
+ "summary": {
+  "answers": [
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "location_probe": 1,
+     "uncovered_statement": 1
+    },
+    "case_id": "B01_en_hr_manager",
+    "coverage": {
+     "covered": 13,
+     "short_quote": 0,
+     "statements": 14,
+     "uncovered": 1
+    },
+    "covered_with_notes": {
+     "label before the colon omitted": 1,
+     "terminal punctuation omitted": 13
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B01_en_hr_manager.json",
+    "source_group": "benchmark",
+    "warnings_total": 2
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 3,
+     "possible_or_split": 1
+    },
+    "case_id": "B02_en_data_analyst",
+    "coverage": {
+     "covered": 10,
+     "short_quote": 0,
+     "statements": 10,
+     "uncovered": 0
+    },
+    "covered_with_notes": {
+     "label before the colon omitted": 1,
+     "terminal punctuation omitted": 12
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B02_en_data_analyst.json",
+    "source_group": "benchmark",
+    "warnings_total": 4
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "possible_bundled_and": 1,
+     "uncovered_statement": 1,
+     "unknown_category": 1
+    },
+    "case_id": "B03_en_warehouse_supervisor",
+    "coverage": {
+     "covered": 11,
+     "short_quote": 0,
+     "statements": 12,
+     "uncovered": 1
+    },
+    "covered_with_notes": {
+     "covered jointly with other quotations (split across items)": 3,
+     "terminal punctuation omitted": 10
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B03_en_warehouse_supervisor.json",
+    "source_group": "benchmark",
+    "warnings_total": 4
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "possible_lost_or": 1,
+     "uncovered_statement": 1
+    },
+    "case_id": "B04_en_preferred_only",
+    "coverage": {
+     "covered": 4,
+     "short_quote": 0,
+     "statements": 5,
+     "uncovered": 1
+    },
+    "covered_with_notes": {
+     "terminal punctuation omitted": 4
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B04_en_preferred_only.json",
+    "source_group": "benchmark",
+    "warnings_total": 3
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "or_silent_probe": 1,
+     "uncovered_statement": 3
+    },
+    "case_id": "B05_en_open_empty",
+    "coverage": {
+     "covered": 1,
+     "short_quote": 0,
+     "statements": 4,
+     "uncovered": 3
+    },
+    "covered_with_notes": {},
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B05_en_open_empty.json",
+    "source_group": "benchmark",
+    "warnings_total": 4
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "ambiguous_quote": 1,
+     "partial_quote": 1,
+     "possible_or_split": 1,
+     "uncovered_statement": 2
+    },
+    "case_id": "B06_en_injection",
+    "coverage": {
+     "covered": 6,
+     "short_quote": 1,
+     "statements": 9,
+     "uncovered": 2
+    },
+    "covered_with_notes": {
+     "terminal punctuation omitted": 8
+    },
+    "partial_quote_mechanical_classes": {
+     "quote covers only part of the statement": 1
+    },
+    "source_file": "B06_en_injection.json",
+    "source_group": "benchmark",
+    "warnings_total": 6
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "location_probe": 1,
+     "uncovered_statement": 1,
+     "wrong_list": 1
+    },
+    "case_id": "B07_ar_accountant",
+    "coverage": {
+     "covered": 12,
+     "short_quote": 0,
+     "statements": 13,
+     "uncovered": 1
+    },
+    "covered_with_notes": {
+     "covered jointly with other quotations (split across items)": 2,
+     "terminal punctuation omitted": 11
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B07_ar_accountant.json",
+    "source_group": "benchmark",
+    "warnings_total": 3
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "possible_attached_and": 1,
+     "uncovered_statement": 1
+    },
+    "case_id": "B08_ar_hr_specialist",
+    "coverage": {
+     "covered": 8,
+     "short_quote": 0,
+     "statements": 9,
+     "uncovered": 1
+    },
+    "covered_with_notes": {
+     "terminal punctuation omitted": 9
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B08_ar_hr_specialist.json",
+    "source_group": "benchmark",
+    "warnings_total": 3
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "attached_waw_limitation_probe": 1,
+     "unknown_category": 1
+    },
+    "case_id": "B09_ar_sales_rep",
+    "coverage": {
+     "covered": 11,
+     "short_quote": 0,
+     "statements": 11,
+     "uncovered": 0
+    },
+    "covered_with_notes": {
+     "covered jointly with other quotations (split across items)": 2,
+     "terminal punctuation omitted": 10
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B09_ar_sales_rep.json",
+    "source_group": "benchmark",
+    "warnings_total": 2
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "possible_lost_or": 1,
+     "uncovered_statement": 1
+    },
+    "case_id": "B10_ar_preferred_only",
+    "coverage": {
+     "covered": 4,
+     "short_quote": 0,
+     "statements": 5,
+     "uncovered": 1
+    },
+    "covered_with_notes": {
+     "terminal punctuation omitted": 4
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B10_ar_preferred_only.json",
+    "source_group": "benchmark",
+    "warnings_total": 3
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "or_silent_probe": 1,
+     "uncovered_statement": 3
+    },
+    "case_id": "B11_ar_open_empty",
+    "coverage": {
+     "covered": 1,
+     "short_quote": 0,
+     "statements": 4,
+     "uncovered": 3
+    },
+    "covered_with_notes": {
+     "terminal punctuation omitted": 1
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B11_ar_open_empty.json",
+    "source_group": "benchmark",
+    "warnings_total": 4
+   },
+   {
+    "answer": "v2-2 run1 (gpt-4o-mini-2024-07-18)",
+    "by_type": {
+     "ambiguous_heading_line": 1,
+     "attached_waw_limitation_probe": 1,
+     "possible_attached_and": 1,
+     "uncovered_statement": 3
+    },
+    "case_id": "B12_ar_injection",
+    "coverage": {
+     "covered": 6,
+     "short_quote": 0,
+     "statements": 9,
+     "uncovered": 3
+    },
+    "covered_with_notes": {
+     "terminal punctuation omitted": 6
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "B12_ar_injection.json",
+    "source_group": "benchmark",
+    "warnings_total": 5
+   },
+   {
+    "answer": "routing run, CONTROL call 1 (gpt-4.1)",
+    "by_type": {
+     "ambiguous_heading_line": 8,
+     "location_probe": 1,
+     "partial_quote": 1,
+     "possible_bundled_and": 12,
+     "possible_lost_or": 3,
+     "uncovered_statement": 6
+    },
+    "case_id": "TC20",
+    "coverage": {
+     "covered": 33,
+     "short_quote": 1,
+     "statements": 40,
+     "uncovered": 6
+    },
+    "covered_with_notes": {},
+    "partial_quote_mechanical_classes": {
+     "quote covers only part of the statement": 1
+    },
+    "source_file": "routing run calls.jsonl",
+    "source_group": "tc20",
+    "warnings_total": 30
+   },
+   {
+    "answer": "scope run, CLARIFIED call 2 (gpt-4.1)",
+    "by_type": {
+     "ambiguous_heading_line": 8,
+     "location_probe": 1,
+     "multi_statement_span": 1,
+     "possible_bundled_and": 12,
+     "possible_lost_or": 3,
+     "uncovered_statement": 3,
+     "wrong_list": 1
+    },
+    "case_id": "TC20",
+    "coverage": {
+     "covered": 37,
+     "short_quote": 0,
+     "statements": 40,
+     "uncovered": 3
+    },
+    "covered_with_notes": {},
+    "partial_quote_mechanical_classes": {},
+    "source_file": "scope run calls.jsonl",
+    "source_group": "tc20",
+    "warnings_total": 28
+   },
+   {
+    "answer": "v2-3 call 1 (gpt-4.1)",
+    "by_type": {
+     "ambiguous_heading_line": 3,
+     "location_probe": 1,
+     "possible_bundled_and": 1
+    },
+    "case_id": "eval_en_field_service_01",
+    "coverage": {
+     "covered": 19,
+     "short_quote": 0,
+     "statements": 19,
+     "uncovered": 0
+    },
+    "covered_with_notes": {},
+    "partial_quote_mechanical_classes": {},
+    "source_file": "eval_gpt-4.1_calls.jsonl",
+    "source_group": "eval",
+    "warnings_total": 4
+   },
+   {
+    "answer": "v2-5 call 1 (gpt-4.1)",
+    "by_type": {
+     "ambiguous_heading_line": 3,
+     "location_probe": 1
+    },
+    "case_id": "eval_en_field_service_01",
+    "coverage": {
+     "covered": 19,
+     "short_quote": 0,
+     "statements": 19,
+     "uncovered": 0
+    },
+    "covered_with_notes": {},
+    "partial_quote_mechanical_classes": {},
+    "source_file": "eval_gpt-4.1_calls.jsonl",
+    "source_group": "eval",
+    "warnings_total": 3
+   },
+   {
+    "answer": "v2-3 call 1 (gpt-4.1)",
+    "by_type": {
+     "ambiguous_heading_line": 2,
+     "location_probe": 1,
+     "possible_attached_and": 1
+    },
+    "case_id": "eval_ar_facilities_01",
+    "coverage": {
+     "covered": 18,
+     "short_quote": 0,
+     "statements": 18,
+     "uncovered": 0
+    },
+    "covered_with_notes": {
+     "terminal punctuation omitted": 17
+    },
+    "partial_quote_mechanical_classes": {},
+    "source_file": "eval_gpt-4.1_calls.jsonl",
+    "source_group": "eval",
+    "warnings_total": 3
+   },
+   {
+    "answer": "v2-5 call 1 (gpt-4.1)",
+    "by_type": {
+     "ambiguous_heading_line": 2,
+     "location_probe": 1,
+     "uncovered_statement": 1
+    },
+    "case_id": "eval_ar_facilities_01",
+    "coverage": {
+     "covered": 17,
+     "short_quote": 0,
+     "statements": 18,
+     "uncovered": 1
+    },
+    "covered_with_notes": {},
+    "partial_quote_mechanical_classes": {},
+    "source_file": "eval_gpt-4.1_calls.jsonl",
+    "source_group": "eval",
+    "warnings_total": 3
+   }
+  ],
+  "seeded": {
+   "detected_no_gap": 19,
+   "known_gap_rows": 1,
+   "rows": 20
+  },
+  "sheet_by_kind": {
+   "checker_silent_probe": 4,
+   "checker_warning": 114,
+   "location_probe": 7
+  },
+  "sheet_by_type": {
+   "ambiguous_heading_line": 40,
+   "ambiguous_quote": 1,
+   "attached_waw_limitation_probe": 2,
+   "location_probe": 7,
+   "multi_statement_span": 1,
+   "or_silent_probe": 2,
+   "partial_quote": 2,
+   "possible_attached_and": 3,
+   "possible_bundled_and": 26,
+   "possible_lost_or": 8,
+   "possible_or_split": 2,
+   "uncovered_statement": 27,
+   "unknown_category": 2,
+   "wrong_list": 2
+  },
+  "sheet_rows": 125,
+  "starter_by_stratum": {
+   "candidate_warning": 4,
+   "real_warning": 4,
+   "unflagged_probe": 4
+  },
+  "starter_rows": 12
+ },
+ "supersedes": "tests/fixtures/requirements_v2_review_package_v3 (v3, commit 3e42ebb), kept unchanged, with its reviewer submission under reviews/; v2 (commit 27eee4d) and v1 (commit 347dc55) are kept unchanged as well",
+ "v1_historical_builder": "scripts/historical/requirements_v2_review_package_v1.py with scripts/historical/requirements_v2_staged_check_v1.py",
+ "v2_historical_builder": "scripts/historical/requirements_v2_review_package_v2.py with scripts/historical/requirements_v2_staged_check_v2.py",
+ "v3_historical_builder": "scripts/historical/requirements_v2_review_package_v3.py with scripts/historical/requirements_v2_staged_check_v3.py"
+}

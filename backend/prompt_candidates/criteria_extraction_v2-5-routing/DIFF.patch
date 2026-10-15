@@ -1,0 +1,10 @@
+--- a/criteria_extraction_v2-5-coverage.txt
++++ b/criteria_extraction_v2-5-routing.txt
+@@ -92,6 +92,7 @@
+    post_hiring_conditions: background_check (also police or criminal-record checks), reference_check (also references), medical_check (a health examination required of the candidate), document_submission.
+    informational_items: company_description (also the employer's own opening hours or size), benefits (insurance, leave, training, allowances; a benefit that mentions medical or health cover is still a benefit, not a medical_check), reporting_line, hr_statement (equal-opportunity and similar statements).
+    "other": only when no label fits; put it in the list of the closest label above.
++   A statement whose category is location goes in non_scoreable_requirements regardless of the job description heading it appears under, and never in informational_items or post_hiring_conditions.
+ 
+ 10. Do not output weights for items. Do not output any other field on an item. Duplicated or very similar statements stay as separate items; do not remove or merge them. This includes a requirement or duty that is restated in a note, a closing sentence or another section: output it again as its own item with its own source_text.
+ 

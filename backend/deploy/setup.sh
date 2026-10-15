@@ -6,7 +6,7 @@
 #  Run as root on a fresh Ubuntu 22.04 / 24.04 VPS:
 #
 #    curl -fsSL https://raw.githubusercontent.com/ahijjah/Saas_CVs_v3/\
-#claude/analyze-repo-summary-YtnGK/backend/deploy/setup.sh | bash
+#feature/scoring-v2-evidence-engine/backend/deploy/setup.sh | bash
 #
 #  URLs after setup:
 #    Frontend: http://72.62.31.221
@@ -16,7 +16,11 @@ set -euo pipefail
 
 SERVER_IP="72.62.31.221"
 REPO_URL="https://github.com/ahijjah/Saas_CVs_v3.git"
-REPO_BRANCH="claude/analyze-repo-summary-YtnGK"
+# CRITICAL: This branch MUST match the branch merged and deployed to production.
+# Mismatch between this script and actual production deployment can mask bugs
+# and make rollbacks impossible. Verify after each manual deployment that this
+# reflects reality: SSH to the server and run `git log -1 --oneline` in $APP_DIR.
+REPO_BRANCH="feature/scoring-v2-evidence-engine"
 APP_DIR="/opt/cv-analyzer"
 FILES_DIR="/files"
 FRONTEND_DIR="/var/www/cv-analyzer/dist"

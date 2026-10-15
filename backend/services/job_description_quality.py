@@ -266,15 +266,19 @@ _TITLE_PLACEHOLDER_RE = re.compile(
     r"اختبار|تجربة|مثال|نموذج|وظيفة\s*جديدة|منصب|دور)\.?$",
     re.IGNORECASE,
 )
-_TITLE_SYMBOLS_ONLY_RE = re.compile(r"^[\d\s\W]+$")
 _TITLE_REPEAT_CHARS_RE = re.compile(r"(.)\1{2,}")  # 3+ identical consecutive chars
+
+_BAD_TITLE_MSG = (
+    "Please enter a real job title, such as Sales Assistant, "
+    "Accountant, Driver, or HR Manager."
+)
 
 
 def validate_job_title(title: str) -> tuple[bool, str | None]:
     """Return (is_valid, error_message_or_None).
 
     Rejects placeholder, gibberish, and symbol-only titles.
-    Allows real job titles of all kinds (Cashier, Driver, HR Manager, etc.).
+    Accepts real job titles in any language (English, Arabic, etc.).
     """
     text = (title or "").strip()
 
@@ -285,28 +289,18 @@ def validate_job_title(title: str) -> tuple[bool, str | None]:
         return False, "Job title is too short."
 
     if _TITLE_PLACEHOLDER_RE.match(text.lower()):
-        return False, (
-            "Please enter a real job title, such as Sales Assistant, "
-            "Accountant, Driver, or HR Manager."
-        )
+        return False, _BAD_TITLE_MSG
 
-    if _TITLE_SYMBOLS_ONLY_RE.match(text):
-        return False, (
-            "Please enter a real job title, such as Sales Assistant, "
-            "Accountant, Driver, or HR Manager."
-        )
+    # Reject titles with no Unicode letter at all (symbols/numbers/punctuation only).
+    # str.isalpha() is Unicode-aware: Arabic, Chinese, etc. all return True.
+    if not any(c.isalpha() for c in text):
+        return False, _BAD_TITLE_MSG
 
     if _TITLE_REPEAT_CHARS_RE.search(text):
-        return False, (
-            "Please enter a real job title, such as Sales Assistant, "
-            "Accountant, Driver, or HR Manager."
-        )
+        return False, _BAD_TITLE_MSG
 
     words = text.split()
     if len(words) > 1 and all(w.lower() == words[0].lower() for w in words):
-        return False, (
-            "Please enter a real job title, such as Sales Assistant, "
-            "Accountant, Driver, or HR Manager."
-        )
+        return False, _BAD_TITLE_MSG
 
     return True, None

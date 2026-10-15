@@ -169,13 +169,78 @@ async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict
 
 # ── Write ─────────────────────────────────────────────────────────────────────
 
+def _sanitise_question_text(raw: str, job_description: str | None) -> str:
+    """
+    Trim whitespace and strip a job_description prefix if it was accidentally
+    prepended (e.g. browser autofill injecting the description into the first
+    knockout question input before the user typed their actual question).
+
+    Comparison is done on normalised text (collapsed whitespace, lower-case) so
+    minor formatting differences between the stored description and what the
+    browser injected do not cause the strip to be skipped.
+    """
+    text = raw.strip()
+    if not job_description:
+        return text
+    desc = job_description.strip()
+    if not desc:
+        return text
+
+    # Fast path: exact prefix match after trimming
+    if text.startswith(desc):
+        return text[len(desc):].lstrip()
+
+    # Normalised comparison: collapse all internal whitespace to a single space
+    def _norm(s: str) -> str:
+        return " ".join(s.lower().split())
+
+    norm_text = _norm(text)
+    norm_desc = _norm(desc)
+    if norm_desc and norm_text.startswith(norm_desc):
+        # Find the raw character position that corresponds to len(norm_desc)
+        # normalised characters in `text`, then strip from there.
+        raw_cut = _raw_pos_for_norm_len(text, len(norm_desc))
+        return text[raw_cut:].lstrip()
+
+    return text
+
+
+def _raw_pos_for_norm_len(text: str, norm_len: int) -> int:
+    """Return the raw index after consuming exactly norm_len normalised chars.
+
+    Normalisation collapses consecutive whitespace to a single space and
+    converts to lower-case.  This function counts normalised characters in
+    `text` and returns the raw offset at which the norm_len-th char has been
+    consumed, so the caller can slice text[raw_cut:] to get the remainder.
+    """
+    n = 0
+    in_space = False
+    for i, ch in enumerate(text):
+        if n >= norm_len:
+            return i
+        if ch.isspace():
+            if not in_space:
+                n += 1
+            in_space = True
+        else:
+            n += 1
+            in_space = False
+    return len(text)
+
+
 async def save_job_knockout_questions(
     db: AsyncSession,
     job_id: str,
     tenant_id: str,
     questions: list[dict],
+    job_description: str | None = None,
 ) -> None:
-    """Replace all knockout questions for a job atomically."""
+    """Replace all knockout questions for a job atomically.
+
+    job_description: when provided, any question_text that starts with the full
+    description (e.g. injected by browser autofill) has that prefix stripped
+    before validation and INSERT.
+    """
     max_q = await _get_max_questions(db)
     if len(questions) > max_q:
         raise HTTPException(
@@ -183,7 +248,15 @@ async def save_job_knockout_questions(
             detail=f"Maximum {max_q} knockout questions allowed per job.",
         )
 
+    # Sanitise question_text before validation so empty-after-strip fails cleanly.
+    sanitised: list[dict] = []
     for q in questions:
+        q_copy = dict(q)
+        if isinstance(q_copy.get("question_text"), str):
+            q_copy["question_text"] = _sanitise_question_text(q_copy["question_text"], job_description)
+        sanitised.append(q_copy)
+
+    for q in sanitised:
         _validate_question(q)
 
     await db.execute(
@@ -191,7 +264,7 @@ async def save_job_knockout_questions(
         {"jid": job_id},
     )
 
-    for i, q in enumerate(questions):
+    for i, q in enumerate(sanitised):
         opts = q.get("options")
         criteria = q.get("passing_criteria")
         await db.execute(

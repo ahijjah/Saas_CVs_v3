@@ -1,0 +1,186 @@
+{
+ "label_version": "tc20-labels-1",
+ "frozen_before_run": true,
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "source": "tests/fixtures/requirements_v2_technical_coordinator_20/expected_extraction.md (D1-D10, A1-A9)",
+ "discrepancy_resolution": "ten definite findings (D1-D10) are scored by eight checks: D2, D3 and D4 are one competency check (C_COMP); the other seven findings each have their own check. Every finding maps to exactly one check, and every check to at least one finding; the mapping is enforced by a test.",
+ "findings": {
+  "D1": {
+   "category": "omissions",
+   "check": "C_RESP",
+   "rule": 7,
+   "statement": "16 duty lines of the Responsibilities section are extracted as from_responsibilities items"
+  },
+  "D2": {
+   "category": "omissions",
+   "check": "C_COMP",
+   "rule": 1,
+   "statement": "competency line 'Good understanding of business applications, digital platforms, and software support processes.' is covered by an item"
+  },
+  "D3": {
+   "category": "omissions",
+   "check": "C_COMP",
+   "rule": 1,
+   "statement": "competency line 'Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.' is covered by an item"
+  },
+  "D4": {
+   "category": "omissions",
+   "check": "C_COMP",
+   "rule": 1,
+   "statement": "competency line 'Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.' is covered by an item"
+  },
+  "D5": {
+   "category": "alternatives",
+   "check": "C_EXP_OR",
+   "rule": "4, 6",
+   "statement": "the experience item for '1–3 years … ICT systems support, business applications, digital platforms, or software implementation projects' has these alternatives",
+   "expected_alternatives": [
+    "ICT systems support",
+    "business applications",
+    "digital platforms",
+    "software implementation projects"
+   ]
+  },
+  "D6": {
+   "category": "alternatives",
+   "check": "C_FAM_OR",
+   "rule": 4,
+   "statement": "the familiarity line's 'or' list is in alternatives",
+   "expected_alternatives_include": [
+    "enterprise applications"
+   ]
+  },
+  "D7": {
+   "category": "categories",
+   "check": "C_LOCAL",
+   "rule": 5,
+   "statement": "'Knowledge of the local business and regulatory environment' is in domain_knowledge",
+   "expected_category": "domain_knowledge"
+  },
+  "D8": {
+   "category": "routing",
+   "check": "C_LOCATION",
+   "rule": 9,
+   "statement": "the work location statement is a location condition in non_scoreable_requirements",
+   "expected_list": "non_scoreable_requirements",
+   "expected_marker": "Ramallah"
+  },
+  "D9": {
+   "category": "routing",
+   "check": "C_REPORTING",
+   "rule": 9,
+   "statement": "the reporting statement is a reporting_line condition in informational_items",
+   "expected_list": "informational_items",
+   "expected_marker": "submit deliverables",
+   "expected_category": "reporting_line"
+  },
+  "D10": {
+   "category": "and_splitting",
+   "check": "C_AND",
+   "rule": 4,
+   "statement": "'Strong communication, coordination, and teamwork skills' gives separate items for communication, coordination and teamwork"
+  }
+ },
+ "checks": {
+  "C_RESP": {
+   "test": "test_every_responsibility_is_an_experience_item",
+   "findings": [
+    "D1"
+   ]
+  },
+  "C_COMP": {
+   "test": "test_every_competency_line_is_extracted",
+   "findings": [
+    "D2",
+    "D3",
+    "D4"
+   ]
+  },
+  "C_EXP_OR": {
+   "test": "test_experience_or_options_are_alternatives",
+   "findings": [
+    "D5"
+   ]
+  },
+  "C_FAM_OR": {
+   "test": "test_familiarity_or_options_are_alternatives",
+   "findings": [
+    "D6"
+   ]
+  },
+  "C_LOCAL": {
+   "test": "test_local_business_knowledge_is_domain_knowledge",
+   "findings": [
+    "D7"
+   ]
+  },
+  "C_LOCATION": {
+   "test": "test_work_location_is_non_scoreable",
+   "findings": [
+    "D8"
+   ]
+  },
+  "C_REPORTING": {
+   "test": "test_reporting_arrangements_are_informational",
+   "findings": [
+    "D9"
+   ]
+  },
+  "C_AND": {
+   "test": "test_and_list_of_soft_skills_is_split",
+   "findings": [
+    "D10"
+   ]
+  }
+ },
+ "report_only": {
+  "invented_items": "items whose source_text is not verbatim in the JD (rule 2), and from_responsibilities items whose source_text is not a JD duty line (rule 7)",
+  "warnings": "the number of model warnings per call (no pass/fail: rule 4 asks for warnings only where grouping is unclear)",
+  "consistency": "per check: number of the N calls that pass; item-count range; invalid JSON count",
+  "ambiguous_items": [
+   "A1",
+   "A2",
+   "A3",
+   "A4",
+   "A5",
+   "A6",
+   "A7",
+   "A8",
+   "A9"
+  ]
+ },
+ "expected_values": {
+  "duty_lines": [
+   "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+   "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+   "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+   "Participate in functional, integration, and user acceptance testing activities.",
+   "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+   "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+   "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+   "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+   "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+   "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+   "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+   "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+   "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+   "Support the preparation of operational guides, procedures, and technical documentation.",
+   "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+   "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+  ],
+  "competency_lines": [
+   "Good understanding of business applications, digital platforms, and software support processes.",
+   "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.",
+   "Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders."
+  ],
+  "experience_or_alternatives": [
+   "ICT systems support",
+   "business applications",
+   "digital platforms",
+   "software implementation projects"
+  ],
+  "familiarity_or_must_include": "enterprise applications",
+  "location_marker": "Ramallah",
+  "reporting_marker": "submit deliverables"
+ }
+}

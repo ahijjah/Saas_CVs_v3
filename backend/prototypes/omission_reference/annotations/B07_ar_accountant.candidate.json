@@ -1,0 +1,105 @@
+{
+ "jd_id": "B07_ar_accountant",
+ "status": "CLAUDE-GENERATED CANDIDATE - NOT HUMAN-CONFIRMED",
+ "jd_sha256": "30fb2f04275795e796bfa166fe5b9dd370a8577783a7b6fd1ad1471bee192154",
+ "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B07_ar_accountant.json",
+ "source_file_sha256": "246228338b4cd2455a3e300712692fa2c3b7efa3ee0b67d48d0dc9ecc22eb616",
+ "lines": [
+  {
+   "first_line": 1,
+   "text": "محاسب أول",
+   "proposed_type": "heading",
+   "reason": "title line of the posting"
+  },
+  {
+   "first_line": 3,
+   "text": "نبذة عن الشركة: شركة الأفق للتجارة شركة سعودية تعمل في قطاع المواد الغذائية.",
+   "proposed_type": "background",
+   "reason": "company description ('نبذة عن الشركة'), optional background"
+  },
+  {
+   "first_line": 5,
+   "text": "المهام:",
+   "proposed_type": "heading",
+   "reason": "section heading 'المهام:'"
+  },
+  {
+   "first_line": 6,
+   "text": "- إعداد القوائم المالية الشهرية والسنوية.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المهام'"
+  },
+  {
+   "first_line": 7,
+   "text": "- مطابقة الحسابات البنكية.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المهام'"
+  },
+  {
+   "first_line": 8,
+   "text": "- مراجعة فواتير الموردين.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المهام'"
+  },
+  {
+   "first_line": 10,
+   "text": "المتطلبات:",
+   "proposed_type": "heading",
+   "reason": "section heading 'المتطلبات:'"
+  },
+  {
+   "first_line": 11,
+   "text": "- بكالوريوس في المحاسبة أو التمويل.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 12,
+   "text": "- خبرة لا تقل عن 3 سنوات في المحاسبة.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 13,
+   "text": "- شهادة CPA أو SOCPA إلزامية.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 14,
+   "text": "- إجادة برنامج Excel.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 15,
+   "text": "- الدقة في العمل.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 17,
+   "text": "يفضل:",
+   "proposed_type": "heading",
+   "reason": "section heading 'يفضل:'"
+  },
+  {
+   "first_line": 18,
+   "text": "- خبرة في نظام SAP.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'يفضل'"
+  },
+  {
+   "first_line": 19,
+   "text": "- شهادة ماجستير.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'يفضل'"
+  },
+  {
+   "first_line": 21,
+   "text": "الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام كامل. نوفر تأمينًا طبيًا وإجازة سنوية.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'يفضل'"
+  }
+ ]
+}

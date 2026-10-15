@@ -1,0 +1,171 @@
+{
+ "id": "B08_ar_hr_specialist",
+ "language": "ar",
+ "title": "أخصائي موارد بشرية",
+ "tags": [
+  "experience_years",
+  "experience_range",
+  "experience_months",
+  "alternatives",
+  "independent_items",
+  "responsibilities",
+  "repeated_requirement",
+  "languages"
+ ],
+ "job_metadata": {
+  "title": "أخصائي موارد بشرية"
+ },
+ "jd": "أخصائي موارد بشرية\n\nالمتطلبات:\n- خبرة من 3 إلى 5 سنوات في الموارد البشرية.\n- خبرة لا تقل عن ستة أشهر في استخدام نظام Oracle HCM.\n- إجادة Excel وPower BI.\n- إجادة اللغة العربية أو الإنجليزية.\n- معرفة بنظام العمل والتأمينات الاجتماعية.\n- القدرة على التواصل الفعال.\n\nالأعمال اليومية:\n- متابعة الحضور والانصراف.\n- إعداد تقارير شهرية عن الغياب.\n\nملاحظة: نبحث عن شخص لديه قدرة جيدة على التواصل الفعال مع جميع الموظفين.\n",
+ "expected": {
+  "scoreability": "scoreable",
+  "readiness": "ready",
+  "review_codes": [],
+  "category_weights_hint": {
+   "skills": 25,
+   "experience": 40,
+   "education": 0,
+   "certifications": 0,
+   "soft_skills": 15,
+   "domain_knowledge": 20,
+   "other_requirements": 0
+  },
+  "items": [
+   {
+    "category": "experience",
+    "text": "خبرة من 3 إلى 5 سنوات في الموارد البشرية",
+    "importance": "required",
+    "cue": null,
+    "evidence": "خبرة من 3 إلى 5 سنوات في الموارد البشرية.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "الموارد البشرية",
+     "min_years": 3
+    },
+    "note": "range: lowest number"
+   },
+   {
+    "category": "experience",
+    "text": "خبرة لا تقل عن ستة أشهر في استخدام نظام Oracle HCM",
+    "importance": "required",
+    "cue": null,
+    "evidence": "خبرة لا تقل عن ستة أشهر في استخدام نظام Oracle HCM.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": {
+     "subject": "استخدام نظام Oracle HCM",
+     "min_years": null
+    },
+    "subject_variants": [
+     "استخدام نظام Oracle HCM",
+     "Oracle HCM",
+     "نظام Oracle HCM"
+    ],
+    "note": "months: min_years null, wording kept"
+   },
+   {
+    "category": "skills",
+    "text": "إجادة Excel",
+    "importance": "required",
+    "cue": null,
+    "evidence": "إجادة Excel وPower BI.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "note": "independent: two items"
+   },
+   {
+    "category": "skills",
+    "text": "إجادة Power BI",
+    "importance": "required",
+    "cue": null,
+    "evidence": "إجادة Excel وPower BI.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "note": "independent: two items"
+   },
+   {
+    "category": "skills",
+    "text": "إجادة اللغة العربية أو الإنجليزية",
+    "importance": "required",
+    "cue": null,
+    "evidence": "إجادة اللغة العربية أو الإنجليزية.",
+    "origin": "stated",
+    "alternatives": [
+     "العربية",
+     "الإنجليزية"
+    ],
+    "experience": null,
+    "note": "language skill with alternatives: one item"
+   },
+   {
+    "category": "domain_knowledge",
+    "text": "معرفة بنظام العمل والتأمينات الاجتماعية",
+    "importance": "required",
+    "cue": null,
+    "evidence": "معرفة بنظام العمل والتأمينات الاجتماعية.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "domain_knowledge",
+     "skills"
+    ],
+    "note": "one subject (labour and social-insurance regulations): one item expected; two is acceptable"
+   },
+   {
+    "category": "soft_skills",
+    "text": "القدرة على التواصل الفعال",
+    "importance": "required",
+    "cue": null,
+    "evidence": "القدرة على التواصل الفعال.",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "soft_skills",
+     "skills"
+    ]
+   },
+   {
+    "category": "experience",
+    "text": "متابعة الحضور والانصراف",
+    "importance": "required",
+    "cue": null,
+    "evidence": "متابعة الحضور والانصراف.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "experience",
+    "text": "إعداد تقارير شهرية عن الغياب",
+    "importance": "required",
+    "cue": null,
+    "evidence": "إعداد تقارير شهرية عن الغياب.",
+    "origin": "from_responsibilities",
+    "alternatives": null,
+    "experience": null
+   },
+   {
+    "category": "soft_skills",
+    "text": "قدرة جيدة على التواصل الفعال مع جميع الموظفين",
+    "importance": "required",
+    "cue": null,
+    "evidence": "نبحث عن شخص لديه قدرة جيدة على التواصل الفعال مع جميع الموظفين",
+    "origin": "stated",
+    "alternatives": null,
+    "experience": null,
+    "acceptable_categories": [
+     "soft_skills",
+     "skills"
+    ],
+    "note": "repeats an earlier requirement in other words: kept as a separate item (rule 10)"
+   }
+  ],
+  "conditions": [],
+  "must_not_extract": [],
+  "model_warnings_expected": false
+ }
+}

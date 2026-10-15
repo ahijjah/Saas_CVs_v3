@@ -1,0 +1,10 @@
+{
+ "eval_set": "requirements_v2_candidate_v25 eval set",
+ "status": "frozen before any call: expected outputs are fixed in this commit; any change requires a new commit and is reported",
+ "files": {
+  "jds/eval_en_field_service_01.txt": "1f13d8f87ef51ebd222948febafbdbf05ea497ceec03b558587b0105579603dc",
+  "expected/eval_en_field_service_01.json": "5aeb8a6be6b01f26c5c8083b90b8ac62b83d6a3f76e2aade334cdbe93f51c002",
+  "jds/eval_ar_facilities_01.txt": "272260768005aa155ab8632dd6fbb3e2ebf293510775cb7f00ba9cb0885aad43",
+  "expected/eval_ar_facilities_01.json": "35cde3501264bf6ffdcf112a48348293324ec00d9f5850a6049b442785ad730d"
+ }
+}

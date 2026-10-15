@@ -1,0 +1,242 @@
+{
+ "mode": "dry-run",
+ "model": "gpt-4.1-2025-04-14",
+ "settings": {
+  "model": "gpt-4.1-2025-04-14",
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "response_format": {
+   "type": "json_object"
+  },
+  "timeout_s": 90,
+  "retries": 0
+ },
+ "pricing_status": "VERIFIED (owner-supplied from the official model page, https://developers.openai.com/api/docs/models/gpt-4.1): snapshot gpt-4.1-2025-04-14, standard input $2.00 and output $8.00 per 1M tokens. The sandbox could not open the page (DNS), so the figures were recorded from the owner's reading; the snapshot's availability to the key is checked by the first request (a model that differs from the pinned one stops the run).",
+ "calls_per_arm": 10,
+ "total_calls": 20,
+ "order": [
+  {
+   "call": 1,
+   "arm": "CONTROL",
+   "pair": 1,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 2,
+   "arm": "INVENTORY",
+   "pair": 1,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 3,
+   "arm": "CONTROL",
+   "pair": 2,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 4,
+   "arm": "INVENTORY",
+   "pair": 2,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 5,
+   "arm": "CONTROL",
+   "pair": 3,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 6,
+   "arm": "INVENTORY",
+   "pair": 3,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 7,
+   "arm": "CONTROL",
+   "pair": 4,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 8,
+   "arm": "INVENTORY",
+   "pair": 4,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 9,
+   "arm": "CONTROL",
+   "pair": 5,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 10,
+   "arm": "INVENTORY",
+   "pair": 5,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 11,
+   "arm": "CONTROL",
+   "pair": 6,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 12,
+   "arm": "INVENTORY",
+   "pair": 6,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 13,
+   "arm": "CONTROL",
+   "pair": 7,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 14,
+   "arm": "INVENTORY",
+   "pair": 7,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 15,
+   "arm": "CONTROL",
+   "pair": 8,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 16,
+   "arm": "INVENTORY",
+   "pair": 8,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 17,
+   "arm": "CONTROL",
+   "pair": 9,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 18,
+   "arm": "INVENTORY",
+   "pair": 9,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  },
+  {
+   "call": 19,
+   "arm": "CONTROL",
+   "pair": 10,
+   "worst_case_usd": 0.077468,
+   "input_characters": 29467
+  },
+  {
+   "call": 20,
+   "arm": "INVENTORY",
+   "pair": 10,
+   "worst_case_usd": 0.085266,
+   "input_characters": 37265
+  }
+ ],
+ "worst_case_per_call_usd": {
+  "CONTROL": 0.077468,
+  "INVENTORY": 0.085266
+ },
+ "reservation_total_usd": 1.62734,
+ "cap": {
+  "required_minimum_usd": 1.62734,
+  "approved": false,
+  "note": "the cap is exactly the reservation; no average and no margin. Not approved: no paid call may start"
+ },
+ "justification": {
+  "historical_control_losses": 1,
+  "historical_calls": 5,
+  "clopper_pearson_95_for_historical_loss_rate": [
+   0.0051,
+   0.7164
+  ],
+  "p_at_least_one_control_loss_if_loss_rate_0.2_by_pairs": {
+   "5": 0.672,
+   "10": 0.893,
+   "15": 0.965,
+   "20": 0.988
+  },
+  "chosen_pairs": 10,
+  "fisher_examples": {
+   "10/10 vs 9/10 (INVENTORY vs CONTROL)": {
+    "fisher_two_sided_p": 1.0,
+    "verdict": "INCONCLUSIVE"
+   },
+   "10/10 vs 5/10 (INVENTORY vs CONTROL)": {
+    "fisher_two_sided_p": 0.032508,
+    "verdict": "PRIMARY_SUPPORTED"
+   }
+  },
+  "with_inventory_10_of_10_the_largest_control_count_that_is_supported": 5,
+  "exact_power_of_the_rule": {
+   "CONTROL 0.8 vs INVENTORY 1.0": 0.0328,
+   "CONTROL 0.8 vs INVENTORY 0.9": 0.0118,
+   "CONTROL 0.5 vs INVENTORY 1.0": 0.623,
+   "CONTROL 0.5 vs INVENTORY 0.9": 0.2951
+  },
+  "reading": "With 10 calls per arm the rule is exploratory. A 10/10 vs 9/10 result is never supported (p = 1.0). Only a gap of about half the calls, or more, reaches p < 0.05. The power table gives the exact chance of a supported verdict for some true rates; it is low for modest gaps. A supported verdict is a statistical signal in this pilot, not an accuracy claim."
+ },
+ "thresholds": {
+  "fisher_alpha": 0.05,
+  "fisher_test": "two-sided, exact",
+  "guard_regressions_allowed": 0,
+  "verdict_order": [
+   "BLOCKED_GUARD_REGRESSION",
+   "PRIMARY_REGRESSION",
+   "PRIMARY_SUPPORTED",
+   "INCONCLUSIVE",
+   "INCOMPLETE (run stopped)"
+  ]
+ },
+ "frozen": {
+  "control_request_sha256": "da9f2757a9e79617501f3a3a5aa6863d933ee51dfd57ff2e5a86b36ffee56803",
+  "inventory_request_sha256": "2f42e06de526796b154c9184fe36956ab0ed1efcdb12b913e355bd888fbdabd4",
+  "system_prompt_sha256": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+  "control_user_sha256": "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473",
+  "inventory_user_sha256": "8531ce46b6f91fbf80d93fe4903ca4f756bca246d5078d8b9632a81e96e63af7",
+  "inventory_addition_sha256": "3990027ed3430c120790837d5f2e9ddd223c26126a04861f23cdbe11432031e3",
+  "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+  "annotation_sha256": "7db0d3ab32f80417ed72f8b206c9f1f21284c7d6612dae763a16c9d3d078b095",
+  "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
+  "evidence_sha256": "86a9abe7991ac55899296eb37e2133c5a51280c6d0067b106269bd8777b56590",
+  "settings_sha256": "69c7a01b72f06702c1a32dfc330b32519dbd93189127d5494e49d85d440cb74b",
+  "protocol_sha256": "55db82b83e410695f6053b7a50418f331c9243fee356f21b13dfdc3633d3d0cd",
+  "pilot_script_sha256": "fe945c007b6a6c274935aa68cecef086cc645edfc8f25f85105d6d46981860ca",
+  "pilot_tests_sha256": "ef562f47d1379d29563fa13296d479549d1c01486fa98031b38e9c23f86882d4",
+  "scorer_sha256": "1c40def472760b9b79b6878cfe3f3186080786d07668d4eadbfe7ae0f5825129",
+  "pricing_source_sha256": "fadd6381a166127869dea6d888b09ca969f1f1c47c9dddf3f29d7fb30f28a52a",
+  "replay_logic_sha256": {
+   "replay.py": "dc3c49c7699d821a232a2a816bea5b372c3468f14de41635ead446c6ccf02bfe",
+   "coverage.py": "6b757005ed9b488bcce0f311bfa1484f9152f2d4e97a6eeb0b42512775dc00c9",
+   "inventory.py": "afb8dd7de39be98a997ec94088ace67f6b8188173a1c2504a632a86c44496f0a",
+   "preview.py": "e804027cd8f82fd37818daa7d4292ea4345223550dc7d248e3f5469d788ff843"
+  },
+  "manifest_sha256": "f50ec231e8d847b01553e79ea457fcc8a6c726db2934b1342ca95e0260b9757b"
+ },
+ "control_request_chars": 29467,
+ "inventory_request_chars": 37265,
+ "inventory_addition_chars": 7796
+}

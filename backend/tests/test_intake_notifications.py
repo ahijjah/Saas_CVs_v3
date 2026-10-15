@@ -16,12 +16,15 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-# ── SQLAlchemy stub (same pattern as test_duplicate_detection.py) ─────────────
-_sql_mock = MagicMock()
-_sql_mock.text = lambda q: q
-sys.modules.setdefault("sqlalchemy", _sql_mock)
-sys.modules.setdefault("sqlalchemy.ext.asyncio", MagicMock())
-sys.modules.setdefault("sqlalchemy.pool", MagicMock())
+# ── SQLAlchemy stub (same pattern as test_duplicate_detection.py), ONLY when the real package cannot be imported ──
+try:
+    import sqlalchemy  # noqa: F401
+except ImportError:
+    _sql_mock = MagicMock()
+    _sql_mock.text = lambda q: q
+    sys.modules["sqlalchemy"] = _sql_mock
+    sys.modules["sqlalchemy.ext.asyncio"] = MagicMock()
+    sys.modules["sqlalchemy.pool"] = MagicMock()
 
 from services.intake_notification_service import (  # noqa: E402
     AttachmentResult,

@@ -1,0 +1,81 @@
+{
+ "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "prompts": {
+  "v2-3": "21a2f9420c12e1a43579c6817b6a8601547d92b653cd432a693ef590b784b43b",
+  "v2-4": "dd2651bcda14ae816c89d33dd08ecb4aefa5d63e2e51dfbe7d2b39f8b1989a9e"
+ },
+ "job_metadata": {
+  "title": "Technical Coordinator 20",
+  "department": null,
+  "experience_level": null,
+  "location": null,
+  "job_type": null,
+  "work_mode": null
+ },
+ "context_sha256": "122ef7e4f5a05a131859237759d6bfa9ffe08fd513348554557dbd91c07a4d7e",
+ "user_message_sha256": "ff6b334ad32300a05933cf96284c6c253d86ed9442ffcac37a8b543a8c240473",
+ "policy": "no retries; the run stops at the first failed call",
+ "plan": {
+  "calls": [
+   {
+    "arm": "v2-3",
+    "call": 1,
+    "worst_case_usd": 0.00581
+   },
+   {
+    "arm": "v2-3",
+    "call": 2,
+    "worst_case_usd": 0.00581
+   },
+   {
+    "arm": "v2-3",
+    "call": 3,
+    "worst_case_usd": 0.00581
+   },
+   {
+    "arm": "v2-3",
+    "call": 4,
+    "worst_case_usd": 0.00581
+   },
+   {
+    "arm": "v2-3",
+    "call": 5,
+    "worst_case_usd": 0.00581
+   },
+   {
+    "arm": "v2-4",
+    "call": 1,
+    "worst_case_usd": 0.005909
+   },
+   {
+    "arm": "v2-4",
+    "call": 2,
+    "worst_case_usd": 0.005909
+   },
+   {
+    "arm": "v2-4",
+    "call": 3,
+    "worst_case_usd": 0.005909
+   },
+   {
+    "arm": "v2-4",
+    "call": 4,
+    "worst_case_usd": 0.005909
+   },
+   {
+    "arm": "v2-4",
+    "call": 5,
+    "worst_case_usd": 0.005909
+   }
+  ],
+  "worst_case_total_usd": 0.058595,
+  "cap_usd": 0.1,
+  "model": "gpt-4o-mini-2024-07-18",
+  "temperature": 0.1,
+  "max_tokens": 6000,
+  "timeout_s": 90,
+  "retries": 0
+ },
+ "started": 1791656898.812935
+}

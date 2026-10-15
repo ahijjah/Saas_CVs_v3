@@ -29,9 +29,16 @@ async function handleResponse(response: Response) {
 
   if (!response.ok) {
     // Throw an error with the backend's specific message if available
-    const detail = Array.isArray(data?.detail) ? data.detail.map((d: any) => d.msg).join(', ') : data?.detail;
+    const rawDetail = data?.detail;
+    const detail = Array.isArray(rawDetail)
+      ? rawDetail.map((d: any) => d.msg).join(', ')
+      : (rawDetail && typeof rawDetail === 'object' ? rawDetail.message : rawDetail);
     const errorMsg = detail || data?.message || data?.error || `API Error: ${response.status} ${response.statusText}`;
-    throw new Error(errorMsg);
+    // status / data let callers handle specific outcomes (e.g. 409 conflicts) without parsing messages
+    const err = new Error(errorMsg) as Error & { status?: number; data?: any };
+    err.status = response.status;
+    err.data = data;
+    throw err;
   }
 
   return data;

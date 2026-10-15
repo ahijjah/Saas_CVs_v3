@@ -5,10 +5,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep
+from auth.dependencies import CurrentUserDep, RequireWriteRole
+from auth.module_guards import RequireATSManagement
 from database import get_db, set_rls_context
 
-router = APIRouter(prefix="/applications", tags=["approvals"])
+router = APIRouter(prefix="/applications", tags=["approvals"], dependencies=[RequireATSManagement])
 
 VALID_DECISIONS = {"approved", "rejected", "needs_revision"}
 
@@ -125,7 +126,7 @@ async def list_approvals(
     return {"approvals": [_serialize_approval(dict(r)) for r in rows.mappings()]}
 
 
-@router.post("/{application_id}/approvals/initiate", status_code=status.HTTP_201_CREATED)
+@router.post("/{application_id}/approvals/initiate", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def initiate_approvals(
     application_id: str,
     body: InitiateApprovalsRequest,
@@ -205,7 +206,7 @@ async def initiate_approvals(
     return {"approvals": created}
 
 
-@router.post("/{application_id}/approvals", status_code=status.HTTP_201_CREATED)
+@router.post("/{application_id}/approvals", status_code=status.HTTP_201_CREATED, dependencies=[RequireWriteRole])
 async def create_approval_stage(
     application_id: str,
     body: CreateApprovalStageRequest,
@@ -251,7 +252,7 @@ async def create_approval_stage(
     return {"approval": _serialize_approval(result)}
 
 
-@router.patch("/{application_id}/approvals/{approval_id}")
+@router.patch("/{application_id}/approvals/{approval_id}", dependencies=[RequireWriteRole])
 async def decide_approval(
     application_id: str,
     approval_id: str,
@@ -312,7 +313,7 @@ async def decide_approval(
     return {"approval": _serialize_approval(result)}
 
 
-@router.delete("/{application_id}/approvals/{approval_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{application_id}/approvals/{approval_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[RequireWriteRole])
 async def delete_approval(
     application_id: str,
     approval_id: str,

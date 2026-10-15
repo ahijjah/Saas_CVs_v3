@@ -1,0 +1,64 @@
+{
+  "_comment": "SYNTHETIC fixture: the job description is invented and `ai_response` is hand-written to look like a model answer. It is not the output of any real model call.",
+  "language": "en",
+  "job_metadata": {},
+  "jd": "Office Assistant\n\nAll of the following are an advantage, none is required:\n- Experience with Microsoft Office is a plus.\n- Knowledge of basic bookkeeping is preferred.\n- A driving licence is desirable.",
+  "ai_response": {
+    "scoreability": {
+      "status": "scoreable",
+      "reason": ""
+    },
+    "categories": {
+      "skills": [
+        {
+          "text": "Microsoft Office",
+          "importance": "preferred",
+          "importance_cue": "is a plus",
+          "source_text": "Experience with Microsoft Office is a plus.",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "experience": [],
+      "education": [],
+      "certifications": [],
+      "soft_skills": [],
+      "domain_knowledge": [
+        {
+          "text": "Basic bookkeeping",
+          "importance": "preferred",
+          "importance_cue": "is preferred",
+          "source_text": "Knowledge of basic bookkeeping is preferred.",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ],
+      "other_requirements": [
+        {
+          "text": "Driving licence",
+          "importance": "preferred",
+          "importance_cue": "is desirable",
+          "source_text": "A driving licence is desirable.",
+          "origin": "stated",
+          "alternatives": null,
+          "experience": null
+        }
+      ]
+    },
+    "category_weights": {
+      "skills": 40,
+      "experience": 0,
+      "education": 0,
+      "certifications": 0,
+      "soft_skills": 0,
+      "domain_knowledge": 30,
+      "other_requirements": 30
+    },
+    "non_scoreable_requirements": [],
+    "post_hiring_conditions": [],
+    "informational_items": [],
+    "warnings": []
+  }
+}

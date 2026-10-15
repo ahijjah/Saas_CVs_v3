@@ -1,0 +1,728 @@
+{
+ "_comment": "Job-analysis qualifying-context evaluation fixtures (SYNTHETIC; evaluation only, not wired into production). expected.contexts: AND-combined slots, each a verbatim JD phrase or {one_of: [...]} differing only by leading articles/prepositions; uncertain cases list allowed_candidates instead. decoys: generic/company phrases that must not become contexts. flags no_experience_criterion: today's enumeration yields no experience criterion (documented gap, not fixed). analysis_stub is diagnostic only and never shown to a model.",
+ "fixture_version": "qc-heldout-1",
+ "split": "heldout",
+ "cases": [
+  {
+   "id": "QC-HO-A1",
+   "family": "A",
+   "lang": "en",
+   "description": "role + industry",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Sommelier in the luxury cruise industry."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Sommelier"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "luxury cruise industry",
+       "the luxury cruise industry",
+       "in the luxury cruise industry"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "luxury cruise industry"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-A2",
+   "family": "A",
+   "lang": "en",
+   "description": "role + industry",
+   "jd_lines": [
+    "Requirements",
+    "- At least 4 years of experience as a Patent Examiner in the semiconductor industry."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Patent Examiner"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "semiconductor industry",
+       "the semiconductor industry",
+       "in the semiconductor industry"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "semiconductor industry"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-B1",
+   "family": "B",
+   "lang": "en",
+   "description": "role + project domain",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 6 years of experience as a Soil Mechanics Consultant on offshore wind projects."
+   ],
+   "analysis_stub": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "Soil Mechanics Consultant"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "offshore wind projects",
+       "on offshore wind projects"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "offshore wind projects"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-B2",
+   "family": "B",
+   "lang": "en",
+   "description": "role + project domain",
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years as a Tunnel Inspector on metro expansion projects."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Tunnel Inspector"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "metro expansion projects",
+       "on metro expansion projects"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "metro expansion projects"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-C1",
+   "family": "C",
+   "lang": "en",
+   "description": "function + organisation type",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience in archive digitisation within national museums."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "archive digitisation"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "national museums",
+       "within national museums"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "national museums"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-D1",
+   "family": "D",
+   "lang": "en",
+   "description": "role only",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Choreographer."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Choreographer"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-D2",
+   "family": "D",
+   "lang": "ar",
+   "description": "role only (Arabic)",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 4 سنوات كمترجم فوري."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "مترجم فوري"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-E1",
+   "family": "E",
+   "lang": "en",
+   "description": "generic environment: high-pressure setting",
+   "jd_lines": [
+    "Requirements",
+    "- At least 5 years of experience as a Locksmith in a high-pressure setting."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Locksmith"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "a high-pressure setting"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-E2",
+   "family": "E",
+   "lang": "en",
+   "description": "generic environment: agile, self-driven team",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 3 years of experience as a Florist within an agile, self-driven team."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Florist"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "an agile, self-driven team"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-F1",
+   "family": "F",
+   "lang": "ar",
+   "description": "Arabic role + organisation type",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن 5 سنوات كصيدلي سريري في المستشفيات الجامعية."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "صيدلي سريري"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "المستشفيات الجامعية",
+       "في المستشفيات الجامعية"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "المستشفيات الجامعية"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-F2",
+   "family": "F",
+   "lang": "ar",
+   "description": "Arabic role + organisation type, attached proclitic (بشركات)",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 4 سنوات كفني صوت بشركات الإنتاج التلفزيوني."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "فني صوت"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     "شركات الإنتاج التلفزيوني"
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "بشركات الإنتاج التلفزيوني"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-G1",
+   "family": "G",
+   "lang": "ar",
+   "description": "Arabic generic environment: motivating, flexible",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 3 سنوات كمصمم أزياء في بيئة عمل محفزة ومرنة."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "مصمم أزياء"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "في بيئة عمل محفزة ومرنة"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-G2",
+   "family": "G",
+   "lang": "ar",
+   "description": "Arabic generic environment: young, ambitious team",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة لا تقل عن سنتين كخباز ضمن فريق شاب وطموح."
+   ],
+   "analysis_stub": {
+    "minimum_years": 2,
+    "relevant_roles": [
+     "خباز"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "ضمن فريق شاب وطموح"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-H1",
+   "family": "H",
+   "lang": "ar",
+   "description": "Arabic OR context kept as one phrase",
+   "jd_lines": [
+    "المتطلبات",
+    "- خبرة 6 سنوات كمراقب جودة في مصانع الأغذية أو الأدوية."
+   ],
+   "analysis_stub": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "مراقب جودة"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "مصانع الأغذية أو الأدوية",
+       "في مصانع الأغذية أو الأدوية"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "مصانع الأغذية أو الأدوية"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-I1",
+   "family": "I",
+   "lang": "en",
+   "description": "conjunctive, one contiguous combined phrase",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Viticulturist on organic estates in Mediterranean climates."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Viticulturist"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "organic estates in Mediterranean climates",
+       "on organic estates in Mediterranean climates"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "organic estates in Mediterranean climates"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-I2",
+   "family": "I",
+   "lang": "en",
+   "description": "conjunctive, non-contiguous (two lines) -> two contexts ANDed",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 4 years of experience as a Broadcast Technician in live sports coverage.",
+    "- This experience must have been gained at international federations."
+   ],
+   "analysis_stub": {
+    "minimum_years": 4,
+    "relevant_roles": [
+     "Broadcast Technician"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "live sports coverage",
+       "in live sports coverage"
+      ]
+     },
+     {
+      "one_of": [
+       "international federations",
+       "at international federations"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "live sports coverage",
+     "international federations"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-J1",
+   "family": "J",
+   "lang": "en",
+   "description": "role-specific contexts -> shared block cannot represent",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 6 years as a Glazier on heritage restoration works or as a Stonemason in limestone quarries."
+   ],
+   "analysis_stub": {
+    "minimum_years": 6,
+    "relevant_roles": [
+     "Glazier",
+     "Stonemason"
+    ]
+   },
+   "expected": {
+    "state": "uncertain",
+    "allowed_candidates": [
+     {
+      "one_of": [
+       "heritage restoration works",
+       "on heritage restoration works"
+      ]
+     },
+     {
+      "one_of": [
+       "limestone quarries",
+       "in limestone quarries"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "uncertain",
+    "contexts": [
+     "heritage restoration works",
+     "limestone quarries"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-K1",
+   "family": "K",
+   "lang": "en",
+   "description": "ambiguous preference",
+   "jd_lines": [
+    "Requirements",
+    "- At least 3 years of experience as a Translator, ideally within humanitarian agencies."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "Translator"
+    ]
+   },
+   "expected": {
+    "state": "uncertain",
+    "allowed_candidates": [
+     {
+      "one_of": [
+       "humanitarian agencies",
+       "within humanitarian agencies"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "uncertain",
+    "contexts": [
+     "humanitarian agencies"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-L1",
+   "family": "L",
+   "lang": "en",
+   "description": "context on a separate line, absent from relevant_roles",
+   "jd_lines": [
+    "Requirements",
+    "- Minimum 5 years of experience as a Zookeeper.",
+    "- All of this experience must have been gained in accredited wildlife parks."
+   ],
+   "analysis_stub": {
+    "minimum_years": 5,
+    "relevant_roles": [
+     "Zookeeper"
+    ]
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "accredited wildlife parks",
+       "in accredited wildlife parks"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "accredited wildlife parks"
+    ],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-M1",
+   "family": "M",
+   "lang": "ar",
+   "description": "Arabic about-us sector text, no experience restriction",
+   "jd_lines": [
+    "نبذة عن الشركة",
+    "نحن مجموعة رائدة في تصنيع الأثاث المكتبي.",
+    "",
+    "المتطلبات",
+    "- خبرة لا تقل عن 3 سنوات كمصمم جرافيك."
+   ],
+   "analysis_stub": {
+    "minimum_years": 3,
+    "relevant_roles": [
+     "مصمم جرافيك"
+    ]
+   },
+   "expected": {
+    "state": "none",
+    "contexts": []
+   },
+   "decoys": [
+    "تصنيع الأثاث المكتبي"
+   ],
+   "flags": [],
+   "oracle": {
+    "state": "none",
+    "contexts": [],
+    "source": "analysis"
+   }
+  },
+  {
+   "id": "QC-HO-N1",
+   "family": "N",
+   "lang": "en",
+   "description": "context-only requirement (no years, no target)",
+   "jd_lines": [
+    "Requirements",
+    "- Experience in the maritime salvage industry is an advantage."
+   ],
+   "analysis_stub": {
+    "minimum_years": 0,
+    "relevant_roles": []
+   },
+   "expected": {
+    "state": "identified",
+    "contexts": [
+     {
+      "one_of": [
+       "maritime salvage industry",
+       "the maritime salvage industry",
+       "in the maritime salvage industry"
+      ]
+     }
+    ]
+   },
+   "decoys": [],
+   "flags": [
+    "no_experience_criterion"
+   ],
+   "oracle": {
+    "state": "identified",
+    "contexts": [
+     "maritime salvage industry"
+    ],
+    "source": "analysis"
+   }
+  }
+ ]
+}
