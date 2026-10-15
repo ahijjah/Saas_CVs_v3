@@ -1,0 +1,574 @@
+{
+ "version": "omission-reference-set-v1",
+ "scope_statement": "Version 1 labels the 44 reviewed parent rows and the 8 decided child units. The 70 candidate rows of the 114-row sheet that are not in the queue are UNREVIEWED and are not validated. Do not describe the set as 114 validated rows.",
+ "counts": {
+  "candidate_sheet_rows": 114,
+  "reviewed_parent_rows": 44,
+  "reviewed_parent_rows_by_status": {
+   "resolved": 42,
+   "resolved_by_children": 2
+  },
+  "parent_rows_unresolved": 0,
+  "decided_child_units": 8,
+  "unreviewed_candidate_rows": 70
+ },
+ "unreviewed_candidate_rows": [
+  {
+   "jd_id": "TC20",
+   "first_line": 1,
+   "unit_id": "c0c7132c6bd1:L1:0-27",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 11,
+   "unit_id": "c0c7132c6bd1:L11:938-997",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 13,
+   "unit_id": "c0c7132c6bd1:L13:1137-1260",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 14,
+   "unit_id": "c0c7132c6bd1:L14:1261-1405",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 15,
+   "unit_id": "c0c7132c6bd1:L15:1406-1485",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 16,
+   "unit_id": "c0c7132c6bd1:L16:1486-1591",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 17,
+   "unit_id": "c0c7132c6bd1:L17:1592-1714",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 18,
+   "unit_id": "c0c7132c6bd1:L18:1715-1829",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 19,
+   "unit_id": "c0c7132c6bd1:L19:1830-1956",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 20,
+   "unit_id": "c0c7132c6bd1:L20:1957-2073",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 21,
+   "unit_id": "c0c7132c6bd1:L21:2074-2231",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 22,
+   "unit_id": "c0c7132c6bd1:L22:2232-2382",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 24,
+   "unit_id": "c0c7132c6bd1:L24:2424-2530",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 25,
+   "unit_id": "c0c7132c6bd1:L25:2531-2600",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 26,
+   "unit_id": "c0c7132c6bd1:L26:2601-2688",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 27,
+   "unit_id": "c0c7132c6bd1:L27:2689-2816",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 28,
+   "unit_id": "c0c7132c6bd1:L28:2817-2953",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 30,
+   "unit_id": "c0c7132c6bd1:L30:2955-2980",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 32,
+   "unit_id": "c0c7132c6bd1:L32:2982-3319",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 34,
+   "unit_id": "c0c7132c6bd1:L34:3321-3735",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 41,
+   "unit_id": "c0c7132c6bd1:L41:3814-3939",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 42,
+   "unit_id": "c0c7132c6bd1:L42:3940-4079",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 43,
+   "unit_id": "c0c7132c6bd1:L43:4080-4220",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 44,
+   "unit_id": "c0c7132c6bd1:L44:4221-4362",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 45,
+   "unit_id": "c0c7132c6bd1:L45:4363-4476",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 46,
+   "unit_id": "c0c7132c6bd1:L46:4477-4552",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 48,
+   "unit_id": "c0c7132c6bd1:L48:4577-4672",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 50,
+   "unit_id": "c0c7132c6bd1:L50:4779-4884",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 51,
+   "unit_id": "c0c7132c6bd1:L51:4885-4951",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 52,
+   "unit_id": "c0c7132c6bd1:L52:4952-5051",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 54,
+   "unit_id": "c0c7132c6bd1:L54:5214-5270",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 55,
+   "unit_id": "c0c7132c6bd1:L55:5271-5317",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 56,
+   "unit_id": "c0c7132c6bd1:L56:5318-5358",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 57,
+   "unit_id": "c0c7132c6bd1:L57:5359-5415",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "TC20",
+   "first_line": 58,
+   "unit_id": "c0c7132c6bd1:L58:5416-5546",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 1,
+   "unit_id": "964ec821ef2c:L1:0-24",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 4,
+   "unit_id": "964ec821ef2c:L4:39-82",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 7,
+   "unit_id": "964ec821ef2c:L7:170-189",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 8,
+   "unit_id": "964ec821ef2c:L8:190-248",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 9,
+   "unit_id": "964ec821ef2c:L9:249-305",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 11,
+   "unit_id": "964ec821ef2c:L11:307-323",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 13,
+   "unit_id": "964ec821ef2c:L13:379-424",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B02_en_data_analyst",
+   "first_line": 14,
+   "unit_id": "964ec821ef2c:L14:425-475",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B03_en_warehouse_supervisor",
+   "first_line": 1,
+   "unit_id": "0fc3081a294a:L1:0-26",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B03_en_warehouse_supervisor",
+   "first_line": 6,
+   "unit_id": "0fc3081a294a:L6:121-168",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B03_en_warehouse_supervisor",
+   "first_line": 7,
+   "unit_id": "0fc3081a294a:L7:169-224",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B03_en_warehouse_supervisor",
+   "first_line": 11,
+   "unit_id": "0fc3081a294a:L11:317-327",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B03_en_warehouse_supervisor",
+   "first_line": 12,
+   "unit_id": "0fc3081a294a:L12:328-353",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B03_en_warehouse_supervisor",
+   "first_line": 13,
+   "unit_id": "0fc3081a294a:L13:354-378",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B03_en_warehouse_supervisor",
+   "first_line": 17,
+   "unit_id": "0fc3081a294a:L17:441-492",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 1,
+   "unit_id": "30fb2f042757:L1:0-9",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 6,
+   "unit_id": "30fb2f042757:L6:97-138",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 8,
+   "unit_id": "30fb2f042757:L8:166-191",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 11,
+   "unit_id": "30fb2f042757:L11:204-239",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 12,
+   "unit_id": "30fb2f042757:L12:240-277",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 13,
+   "unit_id": "30fb2f042757:L13:278-307",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 15,
+   "unit_id": "30fb2f042757:L15:330-347",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 18,
+   "unit_id": "30fb2f042757:L18:355-374",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B07_ar_accountant",
+   "first_line": 19,
+   "unit_id": "30fb2f042757:L19:375-391",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B08_ar_hr_specialist",
+   "first_line": 1,
+   "unit_id": "386d19910cf1:L1:0-18",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B08_ar_hr_specialist",
+   "first_line": 4,
+   "unit_id": "386d19910cf1:L4:31-74",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B08_ar_hr_specialist",
+   "first_line": 5,
+   "unit_id": "386d19910cf1:L5:75-128",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B08_ar_hr_specialist",
+   "first_line": 6,
+   "unit_id": "386d19910cf1:L6:129-153",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B08_ar_hr_specialist",
+   "first_line": 7,
+   "unit_id": "386d19910cf1:L7:154-190",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B08_ar_hr_specialist",
+   "first_line": 9,
+   "unit_id": "386d19910cf1:L9:234-262",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B08_ar_hr_specialist",
+   "first_line": 11,
+   "unit_id": "386d19910cf1:L11:264-280",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B12_ar_injection",
+   "first_line": 1,
+   "unit_id": "945b2154c3f2:L1:0-18",
+   "proposed_type_candidate": "heading"
+  },
+  {
+   "jd_id": "B12_ar_injection",
+   "first_line": 4,
+   "unit_id": "945b2154c3f2:L4:31-78",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B12_ar_injection",
+   "first_line": 5,
+   "unit_id": "945b2154c3f2:L5:79-100",
+   "proposed_type_candidate": "requirement"
+  },
+  {
+   "jd_id": "B12_ar_injection",
+   "first_line": 10,
+   "unit_id": "945b2154c3f2:L10:159-180",
+   "proposed_type_candidate": "requirement"
+  }
+ ],
+ "parent_rows": {
+  "RQ-001": "resolved",
+  "RQ-002": "resolved",
+  "RQ-003": "resolved",
+  "RQ-004": "resolved",
+  "RQ-005": "resolved",
+  "RQ-006": "resolved",
+  "RQ-007": "resolved",
+  "RQ-008": "resolved",
+  "RQ-009": "resolved",
+  "RQ-010": "resolved",
+  "RQ-011": "resolved",
+  "RQ-012": "resolved",
+  "RQ-013": "resolved",
+  "RQ-014": "resolved",
+  "RQ-015": "resolved",
+  "RQ-016": "resolved",
+  "RQ-017": "resolved",
+  "RQ-018": "resolved",
+  "RQ-019": "resolved",
+  "RQ-020": "resolved",
+  "RQ-021": "resolved",
+  "RQ-022": "resolved",
+  "RQ-023": "resolved",
+  "RQ-024": "resolved",
+  "RQ-025": "resolved",
+  "RQ-026": "resolved",
+  "RQ-027": "resolved",
+  "RQ-028": "resolved",
+  "RQ-029": "resolved_by_children",
+  "RQ-030": "resolved_by_children",
+  "RQ-031": "resolved",
+  "RQ-032": "resolved",
+  "RQ-033": "resolved",
+  "RQ-034": "resolved",
+  "RQ-035": "resolved",
+  "RQ-036": "resolved",
+  "RQ-037": "resolved",
+  "RQ-038": "resolved",
+  "RQ-039": "resolved",
+  "RQ-040": "resolved",
+  "RQ-041": "resolved",
+  "RQ-042": "resolved",
+  "RQ-043": "resolved",
+  "RQ-044": "resolved"
+ },
+ "submissions": [
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv",
+   "sha256": "1be5e1906c528a74aef6b77a218858924089536f58435049bd470d215f6f3fe8",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch10.csv",
+   "sha256": "b8a8e1296682943790b677fb618849a8a65ae5ef606210c9dc0e52eaf41e2aa6",
+   "rows": 1
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch2.csv",
+   "sha256": "eeb385eb4ae3dd6f9258024b813e82a2f54d75af5c833caa544fea973da59b90",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch3.csv",
+   "sha256": "deee39de2d0b4a1ad6907c28323073c4ca70aa2f5e50e95e07a7fc813492b580",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch4.csv",
+   "sha256": "a967319577e67909216ed11c0b065e99ff1dd43cfd49c4521b67fff07efc62c0",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch5.csv",
+   "sha256": "e7d5134305985361b24fdd89eea6fff47787fc73adfc34cd01c88e21b1d81081",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch6.csv",
+   "sha256": "2fcebe9825059dec9f6a65fa826a9bff8ab34913304f7bde620b65409cf09726",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch7.csv",
+   "sha256": "fda9d54b2e819d5b5a243f50432bfc669d1aad21105462626059e4dca7effece",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch8.csv",
+   "sha256": "119eba47f02d87e6df19b3023f8db44f51cb043f6b3e4fdc932270ed68197714",
+   "rows": 5
+  },
+  {
+   "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch9.csv",
+   "sha256": "e354ee1a2d406ad10d6d5b20968c6b4191c8203b993ac38971abaa7a775d243d",
+   "rows": 4
+  }
+ ],
+ "child_submissions": [
+  {
+   "file": "CHILD_CONFIRMED_queue_Asaad-Hijjah_2026-10-15_RQ-029.csv",
+   "sha256": "33895564ec5f87dc95761007a400c10b48e8b881bcd43a0de6eaa676419978cd"
+  },
+  {
+   "file": "CHILD_CONFIRMED_queue_Asaad-Hijjah_2026-10-15_RQ-030.csv",
+   "sha256": "f64e59baf53fd7e55e027d63f18166c885f5026ca9661fb800be0fba24dc2f4c"
+  }
+ ],
+ "amendments": [
+  {
+   "file": "AMENDMENT_batch7_RQ-032_Asaad-Hijjah_2026-10-15.csv",
+   "sha256": "75a94b75009bfb8f6d77d7dfdc25be098fd41d46bfa1e11fcb8fc1e434003979"
+  }
+ ],
+ "inputs": {
+  "reviewer_sheet_sha256": "f71cb861d4c072e6e9000077bfd29b21771da8d1de94a39a5664d63f9949c6c8",
+  "review_children_sha256": "a01ad44b525ab1a95ba338425d8ca21f65100d9cdf3570ec89194a9e8dcb78f7",
+  "review_queue_sha256": "050c178cd186bc1eb75b70b7df87d802d289fbf214a10461b4b0b26af1e0c53c",
+  "annotations": {
+   "B02_en_data_analyst.candidate.json": "e7681958d8e3a152dce1c48d93ce8515a5c2f1f1febe0bf3ba99aaaeff4cbb75",
+   "B03_en_warehouse_supervisor.candidate.json": "b2925fcf6c513a9c23b49682f9211f00ea85706992020c287715c7340515dd8e",
+   "B07_ar_accountant.candidate.json": "ff4e6fcbef700082526d05bbd78b6672db86dbe73990413c9d4483986efb3ba0",
+   "B08_ar_hr_specialist.candidate.json": "331176bfcb5a91c5620a219243e7fc49e26d2489253f2269ba8bd202b09dbdc4",
+   "B12_ar_injection.candidate.json": "b7cde4b4fb2966184b4c485741573335a16d791a5f2039c7f66a053288d10ae7",
+   "TC20.candidate.json": "fb17f6e8929f7372057d3609ee235766862069806789530b3efdecaf67775c4a"
+  },
+  "jd_texts": {
+   "B02_en_data_analyst.txt": "964ec821ef2c5e5c2abd76014934e31bc69b1d6391ceebb15e3986944a1a9df8",
+   "B03_en_warehouse_supervisor.txt": "0fc3081a294ac8cd9692c0402d108d68c4e8a2836988a21c5a206e642affd793",
+   "B07_ar_accountant.txt": "30fb2f04275795e796bfa166fe5b9dd370a8577783a7b6fd1ad1471bee192154",
+   "B08_ar_hr_specialist.txt": "386d19910cf18c2cc9cb5efaf8dcd973847c390dab65a0a67631419158441c58",
+   "B12_ar_injection.txt": "945b2154c3f26ae216d53eb9dfdd25fce6f6e7f57fd0bc4778404c474d8323c2",
+   "TC20.txt": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265"
+  },
+  "package_manifest_sha256": "c01e7b69a98861efb633baab60ca8855cd53ed73627e20cf8b5ba35b54519395"
+ },
+ "frozen_benchmark_scorer_sha256": "c4adf92b9844943ea7fe1e19dc30b899596059c4ce14730363dde2e182f98ebe"
+}

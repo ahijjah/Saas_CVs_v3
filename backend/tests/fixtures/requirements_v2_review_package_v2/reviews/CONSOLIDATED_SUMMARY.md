@@ -11,7 +11,12 @@ file is excluded. The blank starter is unchanged. The table is generated in `CON
 | Class | Genuine defect | False alarm (no defect) | Ambiguous | Total |
 |---|---|---|---|---|
 | Emitted warnings (S001 to S008) | 2 | 6 | 0 | 8 |
-| Unflagged probes (S009 to S012) | 1 | 3 | 0 | 4 |
+| Unflagged probes (S009 to S012) | 0 | 4 | 0 | 4 |
+
+*Correction (dated 2026-10-15, documentation only):* S010 is a **false alarm**, not a genuine defect. The 2026-10-12 amendment
+(`AMENDMENT_S010_confirmed_2026-10-12.csv`, RESOLVED) supersedes the original judgment, which is preserved unchanged in
+`CONFIRMED_reviewer_Asaad-Hijjah_2026-10-12_S010-S012.csv`. The counts above and the table below now reflect the amendment. The
+genuine-defect count for unflagged probes was 1 (S010) before the amendment and is 0 after it.
 
 Correct probes are **not** dismissed warnings. S009 and S011 are correct location placements, and S012 is correct on the speaking-and-writing point. They are probes that required no warning.
 
@@ -33,7 +38,7 @@ Correct probes are **not** dismissed warnings. S009 and S011 are correct locatio
 | ID | Probe type | Judgment | Note (as recorded) |
 |---|---|---|---|
 | S009 | location placement (Cairo, on-site) | false alarm, no defect | location correctly placed in non_scoreable_requirements; an unflagged probe, not a dismissed warning |
-| S010 | OR silent (shifts, travel, visa or relocation) | **genuine defect** | shifts, travel and visa/relocation conditions are omitted and should be retained |
+| S010 | OR silent (shifts, travel, visa or relocation) | false alarm (superseded 2026-10-12; was genuine defect) | all three conditions are present in the stored answer, and the visa-or-relocation condition preserves both options; see the amendment below |
 | S011 | location placement (Arabic accountant) | false alarm, no defect | location correctly placed in non_scoreable_requirements |
 | S012 | attached و limitation ("speaking and writing") | false alarm, no defect | one English-language requirement, consistent with S005 |
 
