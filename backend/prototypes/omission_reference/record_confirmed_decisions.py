@@ -43,12 +43,20 @@ BATCHES = {
         ("RQ-019", "requirement",
          "explicitly requires effective communication, but it repeats or rephrases the communication requirement at B08 line 9 and must not "
          "create a second scored criterion.",
-         ("B08_ar_hr_specialist", 9)),
+         ("repeats_content_of", "B08_ar_hr_specialist", 9)),
         ("RQ-020", "heading", "\u201cالمتطلبات:\u201d labels the requirements section."),
+    ]},
+    5: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch5.csv", "decisions": [
+        ("RQ-023", "heading", "labels the requirements section."),
+        ("RQ-024", "heading", "labels the preferred-items section."),
+        ("RQ-021", "requirement", "changes CSS and HTML to optional and conflicts with the earlier presentation.",
+         ("modifies_importance_of", "B12_ar_injection", 6)),
+        ("RQ-022", "background", "AI-directed injection text, not a job requirement.", None, "ai_directed_injection"),
+        ("RQ-025", "heading", "labels the duties section."),
     ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
-          "confirmed_date", "reason", "status", "benchmark_use", "relation"]
+          "confirmed_date", "reason", "status", "benchmark_use", "relation", "classification_tag"]
 
 
 def queue_index() -> dict:
@@ -64,35 +72,56 @@ def sheet_unit(jd_id: str, first_line: int) -> dict:
     raise SystemExit(f"no unit at {jd_id} line {first_line}")
 
 
+RELATION_USE = {
+    "repeats_content_of": ("confirmed requirement type, but repeated requirement content: counted only through the related unit, "
+                           "never as a second scored criterion"),
+    "modifies_importance_of": ("confirmed requirement type, but a conflict and importance modifier of the related unit: conflict evidence "
+                               "only, never a second scored criterion"),
+}
+TAG_USE = {
+    "ai_directed_injection": ("excluded from requirement coverage: AI-directed injection text, kept under the injection guard, never extracted "
+                              "as a requirement"),
+}
+
+
 def build_rows(decisions: list, date: str) -> list[dict]:
     queue = queue_index()
     rows = []
     for item in decisions:
         rq_id, decision, reason = item[0], item[1], item[2]
-        relation = ""
-        if len(item) == 4 and item[3]:
-            rel_jd, rel_line = item[3]
-            target = sheet_unit(rel_jd, rel_line)
-            if target["proposed_type_candidate"] != "requirement":
-                raise SystemExit(f"{rq_id}: relation target is not a requirement candidate")
-            relation = f"repeats_content_of {target['unit_id']} ({rel_jd} line {rel_line})"
+        relation_spec = item[3] if len(item) > 3 else None
+        tag = item[4] if len(item) > 4 else ""
         if decision not in ALLOWED:
             raise SystemExit(f"{rq_id}: decision '{decision}' is not one of the four choices")
         q = queue.get(rq_id)
         if q is None:
             raise SystemExit(f"{rq_id}: not in the review queue")
+        relation = ""
+        if relation_spec:
+            kind, rel_jd, rel_line = relation_spec
+            if kind not in RELATION_USE:
+                raise SystemExit(f"{rq_id}: unknown relation '{kind}'")
+            target = sheet_unit(rel_jd, rel_line)
+            if target["proposed_type_candidate"] != "requirement":
+                raise SystemExit(f"{rq_id}: relation target is not a requirement candidate")
+            relation = f"{kind} {target['unit_id']} ({rel_jd} line {rel_line})"
+        if tag and tag not in TAG_USE:
+            raise SystemExit(f"{rq_id}: unknown classification tag '{tag}'")
         resolved = decision != "uncertain"
+        if tag:
+            benchmark_use = TAG_USE[tag]
+        elif relation:
+            benchmark_use = RELATION_USE[relation_spec[0]]
+        elif resolved:
+            benchmark_use = "confirmed " + decision + " type"
+        else:
+            benchmark_use = "must not be used as a confirmed requirement or as an exclusion in benchmark results"
         rows.append({"rq_id": rq_id, "jd_id": q["jd_id"], "unit_id": q["unit_id"], "first_line": q["first_line"],
                      "source_text": q["source_text"], "candidate_type_preserved": q["proposed_type_candidate"],
                      "confirmed_decision": decision, "reviewer": REVIEWER, "confirmed_date": date,
                      "reason": reason if reason else "no reason recorded (reviewer gave none)",
-                     "status": "resolved" if resolved else "unresolved (uncertain)",
-                     "benchmark_use": ("confirmed " + decision + " type" if resolved else
-                                       "must not be used as a confirmed requirement or as an exclusion in benchmark results"),
-                     "relation": relation})
-        if relation:
-            rows[-1]["benchmark_use"] = ("confirmed requirement type, but repeated requirement content: counted only through the related unit, "
-                                         "never as a second scored criterion")
+                     "status": "resolved" if resolved else "unresolved (uncertain)", "benchmark_use": benchmark_use,
+                     "relation": relation, "classification_tag": tag})
     return rows
 
 

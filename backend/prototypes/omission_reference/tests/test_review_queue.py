@@ -133,7 +133,7 @@ CANDIDATES = {jd: json.loads((HERE / "annotations" / f"{jd}.candidate.json").rea
 
 
 def test_the_submissions_hold_exactly_the_ten_decisions_with_reviewer_and_date():
-    assert [r["rq_id"] for r in SUBMISSION] == [f"RQ-{n:03d}" for n in range(1, 21)]
+    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 26)]
     assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in SUBMISSION)
 
 
@@ -142,7 +142,8 @@ def test_the_decisions_are_the_ones_given():
     assert got == {"RQ-001": "requirement", "RQ-002": "requirement", "RQ-003": "uncertain", "RQ-004": "heading", "RQ-005": "heading",
                    "RQ-006": "heading", "RQ-007": "heading", "RQ-008": "heading", "RQ-009": "heading", "RQ-010": "requirement",
                    "RQ-011": "heading", "RQ-012": "requirement", "RQ-013": "heading", "RQ-014": "heading", "RQ-015": "background",
-                   "RQ-016": "heading", "RQ-017": "heading", "RQ-018": "heading", "RQ-019": "requirement", "RQ-020": "heading"}
+                   "RQ-016": "heading", "RQ-017": "heading", "RQ-018": "heading", "RQ-019": "requirement", "RQ-020": "heading",
+                   "RQ-021": "requirement", "RQ-022": "background", "RQ-023": "heading", "RQ-024": "heading", "RQ-025": "heading"}
 
 
 def test_each_submitted_unit_matches_the_sheet_exactly_and_keeps_the_candidate_type():
@@ -194,9 +195,9 @@ def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
 
 def test_nineteen_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
     resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
-    assert resolved == {f"RQ-{n:03d}" for n in range(1, 21)} - {"RQ-003"}
+    assert resolved == {f"RQ-{n:03d}" for n in range(1, 26)} - {"RQ-003"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 19 and summary["review_status"]["unresolved (uncertain)"] == 1
+    assert summary["review_status"]["resolved"] == 24 and summary["review_status"]["unresolved (uncertain)"] == 1
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -273,6 +274,7 @@ RECORDED_HASHES = {  # the earlier submissions and the reviewer sheet, as record
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv": "1be5e1906c528a74",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch2.csv": "eeb385eb4ae3dd6f",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch3.csv": "deee39de2d0b4a1a",
+    "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch4.csv": "a967319577e67909",
 }
 
 
@@ -286,8 +288,8 @@ def test_the_reviewer_sheet_is_unchanged_since_the_package_was_built():
     assert hashlib.sha256((HERE / "reviewer_sheet.csv").read_bytes()).hexdigest().startswith("f71cb861d4c072e6")
 
 
-def test_rq_019_is_the_only_relation_and_it_names_exactly_the_b08_line_9_unit():
-    related = [r for r in SUBMISSION if r.get("relation")]
+def test_rq_019_is_the_repeat_relation_and_it_names_exactly_the_b08_line_9_unit():
+    related = [r for r in SUBMISSION if r.get("relation", "").startswith("repeats_content_of")]
     assert [r["rq_id"] for r in related] == ["RQ-019"]
     sheet = {r["unit_id"]: r for r in SHEET_ROWS}
     target = sheet["386d19910cf1:L9:234-262"]
@@ -305,7 +307,7 @@ def test_both_units_of_the_rq_019_relation_are_preserved_in_the_submission_and_t
 
 def test_no_other_duplicate_relationship_is_inferred():
     for r in SUBMISSION:
-        if r["rq_id"] != "RQ-019":
+        if r["rq_id"] not in ("RQ-019", "RQ-021"):
             assert r.get("relation", "") == "" and "repeat" not in r["reason"]
 
 
@@ -321,17 +323,58 @@ def test_the_b08_repeated_unit_is_not_a_second_requirement_in_the_replay():
             assert a["coverage"]["requirement_units"] == 8, "the repeated unit is not a requirement denominator"
 
 
-def test_the_next_batch_is_five_open_rows_in_document_order():
+def test_the_next_batch_is_five_open_rows_in_document_order_within_priority():
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
     nxt = summary["next_batch"]
-    assert len(nxt) <= 5
-    lines = [int(QUEUE_BY_RQ[rq]["first_line"]) for rq in nxt]
-    assert nxt == ["RQ-023", "RQ-024", "RQ-021", "RQ-022", "RQ-025"] and lines == [3, 9, 12, 14, 16]
-    assert all(QUEUE_BY_RQ[rq]["review_status"] == "open" and QUEUE_BY_RQ[rq]["jd_id"] == "B12_ar_injection" for rq in nxt)
+    assert len(nxt) == 5
+    open_rows = sorted([r for r in QUEUE if r["review_status"] == "open"],
+                       key=lambda r: (r["priority"], Q.JD_ORDER.index(r["jd_id"]), int(r["first_line"])))
+    assert nxt == [r["rq_id"] for r in open_rows[:5]]
+    assert all(QUEUE_BY_RQ[rq]["priority"] == "2" for rq in nxt), "priority one is exhausted after batch five"
+    assert nxt[0] == "RQ-" + nxt[0][3:] and QUEUE_BY_RQ[nxt[0]]["jd_id"] == "TC20"
+    assert [int(QUEUE_BY_RQ[rq]["first_line"]) for rq in nxt[:1]] == [53]
+
+
+def test_priority_one_is_fully_decided_after_batch_five():
+    p1 = [r for r in QUEUE if r["priority"] == "1"]
+    assert all(r["review_status"] != "open" for r in p1)
 
 
 def test_rq_ids_are_stable_and_the_queue_is_not_renumbered():
-    assert [r["rq_id"] for r in QUEUE][:20] == [f"RQ-{n:03d}" for n in range(1, 21)]
+    assert [r["rq_id"] for r in QUEUE][:25] == [f"RQ-{n:03d}" for n in range(1, 26)]
+
+
+def test_rq_021_is_a_conflict_modifier_of_the_exact_line_six_unit_and_adds_no_requirement():
+    r = SUBMISSION_BY_RQ["RQ-021"]
+    assert r["relation"] == "modifies_importance_of 945b2154c3f2:L6:101-122 (B12_ar_injection line 6)"
+    assert r["confirmed_decision"] == "requirement" and "conflicts with the earlier presentation" in r["reason"]
+    assert "never a second scored criterion" in r["benchmark_use"]
+
+
+def test_rq_022_is_recorded_as_ai_directed_injection_and_excluded():
+    r = SUBMISSION_BY_RQ["RQ-022"]
+    assert r["classification_tag"] == "ai_directed_injection" and r["confirmed_decision"] == "background"
+    assert "excluded from requirement coverage" in r["benchmark_use"] and "injection guard" in r["benchmark_use"]
+
+
+def test_the_b12_conflict_and_injection_units_are_excluded_from_requirement_counts_and_reported_separately():
+    replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
+    b12 = [a for g in replay["groups"] for a in replay["groups"][g].get("B12_ar_injection", [])]
+    assert b12
+    for a in b12:
+        assert a["coverage"]["requirement_units"] == 6, "RQ-021 and RQ-022 add no requirement"
+        assert not any(sp["first_line"] in (12, 14) for sp in a["uncovered"].get("requirement", []))
+        assert all(sp["first_line"] == 12 for sp in a["uncovered"].get("conflict_modifier", []))
+        assert all(sp["first_line"] == 14 for sp in a["uncovered"].get("excluded_injection", []))
+        assert isinstance(a["defects"]["injection_guard"], bool), "the injection guard is reported per answer"
+
+
+def test_the_injection_guard_is_not_applied_to_other_jds_and_is_not_offset_by_coverage():
+    replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
+    for g in replay["groups"]:
+        for jd, answers in replay["groups"][g].items():
+            if jd != "B12_ar_injection":
+                assert all(a.get("defects", {}).get("injection_guard") is None for a in answers)
 
 
 def test_rq_003_is_still_unresolved_after_batch_four():
