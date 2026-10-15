@@ -1,0 +1,1128 @@
+{
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "inventory": {
+  "physical_lines": 58,
+  "blank_lines_skipped": 11,
+  "units": 47,
+  "requirement_units": 35,
+  "heading_units": 9,
+  "background_units": 3,
+  "soft_wrap_merged_lines": [],
+  "crlf_lines": 0
+ },
+ "cover_threshold": 0.9,
+ "sources": {
+  "repeat_gpt-4.1": [
+   {
+    "arm": "v2-3",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 36,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 37,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 37,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": true,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 34,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 0,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 37,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 18,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 16,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 21,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": true,
+     "C_EXP_OR": true,
+     "C_FAM_OR": true,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": true,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-5",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 33,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 1,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 34,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 0,
+    "duty_omissions": [],
+    "omitted_units": [
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": true,
+     "C_COMP": true,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": true,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   }
+  ],
+  "audit_gpt-4o-mini": [
+   {
+    "arm": "v2-3",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 0,
+     "ambiguous": 0,
+     "omitted": 20,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 16,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 16,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 19,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 0,
+     "ambiguous": 0,
+     "omitted": 20,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 16,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": false,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-3",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 1,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 19,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 17,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 2,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 2,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 3,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 1,
+     "ambiguous": 0,
+     "omitted": 19,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 17,
+     "ambiguous": 0,
+     "not_verbatim": 1,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 4,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 15,
+     "partial": 2,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 18,
+     "ambiguous": 0,
+     "not_verbatim": 2,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [
+     "It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.",
+     "The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks."
+    ],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   },
+   {
+    "arm": "v2-4",
+    "call": 5,
+    "invalid_json": false,
+    "coverage": {
+     "covered": 17,
+     "partial": 0,
+     "ambiguous": 0,
+     "omitted": 18,
+     "requirement_units": 35
+    },
+    "quote_counts": {
+     "unique": 20,
+     "ambiguous": 0,
+     "not_verbatim": 0,
+     "invalid": 0
+    },
+    "repeated_quotes_in_answer": 2,
+    "duty_omissions": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms."
+    ],
+    "omitted_units": [
+     "Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.",
+     "Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.",
+     "Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.",
+     "Participate in functional, integration, and user acceptance testing activities.",
+     "Support the monitoring and follow-up of system performance, service availability, and operational issues.",
+     "Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.",
+     "Assist in the implementation, testing, and operational support of system integrations and data exchange processes.",
+     "Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.",
+     "Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.",
+     "Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.",
+     "Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.",
+     "Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.",
+     "Provide on-the-job coaching and technical guidance to MoNE ICT staff.",
+     "Support the preparation of operational guides, procedures, and technical documentation.",
+     "Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.",
+     "Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.",
+     "Good understanding of business applications, digital platforms, and software support processes.",
+     "Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities."
+    ],
+    "partial_units": [],
+    "ambiguous_units": [],
+    "frozen_checks": {
+     "C_RESP": false,
+     "C_COMP": false,
+     "C_EXP_OR": false,
+     "C_FAM_OR": false,
+     "C_LOCAL": false,
+     "C_LOCATION": true,
+     "C_REPORTING": false,
+     "C_AND": false
+    }
+   }
+  ]
+ }
+}

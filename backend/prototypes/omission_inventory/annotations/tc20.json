@@ -1,0 +1,20 @@
+{
+ "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+ "note": "Reviewed by hand against the TC20 JD. A line is heading or background only if it is listed here exactly (outer spaces stripped).",
+ "headings": [
+  "Objective of the Assignment",
+  "Responsibilities",
+  "ABRS Service Implementation, Stabilization, and Enhancement",
+  "Knowledge Transfer and Capacity Building",
+  "Reporting and Supervision",
+  "متطلبات الوظيفة",
+  "Qualifications",
+  "Qualifications and Professional Experience:",
+  "Skills and Competencies"
+ ],
+ "background": [
+  "The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery.",
+  "The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services.",
+  "The Coordinator will support the implementation, stabilization, enhancement, and continuous improvement of ABRS services and related digital platforms through the following activities:"
+ ]
+}

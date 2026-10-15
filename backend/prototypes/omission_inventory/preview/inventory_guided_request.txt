@@ -1,0 +1,62 @@
+You extract requirements from the job description below.
+
+Output contract: one JSON object with the same categories as today, plus "unit_decisions".
+- Every item must quote its source_text exactly, character for character, from ONE requirement unit. Do not paraphrase.
+- Every requirement unit id listed below must appear exactly once in "unit_decisions", with one of:
+    "extracted"        the unit is covered by one or more items (name them in "items")
+    "condition"        the unit is a condition (location, reporting), placed in non_scoreable_requirements or informational_items
+    "not_a_requirement" the unit is context with no requirement in it
+- Do not invent a unit id. If a unit is unclear, say so in "warnings" and still give it a decision.
+
+Requirement units (verbatim; quote from these):
+[c0c7132c6bd1:L12:998-1136] Support the implementation, rollout, operational stabilization, and continuous improvement of ABRS services and related digital platforms.
+[c0c7132c6bd1:L13:1137-1260] Coordinate with MoNE teams and the ABRS vendor to identify, track, and resolve system, operational, and integration issues.
+[c0c7132c6bd1:L14:1261-1405] Support the implementation, validation, and deployment of system enhancements, configuration changes, releases, and new service functionalities.
+[c0c7132c6bd1:L15:1406-1485] Participate in functional, integration, and user acceptance testing activities.
+[c0c7132c6bd1:L16:1486-1591] Support the monitoring and follow-up of system performance, service availability, and operational issues.
+[c0c7132c6bd1:L17:1592-1714] Support data validation, reconciliation, verification, and reporting activities related to ABRS services and integrations.
+[c0c7132c6bd1:L18:1715-1829] Assist in the implementation, testing, and operational support of system integrations and data exchange processes.
+[c0c7132c6bd1:L19:1830-1956] Support the analysis, documentation, and follow-up of enhancement requests, operational requirements, and system improvements.
+[c0c7132c6bd1:L20:1957-2073] Coordinate with business, legal, and technical teams to support the implementation of new services and enhancements.
+[c0c7132c6bd1:L21:2074-2231] Support the review, optimization, and digitization of business processes, procedures, forms, notifications, and user-facing content related to ABRS services.
+[c0c7132c6bd1:L22:2232-2382] Contribute to the identification and implementation of opportunities for service improvement, operational efficiency, and service quality enhancement.
+[c0c7132c6bd1:L24:2424-2530] Support knowledge-transfer activities related to ABRS administration, operation, support, and enhancement.
+[c0c7132c6bd1:L25:2531-2600] Provide on-the-job coaching and technical guidance to MoNE ICT staff.
+[c0c7132c6bd1:L26:2601-2688] Support the preparation of operational guides, procedures, and technical documentation.
+[c0c7132c6bd1:L27:2689-2816] Participate in workshops, demonstrations, training sessions, and coordination meetings related to ABRS services and operations.
+[c0c7132c6bd1:L28:2817-2953] Contribute to strengthening MoNE’s capacity to independently support, maintain, and enhance ABRS services and related digital platforms.
+[c0c7132c6bd1:L32:2982-3319] It is expected that the Technical Coordinator. will work at the MoNE office in Ramallah and as needed, at other MoNE offices in the West Bank to support operational and implementation activities. The Coordinator shall submit deliverables to the IPSD II Technical Resident Advisor and the IPSD II Project Director for review and approval.
+[c0c7132c6bd1:L34:3321-3735] The Technical Coordinator. will perform his/her duties in coordination with the MoNE IT focal point for ABRS and in consultation with the PIA and other relevant project stakeholders as appropriate. The Coordinator will maintain regular communication with the IPSD II Technical Resident Advisor and the IPSD II Project Director to keep them informed in a timely manner about activities, progress, issues, and risks.
+[c0c7132c6bd1:L41:3814-3939] Bachelor’s degree in Computer Science, Information Technology, Software Engineering, Information Systems, or a related field.
+[c0c7132c6bd1:L42:3940-4079] 1–3 years of professional experience in ICT systems support, business applications, digital platforms, or software implementation projects.
+[c0c7132c6bd1:L43:4080-4220] Experience in supporting, testing, implementing, or operating business systems, digital services, or e-government platforms is an advantage.
+[c0c7132c6bd1:L44:4221-4362] Familiarity with business process documentation, system integrations, databases, reporting tools, or enterprise applications is an advantage.
+[c0c7132c6bd1:L45:4363-4476] Basic knowledge of web technologies and scripting languages, particularly JavaScript, is considered an advantage.
+[c0c7132c6bd1:L46:4477-4552] Knowledge of the local business and regulatory environment is an advantage.
+[c0c7132c6bd1:L48:4577-4672] Good understanding of business applications, digital platforms, and software support processes.
+[c0c7132c6bd1:L49:4673-4778] Ability to support system testing, troubleshooting, issue tracking, and operational follow-up activities.
+[c0c7132c6bd1:L50:4779-4884] Strong organizational skills with the ability to plan, prioritize, and manage multiple tasks effectively.
+[c0c7132c6bd1:L51:4885-4951] Strong attention to detail and commitment to accuracy and quality.
+[c0c7132c6bd1:L52:4952-5051] Ability to work effectively under pressure and meet deadlines in a dynamic operational environment.
+[c0c7132c6bd1:L53:5052-5213] Ability to communicate effectively with users, understand their requirements and issues, and support their resolution in coordination with relevant stakeholders.
+[c0c7132c6bd1:L54:5214-5270] Strong communication, coordination, and teamwork skills.
+[c0c7132c6bd1:L55:5271-5317] Good analytical and problem-solving abilities.
+[c0c7132c6bd1:L56:5318-5358] Good documentation and reporting skills.
+[c0c7132c6bd1:L57:5359-5415] Good working knowledge of Microsoft Office applications.
+[c0c7132c6bd1:L58:5416-5546] Good command of Arabic and English, including the ability to communicate with stakeholders and understand technical documentation.
+
+Context (headings and background; not requirement units, do not list them):
+- heading: Objective of the Assignment
+- background: The Technical Coordinator. will support the Ministry of National Economy (MoNE) in the implementation, stabilization, enhancement, and operational support of the Automated Business Registry System (ABRS) and related digital platforms. The Coordinator will work closely with MoNE teams and the system vendor to support service rollout, system enhancements, testing, integration activities, issue resolution, and technical coordination to ensure stable and efficient service delivery.
+- background: The Coordinator will also contribute to strengthening MoNE’s technical and operational capacity through knowledge transfer, technical guidance, and support for the continuous improvement of digital government services.
+- heading: Responsibilities
+- background: The Coordinator will support the implementation, stabilization, enhancement, and continuous improvement of ABRS services and related digital platforms through the following activities:
+- heading: ABRS Service Implementation, Stabilization, and Enhancement
+- heading: Knowledge Transfer and Capacity Building
+- heading: Reporting and Supervision
+- heading: متطلبات الوظيفة
+- heading: Qualifications
+- heading: Qualifications and Professional Experience:
+- heading: Skills and Competencies
+
+Requirement unit count: 35. Each id above must appear exactly once in unit_decisions.
