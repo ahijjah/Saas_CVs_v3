@@ -3352,9 +3352,9 @@
    "B02_en_data_analyst": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 8,
-      "partial": 1,
+      "partial": 2,
       "omitted": 0
      },
      "uncovered": {
@@ -3466,9 +3466,7 @@
         "text": ".",
         "class": "punctuation_only",
         "unit_status": "covered"
-       }
-      ],
-      "uncertain": [
+       },
        {
         "first_line": 16,
         "text": "Also important:",
@@ -3482,6 +3480,7 @@
         "unit_status": "partial"
        }
       ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {
@@ -4126,9 +4125,9 @@
    "B02_en_data_analyst": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 8,
-      "partial": 1,
+      "partial": 2,
       "omitted": 0
      },
      "uncovered": {
@@ -4240,9 +4239,7 @@
         "text": ".",
         "class": "punctuation_only",
         "unit_status": "covered"
-       }
-      ],
-      "uncertain": [
+       },
        {
         "first_line": 16,
         "text": "Also important:",
@@ -4256,6 +4253,7 @@
         "unit_status": "partial"
        }
       ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {
@@ -4871,9 +4869,9 @@
    "B02_en_data_analyst": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 8,
-      "partial": 1,
+      "partial": 2,
       "omitted": 0
      },
      "uncovered": {
@@ -4985,9 +4983,7 @@
         "text": ".",
         "class": "punctuation_only",
         "unit_status": "covered"
-       }
-      ],
-      "uncertain": [
+       },
        {
         "first_line": 16,
         "text": "Also important:",
@@ -5001,6 +4997,7 @@
         "unit_status": "partial"
        }
       ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {
@@ -5551,9 +5548,9 @@
    "B02_en_data_analyst": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 8,
-      "partial": 1,
+      "partial": 2,
       "omitted": 0
      },
      "uncovered": {
@@ -5665,9 +5662,7 @@
         "text": ".",
         "class": "punctuation_only",
         "unit_status": "covered"
-       }
-      ],
-      "uncertain": [
+       },
        {
         "first_line": 16,
         "text": "Also important:",
@@ -5681,6 +5676,7 @@
         "unit_status": "partial"
        }
       ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {

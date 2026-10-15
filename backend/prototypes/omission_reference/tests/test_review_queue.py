@@ -10,7 +10,7 @@ import build_queue as Q
 HERE = pathlib.Path(__file__).resolve().parents[1]
 SHEET_ROWS = list(csv.DictReader((HERE / "reviewer_sheet.csv").open(encoding="utf-8")))
 QUEUE = list(csv.DictReader((HERE / "review_queue.csv").open(encoding="utf-8")))
-SUBMISSION = list(csv.DictReader((HERE / "reviews" / "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv").open(encoding="utf-8")))
+SUBMISSION = [r for path in sorted((HERE / "reviews").glob("CONFIRMED_*.csv")) for r in csv.DictReader(path.open(encoding="utf-8"))]
 SUBMISSION_BY_RQ = {r["rq_id"]: r for r in SUBMISSION}
 QUEUE_BY_RQ = {r["rq_id"]: r for r in QUEUE}
 MANIFEST = json.loads((HERE / "manifest.json").read_text(encoding="utf-8"))
@@ -132,14 +132,15 @@ def test_the_md_summary_matches_the_csv_counts():
 CANDIDATES = {jd: json.loads((HERE / "annotations" / f"{jd}.candidate.json").read_text(encoding="utf-8")) for jd in MANIFEST["jds"]}
 
 
-def test_the_submission_holds_exactly_the_five_decisions_with_reviewer_and_date():
-    assert [r["rq_id"] for r in SUBMISSION] == ["RQ-001", "RQ-002", "RQ-003", "RQ-004", "RQ-005"]
+def test_the_submissions_hold_exactly_the_ten_decisions_with_reviewer_and_date():
+    assert [r["rq_id"] for r in SUBMISSION] == [f"RQ-{n:03d}" for n in range(1, 11)]
     assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in SUBMISSION)
 
 
 def test_the_decisions_are_the_ones_given():
     got = {r["rq_id"]: r["confirmed_decision"] for r in SUBMISSION}
-    assert got == {"RQ-001": "requirement", "RQ-002": "requirement", "RQ-003": "uncertain", "RQ-004": "heading", "RQ-005": "heading"}
+    assert got == {"RQ-001": "requirement", "RQ-002": "requirement", "RQ-003": "uncertain", "RQ-004": "heading", "RQ-005": "heading",
+                   "RQ-006": "heading", "RQ-007": "heading", "RQ-008": "heading", "RQ-009": "heading", "RQ-010": "requirement"}
 
 
 def test_each_submitted_unit_matches_the_sheet_exactly_and_keeps_the_candidate_type():
@@ -155,11 +156,22 @@ def test_the_candidate_classifications_are_preserved_in_their_files():
     assert tc20[7] == "heading" and tc20[23] == "heading"
 
 
-def test_the_reason_is_recorded_as_given_and_missing_reasons_are_stated_not_invented():
+def test_the_reasons_are_recorded_as_given_and_missing_reasons_are_stated_not_invented():
     assert SUBMISSION_BY_RQ["RQ-003"]["reason"] == \
         "substantive duty summary, but potentially duplicates the detailed duties that follow"
+    assert SUBMISSION_BY_RQ["RQ-010"]["reason"] == "it explicitly requires clear communication of findings to non-technical colleagues."
+    assert SUBMISSION_BY_RQ["RQ-008"]["reason"] == "names the qualifications and professional-experience section and contains no requirement itself."
     for rq in ("RQ-001", "RQ-002", "RQ-004", "RQ-005"):
         assert SUBMISSION_BY_RQ[rq]["reason"] == "no reason recorded (reviewer gave none)"
+
+
+def test_the_batch_two_source_text_is_exact_and_the_candidates_are_preserved():
+    sheet = {r["unit_id"]: r for r in SHEET_ROWS}
+    for rq in ("RQ-006", "RQ-007", "RQ-008", "RQ-009", "RQ-010"):
+        r = SUBMISSION_BY_RQ[rq]
+        assert sheet[r["unit_id"]]["source_text"] == r["source_text"]
+        assert r["candidate_type_preserved"] == sheet[r["unit_id"]]["proposed_type_candidate"]
+    assert SUBMISSION_BY_RQ["RQ-010"]["candidate_type_preserved"] == "uncertain"
 
 
 def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
@@ -168,11 +180,11 @@ def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
     assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
 
 
-def test_four_rows_are_resolved_and_one_remains_unresolved_in_the_queue_and_summary():
-    resolved = [r for r in QUEUE if r["review_status"] == "resolved"]
-    assert {r["rq_id"] for r in resolved} == {"RQ-001", "RQ-002", "RQ-004", "RQ-005"}
+def test_nine_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
+    resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
+    assert resolved == {f"RQ-{n:03d}" for n in range(1, 11)} - {"RQ-003"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 4 and summary["review_status"]["unresolved (uncertain)"] == 1
+    assert summary["review_status"]["resolved"] == 9 and summary["review_status"]["unresolved (uncertain)"] == 1
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -186,11 +198,16 @@ def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeyp
         Q.load_submissions()
 
 
-def test_an_invalid_decision_is_refused_by_the_recorder(monkeypatch):
+def test_an_invalid_decision_is_refused_by_the_recorder():
     import record_confirmed_decisions as R2
-    monkeypatch.setattr(R2, "DECISIONS", [("RQ-001", "maybe", None)])
     with pytest.raises(SystemExit, match="not one of the four choices"):
-        R2.build_rows()
+        R2.build_rows([("RQ-001", "maybe", None)], "2026-10-15")
+
+
+def test_a_submission_is_never_overwritten_by_the_recorder():
+    import record_confirmed_decisions as R2
+    with pytest.raises(SystemExit, match="never overwritten"):
+        R2.main(["--batch", "1"])
 
 
 def test_the_replay_counts_rq_001_and_rq_002_as_requirements_and_rq_003_only_as_unresolved():
@@ -211,3 +228,18 @@ def test_the_effective_type_of_rq_003_is_unresolved_and_its_candidate_stays_back
     types = RR.effective_types("TC20", CANDIDATES["TC20"])
     assert types[9] == "unresolved" and types[3] == "requirement" and types[5] == "requirement" and types[7] == "heading"
     assert {l["first_line"]: l["proposed_type"] for l in CANDIDATES["TC20"]["lines"]}[9] == "background"
+
+
+def test_the_batch_two_decisions_change_the_effective_types_and_no_candidate_file():
+    import replay_ref as RR
+    types = RR.effective_types("TC20", CANDIDATES["TC20"])
+    assert [types[n] for n in (37, 38, 40, 47)] == ["heading"] * 4
+    b02 = json.loads((HERE / "annotations" / "B02_en_data_analyst.candidate.json").read_text(encoding="utf-8"))
+    assert RR.effective_types("B02_en_data_analyst", b02)[16] == "requirement"
+    cand = {l["first_line"]: l["proposed_type"] for l in b02["lines"]}
+    assert cand[16] == "uncertain", "the candidate file still says uncertain"
+
+
+def test_the_queue_has_no_open_row_at_the_head_of_the_next_batch_that_was_already_decided():
+    decided = set(SUBMISSION_BY_RQ)
+    assert all(QUEUE_BY_RQ[rq]["review_status"] != "open" for rq in decided)

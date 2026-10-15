@@ -20,7 +20,7 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Review status: open 39, resolved 4, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: open 34, resolved 9, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -73,40 +73,40 @@ Review status: open 39, resolved 4, unresolved (uncertain) 1. Confirmed decision
 - Proposed type: **heading** — section heading in the posting
 - Priority: P1 — heading with requirement term (متطلب): check whether the section holds requirements
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **heading** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed heading type
 
 **RQ-007** · TC20 (en) · line 38 · unit `c0c7132c6bd1:L38:3754-3768`
 - Source text: Qualifications
 - Proposed type: **heading** — section heading in the posting
 - Priority: P1 — heading with requirement term (qualif): check whether the section holds requirements
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **heading** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed heading type
 
 **RQ-008** · TC20 (en) · line 40 · unit `c0c7132c6bd1:L40:3770-3813`
 - Source text: Qualifications and Professional Experience:
 - Proposed type: **heading** — section heading in the posting
 - Priority: P1 — heading with requirement term (qualif, experience): check whether the section holds requirements
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **heading** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed heading type
 
 **RQ-009** · TC20 (en) · line 47 · unit `c0c7132c6bd1:L47:4553-4576`
 - Source text: Skills and Competencies
 - Proposed type: **heading** — section heading in the posting
 - Priority: P1 — heading with requirement term (skill, competenc): check whether the section holds requirements
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **heading** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed heading type
 
 **RQ-010** · B02_en_data_analyst (en) · line 16 · unit `964ec821ef2c:L16:477-591`
 - Source text: Also important: clear communication of findings to non-technical colleagues is expected from everyone on the team.
 - Proposed type: **uncertain** — general expectation sentence with no section; may or may not be a requirement
 - Priority: P1 — proposed uncertain: general expectation sentence with no section; may or may not be a requirement
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 ### B03 (P1, 5 rows)
 

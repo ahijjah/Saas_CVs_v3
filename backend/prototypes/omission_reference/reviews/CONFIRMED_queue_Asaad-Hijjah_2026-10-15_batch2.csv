@@ -1,0 +1,6 @@
+rq_id,jd_id,unit_id,first_line,source_text,candidate_type_preserved,confirmed_decision,reviewer,confirmed_date,reason,status,benchmark_use
+RQ-006,TC20,c0c7132c6bd1:L37:3738-3753,37,متطلبات الوظيفة,heading,heading,Asaad Hijjah,2026-10-15,“متطلبات الوظيفة” only names the job-requirements section.,resolved,confirmed heading type
+RQ-007,TC20,c0c7132c6bd1:L38:3754-3768,38,Qualifications,heading,heading,Asaad Hijjah,2026-10-15,“Qualifications” only names a section.,resolved,confirmed heading type
+RQ-008,TC20,c0c7132c6bd1:L40:3770-3813,40,Qualifications and Professional Experience:,heading,heading,Asaad Hijjah,2026-10-15,names the qualifications and professional-experience section and contains no requirement itself.,resolved,confirmed heading type
+RQ-009,TC20,c0c7132c6bd1:L47:4553-4576,47,Skills and Competencies,heading,heading,Asaad Hijjah,2026-10-15,names the skills and competencies section.,resolved,confirmed heading type
+RQ-010,B02_en_data_analyst,964ec821ef2c:L16:477-591,16,Also important: clear communication of findings to non-technical colleagues is expected from everyone on the team.,uncertain,requirement,Asaad Hijjah,2026-10-15,it explicitly requires clear communication of findings to non-technical colleagues.,resolved,confirmed requirement type
