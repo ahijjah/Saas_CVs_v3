@@ -216,11 +216,11 @@ def validate_draft(doc: Any) -> ValidationResult:
         return ValidationResult(errors=(Issue(
             "structure_record_not_allowed_in_draft",
             "Structure confirmations are server-owned and cannot be part of an extraction draft."),))
-    from services.requirements_v2.structural_review import has_resolved_findings
-    if has_resolved_findings(doc):
+    from services.requirements_v2.structural_review import has_structural_block
+    if has_structural_block(doc):
         return ValidationResult(errors=(Issue(
-            "structural_resolution_not_allowed_in_draft",
-            "Structural resolutions are server-owned and cannot be part of an extraction draft."),))
+            "structural_review_not_allowed_in_draft",
+            "The structural review is server-owned and cannot be part of an extraction draft."),))
     review = _rule_issues(doc)
     if sum(count_items(doc)) == 0:
         review.append(Issue("no_items", "No requirements were found; the recruiter must add at least one."))

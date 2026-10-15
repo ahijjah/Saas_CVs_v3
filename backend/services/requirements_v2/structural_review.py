@@ -12,6 +12,9 @@ Ownership: a detector or the parser may create OPEN findings only. Resolution be
 service. carry_structural_review keeps the stored block on every save and discards whatever block the client sent. A new
 analysis version never inherits resolutions. Source-unit omissions are not part of this contract.
 
+Item ids: an open finding's item_ids must all exist in the current document. A resolved finding decided 'fixed' may cite
+items that no longer exist (its evidence_item_ids must name current items); the other decisions require the original
+item_ids to exist and a non-empty note.
 Malformed blocks, unknown codes, bad item ids, bad offsets and incomplete resolutions all fail closed: readiness reports them
 as structural_review_invalid. A document without the block is unchanged.
 """
@@ -33,6 +36,8 @@ STRUCTURAL_CODES = (CODE_ALTERNATIVES_SPLIT, CODE_INDEPENDENT_MERGED, CODE_IMPOR
 STATUS_OPEN = "open"
 STATUS_RESOLVED = "resolved"
 DECISIONS = ("fixed", "dismissed_false_positive", "accepted_as_is")
+DECISION_FIXED = "fixed"
+DECISION_NOT_A_FINDING = ("dismissed_false_positive", "accepted_as_is")
 BLOCK_KEYS = frozenset({"schema_version", "findings"})
 FINDING_KEYS = frozenset({"id", "code", "item_ids", "source_text", "source_start", "source_end", "message", "status", "resolution"})
 RESOLUTION_REQUIRED = frozenset({"decision", "reviewer_user_id", "resolved_at"})
@@ -52,12 +57,15 @@ def _is_int(v: Any) -> bool:
 
 
 def _resolution_problems(res: Any, items: set[str]) -> list[str]:
+    """Rules by decision. fixed: evidence_item_ids is required and must name current items (the original items may be gone).
+    dismissed_false_positive / accepted_as_is: a non-empty note is required; evidence is optional but must name current items."""
     if not isinstance(res, dict):
         return ["a resolved finding needs a resolution object"]
     out: list[str] = []
     if not RESOLUTION_REQUIRED <= set(res) or not set(res) <= RESOLUTION_KEYS:
         return ["a resolution must contain decision, reviewer_user_id and resolved_at, and no other fields"]
-    if res["decision"] not in DECISIONS:
+    decision = res["decision"]
+    if decision not in DECISIONS:
         out.append(f"resolution decision must be one of {', '.join(DECISIONS)}")
     if not isinstance(res["reviewer_user_id"], str) or not res["reviewer_user_id"].strip():
         out.append("resolution reviewer_user_id must be a non-empty string")
@@ -67,13 +75,18 @@ def _resolution_problems(res: Any, items: set[str]) -> list[str]:
         stamp = None
     if stamp is None or stamp.tzinfo is None:
         out.append("resolution resolved_at must be an ISO 8601 timestamp with a timezone")
-    if res.get("note") is not None and not isinstance(res.get("note"), str):
+    note = res.get("note")
+    if note is not None and not isinstance(note, str):
         out.append("resolution note must be text or null")
+    elif decision in DECISION_NOT_A_FINDING and not (isinstance(note, str) and note.strip()):
+        out.append(f"decision {decision} needs a non-empty note explaining the decision")
     evidence = res.get("evidence_item_ids")
+    if decision == DECISION_FIXED and not (isinstance(evidence, list) and evidence):
+        out.append("decision fixed needs a non-empty evidence_item_ids list naming the corrected items")
     if evidence is not None:
-        if not isinstance(evidence, list) or len(set(map(str, evidence))) != len(evidence) \
-                or not all(isinstance(e, str) and e in items for e in evidence):
-            out.append("resolution evidence_item_ids must be unique ids of items in the document")
+        if not isinstance(evidence, list) or not all(isinstance(e, str) for e in evidence) \
+                or len(set(evidence)) != len(evidence) or not all(e in items for e in evidence):
+            out.append("resolution evidence_item_ids must be unique ids of items in the current document")
     return out
 
 
@@ -104,9 +117,12 @@ def block_problems(block: Any, doc: dict, jd_text: Any) -> list[str]:
         if f["code"] not in STRUCTURAL_CODES:
             out.append(f"{where} code {f['code']!r} is not an approved structural code")
         ids = f["item_ids"]
-        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i in items for i in ids) \
-                or len(set(ids)) != len(ids):
-            out.append(f"{where} item_ids must be a non-empty list of unique ids of items in the document")
+        historical = (f["status"] == STATUS_RESOLVED and isinstance(f["resolution"], dict)
+                      and f["resolution"].get("decision") == DECISION_FIXED)
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i for i in ids) or len(set(ids)) != len(ids):
+            out.append(f"{where} item_ids must be a non-empty list of unique ids")
+        elif not historical and not all(i in items for i in ids):
+            out.append(f"{where} item_ids must name items in the current document (only a fixed resolution may cite items that no longer exist)")
         text, start, end = f["source_text"], f["source_start"], f["source_end"]
         if not isinstance(text, str) or not text:
             out.append(f"{where} source_text must be a non-empty string")
@@ -138,11 +154,10 @@ def structural_status(doc: Any, jd_text: Any) -> StructuralStatus:
         Issue(READINESS_OPEN, f["message"], item_id=f["item_ids"][0]) for f in open_findings))
 
 
-def has_resolved_findings(doc: Any) -> bool:
-    """A draft may not carry a resolution: resolution is server-owned."""
-    block = doc.get(STRUCTURAL_KEY) if isinstance(doc, dict) else None
-    findings = block.get("findings") if isinstance(block, dict) else None
-    return isinstance(findings, list) and any(isinstance(f, dict) and f.get("status") == STATUS_RESOLVED for f in findings)
+def has_structural_block(doc: Any) -> bool:
+    """A draft may carry no structural_review block at all, open or resolved: the server adds open findings only after draft
+    validation, and resolution is server-owned."""
+    return isinstance(doc, dict) and STRUCTURAL_KEY in doc
 
 
 def carry_structural_review(stored: Any, incoming: Any) -> dict:

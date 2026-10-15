@@ -103,8 +103,9 @@ def compute_readiness(doc: object, *, require_classification_acknowledgment: boo
         return Readiness(NEEDS_REVIEW, None, result.errors)
     status = classification_status(doc)
     pending = structure_status(doc, original).needs_review if original != "not_evaluated" else ()  # type: ignore[arg-type]
+    structural = structural_status(doc, jd_text)     # computed early: its open ids are visible in every valid state
     visible = dict(open_warning_ids=status.open, unresolved_warning_ids=status.unresolved,
-                   structure_review_item_ids=pending)
+                   structure_review_item_ids=pending, structural_finding_ids=structural.open_ids)
     required, preferred = count_items(doc)           # type: ignore[arg-type]
     if required + preferred == 0:
         return Readiness(NEEDS_ITEMS, None, (Issue(
@@ -119,9 +120,8 @@ def compute_readiness(doc: object, *, require_classification_acknowledgment: boo
                   "The wording of this item changed (or its structure was never confirmed). Confirm that its OR "
                   "alternatives / experience still match, or correct them.",
                   category=find_text_item(doc, i)[0], item_id=i) for i in pending), **visible)
-    structural = structural_status(doc, jd_text)            # precedence: after the item-structure review, before readiness
-    if structural.issues:
-        return Readiness(NEEDS_STRUCTURAL_REVIEW, None, structural.issues, **{**visible, "structural_finding_ids": structural.open_ids})
+    if structural.issues:                                  # precedence: after the item-structure review, before readiness
+        return Readiness(NEEDS_STRUCTURAL_REVIEW, None, structural.issues, **visible)
     if required > 0:
         return Readiness(READY, SCORING_WEIGHTED, **visible)
     if doc.get("scoring_confirmation") is not None:   # type: ignore[union-attr]

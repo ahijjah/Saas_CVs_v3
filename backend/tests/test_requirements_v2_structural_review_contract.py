@@ -20,7 +20,9 @@ B12 = json.loads((FIXTURES / "B12_ar_injection.json").read_text(encoding="utf-8"
 CSS_HTML_REQUIRED = "معرفة بـ CSS وHTML"          # B12 line 6
 CODES = ("alternatives_split_across_items", "independent_items_merged", "importance_conflict_unresolved")
 RESOLUTION = {"decision": "accepted_as_is", "reviewer_user_id": "reviewer-1", "resolved_at": "2026-10-15T19:00:00+00:00",
-              "note": None, "evidence_item_ids": None}
+              "note": "Reviewed: both skills are listed separately in the employer's own list.", "evidence_item_ids": None}
+FIXED = {"decision": "fixed", "reviewer_user_id": "reviewer-1", "resolved_at": "2026-10-15T19:00:00+00:00",
+         "note": None, "evidence_item_ids": None}
 
 
 def _base_doc() -> dict:
@@ -180,11 +182,22 @@ def test_a_structural_block_is_not_a_scoring_confirmation():
 
 # draft and ownership rules
 
-def test_a_draft_may_carry_only_open_findings():
+def test_a_draft_rejects_a_structural_block_whether_its_findings_are_open_or_resolved():
     doc = _base_doc()
-    draft = _with_block(doc, [_finding(doc, status="resolved", resolution=dict(RESOLUTION))])
-    assert [e.code for e in validate_draft(draft).errors] == ["structural_resolution_not_allowed_in_draft"]
-    assert validate_draft(_with_block(doc, [_finding(doc)])).errors == ()
+    open_draft = _with_block(doc, [_finding(doc)])
+    resolved_draft = _with_block(doc, [_finding(doc, status="resolved", resolution=dict(RESOLUTION))])
+    assert [e.code for e in validate_draft(open_draft).errors] == ["structural_review_not_allowed_in_draft"]
+    assert [e.code for e in validate_draft(resolved_draft).errors] == ["structural_review_not_allowed_in_draft"]
+    assert validate_draft(doc).errors == (), "a draft without the block is still valid"
+
+
+def test_a_server_added_open_block_is_valid_in_final_validation_and_readiness():
+    from services.requirements_v2.validation import validate_final
+    doc = _base_doc()
+    assert validate_draft(doc).errors == ()                      # the draft passes first
+    server_doc = _with_block(doc, [_finding(doc)])               # the server then adds an open finding
+    assert validate_final(server_doc).ok
+    assert _state(server_doc).state == "needs_structural_review"
 
 
 def test_the_parser_never_writes_a_structural_review_block():
@@ -222,3 +235,100 @@ def test_carry_keeps_the_stored_block_and_discards_a_client_block():
     assert out["structural_review"] == stored["structural_review"]
     assert _state(out).state == "needs_structural_review"
     assert "structural_review" not in carry_structural_review(None, forged), "no stored block: none is created from the client"
+
+
+# ---- item-id and evidence rules by status and decision ----
+
+def test_fixed_replaces_one_merged_item_with_two_corrected_items_and_historical_ids_may_be_gone():
+    doc = _base_doc()
+    fixed = _finding(doc, item_ids=["merged-historical"], status="resolved",
+                     resolution={**FIXED, "evidence_item_ids": _ids(doc)})
+    assert _state(_with_block(doc, [fixed])).state == C.READY
+
+
+def test_fixed_without_evidence_item_ids_fails_closed():
+    doc = _base_doc()
+    _invalid(doc, _finding(doc, item_ids=["merged-historical"], status="resolved", resolution={**FIXED, "evidence_item_ids": None}))
+    _invalid(doc, _finding(doc, item_ids=["merged-historical"], status="resolved", resolution={**FIXED, "evidence_item_ids": []}))
+    _invalid(doc, _finding(doc, status="resolved", resolution={**FIXED, "evidence_item_ids": None}))   # current ids: evidence is the only defect
+
+
+def test_fixed_with_evidence_that_is_not_in_the_corrected_document_fails_closed():
+    doc = _base_doc()
+    _invalid(doc, _finding(doc, item_ids=["merged-historical"], status="resolved",
+                           resolution={**FIXED, "evidence_item_ids": ["no-such-item"]}))
+
+
+def test_dismissed_or_accepted_without_a_note_fails_closed():
+    doc = _base_doc()
+    for decision in ("dismissed_false_positive", "accepted_as_is"):
+        for note in (None, "", "   "):
+            _invalid(doc, _finding(doc, status="resolved", resolution={**RESOLUTION, "decision": decision, "note": note}))
+
+
+def test_dismissed_or_accepted_requires_the_original_items_to_exist():
+    doc = _base_doc()
+    for decision in ("dismissed_false_positive", "accepted_as_is"):
+        _invalid(doc, _finding(doc, item_ids=["merged-historical"], status="resolved", resolution={**RESOLUTION, "decision": decision}))
+
+
+def test_invalid_evidence_ids_fail_closed_for_accepted_and_fixed():
+    doc = _base_doc()
+    ids = _ids(doc)
+    _invalid(doc, _finding(doc, status="resolved", resolution={**RESOLUTION, "evidence_item_ids": ["no-such-item"]}))
+    _invalid(doc, _finding(doc, status="resolved", resolution={**RESOLUTION, "evidence_item_ids": [ids[0], ids[0]]}))
+    _invalid(doc, _finding(doc, item_ids=["merged-historical"], status="resolved", resolution={**FIXED, "evidence_item_ids": [ids[0], "x"]}))
+
+
+def test_accepted_with_a_note_and_current_evidence_is_ready():
+    doc = _base_doc()
+    ok = _finding(doc, status="resolved", resolution={**RESOLUTION, "evidence_item_ids": [_ids(doc)[0]]})
+    assert _state(_with_block(doc, [ok])).state == C.READY
+
+
+# ---- readiness visibility: structural finding ids are reported under every valid state ----
+
+B02 = json.loads((FIXTURES / "B02_en_data_analyst.json").read_text(encoding="utf-8"))["jd"]
+PYTHON_OR_R = "Proficiency in Python or R"
+
+
+def _alternatives_doc():
+    raw = json.dumps({"categories": {"skills": [{"text": "Python or R proficiency", "importance": "required",
+                                                 "source_text": PYTHON_OR_R, "alternatives": ["Python", "R"]}]},
+                      "category_weights": {"skills": 100}, "scoring_confirmation": None}, ensure_ascii=False)
+    return parse_response(raw, B02).requirements
+
+
+def test_classification_stays_primary_while_structural_finding_ids_remain_visible():
+    raw = json.dumps({"categories": {"skills": [{"text": "CSS", "importance": "preferred", "source_text": CSS_HTML_REQUIRED},
+                                                {"text": "HTML", "importance": "required", "source_text": CSS_HTML_REQUIRED}]},
+                      "category_weights": {"skills": 100}, "scoring_confirmation": None}, ensure_ascii=False)
+    doc = parse_response(raw, B12).requirements
+    doc = _with_block(doc, [_finding(doc, fid="s-classification", item_ids=[_ids(doc)[1]])])
+    res = _state(doc)
+    assert res.state == C.NEEDS_CLASSIFICATION_REVIEW
+    assert res.structural_finding_ids == ("s-classification",)
+
+
+def test_item_structure_review_stays_primary_while_structural_finding_ids_remain_visible():
+    doc = _alternatives_doc()
+    item = _ids(doc)[0]
+    finding = {"id": "s-structure", "code": "alternatives_split_across_items", "item_ids": [item], "source_text": PYTHON_OR_R,
+               "source_start": B02.index(PYTHON_OR_R), "source_end": B02.index(PYTHON_OR_R) + len(PYTHON_OR_R),
+               "message": "Python and R may have been split", "status": "open", "resolution": None}
+    server = _with_block(doc, [finding])
+    res = compute_readiness(server, original=None, jd_text=B02)          # no baseline: item-level structure review is pending
+    assert res.state == C.NEEDS_STRUCTURE_REVIEW
+    assert res.structural_finding_ids == ("s-structure",)
+
+
+def test_after_higher_blockers_clear_the_state_becomes_needs_structural_review():
+    doc = _alternatives_doc()
+    item = _ids(doc)[0]
+    finding = {"id": "s-structure", "code": "alternatives_split_across_items", "item_ids": [item], "source_text": PYTHON_OR_R,
+               "source_start": B02.index(PYTHON_OR_R), "source_end": B02.index(PYTHON_OR_R) + len(PYTHON_OR_R),
+               "message": "Python and R may have been split", "status": "open", "resolution": None}
+    server = _with_block(doc, [finding])
+    res = compute_readiness(server, original=copy.deepcopy(doc), jd_text=B02)   # the baseline matches: nothing pending
+    assert res.state == "needs_structural_review"
+    assert res.structural_finding_ids == ("s-structure",)
