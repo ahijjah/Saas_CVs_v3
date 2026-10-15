@@ -20,9 +20,25 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Next batch (document order, no more than 5 rows): RQ-026, RQ-027, RQ-028, RQ-029, RQ-030.
+Next batch (document order, no more than 5 items): RQ-029/C01, RQ-029/C02, RQ-029/C03, RQ-029/C04, RQ-029/C05.
 
-Review status: open 19, resolved 24, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+## Child review units (uncertain parents RQ-029 and RQ-030)
+
+Each child is an exact, partitioned piece of its parent (offsets in `review_children.csv`). The parent stays unresolved. Each child
+carries a Claude-proposed semantic role, which is not a decision. The choices are: scoreable requirement | non-scoreable condition | post-hiring condition | informational benefit | background | uncertain.
+
+| child | text | proposed role (candidate) | judgment that applies | semantic-role decision |
+|---|---|---|---|---|
+| RQ-029/C01 | Terms: rotating night shifts, | non-scoreable condition | S010 (sentence-level: child content inside its statement) | _(blank)_ |
+| RQ-029/C02 | occasional travel to the Abu Dhabi depot, | non-scoreable condition | S010 (sentence-level: child content inside its statement) | _(blank)_ |
+| RQ-029/C03 | and candidates must hold a valid UAE residence visa or be willing to relocate. | non-scoreable condition | S010 (sentence-level: child content inside its statement) | _(blank)_ |
+| RQ-029/C04 | A background check and two professional references will be requested before the start date. | post-hiring condition | - | _(blank)_ |
+| RQ-029/C05 | We offer a transport allowance. | informational benefit | - | _(blank)_ |
+| RQ-030/C01 | الشروط: الراتب بالريال السعودي، | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | _(blank)_ |
+| RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | _(blank)_ |
+| RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | _(blank)_ |
+
+Review status: open 14, resolved 27, unresolved (uncertain) 3. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -243,40 +259,40 @@ Review status: open 19, resolved 24, unresolved (uncertain) 1. Confirmed decisio
 - Proposed type: **requirement** — requirement line under 'Skills and Competencies'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S006 (false alarm, whole unit, statement: Ability to communicate effectively with users, understand th) · scope: whole unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-027** · B02_en_data_analyst (en) · line 6 · unit `964ec821ef2c:L6:140-169`
 - Source text: - Proficiency in Python or R.
 - Proposed type: **requirement** — requirement line under 'Requirements'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S002 (genuine defect, whole unit, statement: Proficiency in Python or R.) · scope: whole unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-028** · B03_en_warehouse_supervisor (en) · line 8 · unit `0fc3081a294a:L8:225-262`
 - Source text: - Fluent English, spoken and written.
 - Proposed type: **requirement** — requirement line under 'Required'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S005 (false alarm, whole unit, statement: Fluent English, spoken and written.) · scope: whole unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-029** · B03_en_warehouse_supervisor (en) · line 19 · unit `0fc3081a294a:L19:494-768`
 - Source text: Terms: rotating night shifts, occasional travel to the Abu Dhabi depot, and candidates must hold a valid UAE residence visa or be willing to relocate. A background check and two professional references will be requested before the start date. We offer a transport allowance.
 - Proposed type: **requirement** — requirement line under 'Duties'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S010 (false alarm, sentence within unit, statement: Terms: rotating night shifts, occasional travel to the Abu D) · scope: sentence within unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **unresolved (uncertain)** · Confirmed decision: **uncertain** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: uncertain parent: excluded from confirmed inclusion and exclusion; decided only through its child units, which are pending
 
 **RQ-030** · B07_ar_accountant (ar) · line 21 · unit `30fb2f042757:L21:393-492`
 - Source text: الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام كامل. نوفر تأمينًا طبيًا وإجازة سنوية.
 - Proposed type: **requirement** — requirement line under 'يفضل'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S003 (false alarm, sentence within unit, statement: الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام); S011 (false alarm, sentence within unit, statement: الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام) · scope: sentence within unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **unresolved (uncertain)** · Confirmed decision: **uncertain** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: uncertain parent: excluded from confirmed inclusion and exclusion; decided only through its child units, which are pending
 
 ### B07 (P2–P3, 5 rows)
 

@@ -54,6 +54,13 @@ BATCHES = {
         ("RQ-022", "background", "AI-directed injection text, not a job requirement.", None, "ai_directed_injection"),
         ("RQ-025", "heading", "labels the duties section."),
     ]},
+    6: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch6.csv", "decisions": [
+        ("RQ-026", "requirement", "one connected communication competency; S006 confirms it should remain one item."),
+        ("RQ-027", "requirement", "one Python-or-R alternative requirement; S002 confirms the alternatives must remain together."),
+        ("RQ-028", "requirement", "one English-language requirement; S005 confirms spoken and written should remain together."),
+        ("RQ-029", "uncertain", "the physical line mixes work conditions, post-hire checks and a benefit. S010 applies only to its first sentence."),
+        ("RQ-030", "uncertain", "the physical line mixes salary, location and benefits. S003 and S011 apply only to its first sentence."),
+    ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
           "confirmed_date", "reason", "status", "benchmark_use", "relation", "classification_tag"]
@@ -77,6 +84,12 @@ RELATION_USE = {
                            "never as a second scored criterion"),
     "modifies_importance_of": ("confirmed requirement type, but a conflict and importance modifier of the related unit: conflict evidence "
                                "only, never a second scored criterion"),
+}
+UNCERTAIN_PARENTS = {
+    "RQ-029": ("uncertain parent: excluded from confirmed inclusion and exclusion; decided only through its child units, "
+               "which are pending"),
+    "RQ-030": ("uncertain parent: excluded from confirmed inclusion and exclusion; decided only through its child units, "
+               "which are pending"),
 }
 TAG_USE = {
     "ai_directed_injection": ("excluded from requirement coverage: AI-directed injection text, kept under the injection guard, never extracted "
@@ -110,6 +123,8 @@ def build_rows(decisions: list, date: str) -> list[dict]:
         resolved = decision != "uncertain"
         if tag:
             benchmark_use = TAG_USE[tag]
+        elif decision == "uncertain" and q["priority_reason"] and rq_id in UNCERTAIN_PARENTS:
+            benchmark_use = UNCERTAIN_PARENTS[rq_id]
         elif relation:
             benchmark_use = RELATION_USE[relation_spec[0]]
         elif resolved:

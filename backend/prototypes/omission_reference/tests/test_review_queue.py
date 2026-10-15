@@ -133,7 +133,7 @@ CANDIDATES = {jd: json.loads((HERE / "annotations" / f"{jd}.candidate.json").rea
 
 
 def test_the_submissions_hold_exactly_the_ten_decisions_with_reviewer_and_date():
-    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 26)]
+    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 31)]
     assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in SUBMISSION)
 
 
@@ -143,7 +143,8 @@ def test_the_decisions_are_the_ones_given():
                    "RQ-006": "heading", "RQ-007": "heading", "RQ-008": "heading", "RQ-009": "heading", "RQ-010": "requirement",
                    "RQ-011": "heading", "RQ-012": "requirement", "RQ-013": "heading", "RQ-014": "heading", "RQ-015": "background",
                    "RQ-016": "heading", "RQ-017": "heading", "RQ-018": "heading", "RQ-019": "requirement", "RQ-020": "heading",
-                   "RQ-021": "requirement", "RQ-022": "background", "RQ-023": "heading", "RQ-024": "heading", "RQ-025": "heading"}
+                   "RQ-021": "requirement", "RQ-022": "background", "RQ-023": "heading", "RQ-024": "heading", "RQ-025": "heading",
+                   "RQ-026": "requirement", "RQ-027": "requirement", "RQ-028": "requirement", "RQ-029": "uncertain", "RQ-030": "uncertain"}
 
 
 def test_each_submitted_unit_matches_the_sheet_exactly_and_keeps_the_candidate_type():
@@ -193,11 +194,11 @@ def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
     assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
 
 
-def test_nineteen_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
+def test_twenty_seven_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
     resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
-    assert resolved == {f"RQ-{n:03d}" for n in range(1, 26)} - {"RQ-003"}
+    assert resolved == {f"RQ-{n:03d}" for n in range(1, 31)} - {"RQ-003", "RQ-029", "RQ-030"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 24 and summary["review_status"]["unresolved (uncertain)"] == 1
+    assert summary["review_status"]["resolved"] == 27 and summary["review_status"]["unresolved (uncertain)"] == 3
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -274,6 +275,7 @@ RECORDED_HASHES = {  # the earlier submissions and the reviewer sheet, as record
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv": "1be5e1906c528a74",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch2.csv": "eeb385eb4ae3dd6f",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch3.csv": "deee39de2d0b4a1a",
+    "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch5.csv": "e7d5134305985361",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch4.csv": "a967319577e67909",
 }
 
@@ -323,21 +325,95 @@ def test_the_b08_repeated_unit_is_not_a_second_requirement_in_the_replay():
             assert a["coverage"]["requirement_units"] == 8, "the repeated unit is not a requirement denominator"
 
 
-def test_the_next_batch_is_five_open_rows_in_document_order_within_priority():
+def test_the_next_batch_is_the_first_five_child_units_in_document_order_before_other_queue_rows():
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    nxt = summary["next_batch"]
-    assert len(nxt) == 5
-    open_rows = sorted([r for r in QUEUE if r["review_status"] == "open"],
-                       key=lambda r: (r["priority"], Q.JD_ORDER.index(r["jd_id"]), int(r["first_line"])))
-    assert nxt == [r["rq_id"] for r in open_rows[:5]]
-    assert all(QUEUE_BY_RQ[rq]["priority"] == "2" for rq in nxt), "priority one is exhausted after batch five"
-    assert nxt[0] == "RQ-" + nxt[0][3:] and QUEUE_BY_RQ[nxt[0]]["jd_id"] == "TC20"
-    assert [int(QUEUE_BY_RQ[rq]["first_line"]) for rq in nxt[:1]] == [53]
+    assert summary["next_batch"] == ["RQ-029/C01", "RQ-029/C02", "RQ-029/C03", "RQ-029/C04", "RQ-029/C05"]
+    assert summary["child_units"] == {"total": 8, "pending_semantic_role": 8}
 
 
 def test_priority_one_is_fully_decided_after_batch_five():
     p1 = [r for r in QUEUE if r["priority"] == "1"]
     assert all(r["review_status"] != "open" for r in p1)
+
+
+# ── batch six: uncertain parents, child review units ──────────────────────────────────────────────────────────────────────
+CHILDREN = list(csv.DictReader((HERE / "review_children.csv").open(encoding="utf-8")))
+JDS = {jd: (HERE / "jd" / f"{jd}.txt").read_bytes().decode("utf-8") for jd in MANIFEST["jds"]}
+
+
+def test_batch_six_records_three_requirements_and_two_uncertain_parents():
+    got = {r["rq_id"]: (r["confirmed_decision"], r["status"]) for r in SUBMISSION if r["rq_id"] in
+           {"RQ-026", "RQ-027", "RQ-028", "RQ-029", "RQ-030"}}
+    assert got == {"RQ-026": ("requirement", "resolved"), "RQ-027": ("requirement", "resolved"), "RQ-028": ("requirement", "resolved"),
+                   "RQ-029": ("uncertain", "unresolved (uncertain)"), "RQ-030": ("uncertain", "unresolved (uncertain)")}
+    assert SUBMISSION_BY_RQ["RQ-027"]["reason"] == "one Python-or-R alternative requirement; S002 confirms the alternatives must remain together."
+    assert SUBMISSION_BY_RQ["RQ-029"]["reason"] == \
+        "the physical line mixes work conditions, post-hire checks and a benefit. S010 applies only to its first sentence."
+
+
+def test_uncertain_parents_are_excluded_from_confirmed_inclusion_and_exclusion():
+    for rq in ("RQ-029", "RQ-030"):
+        assert "excluded from confirmed inclusion and exclusion" in SUBMISSION_BY_RQ[rq]["benchmark_use"]
+        assert QUEUE_BY_RQ[rq]["review_status"].startswith("unresolved")
+
+
+def test_each_parent_is_partitioned_into_children_that_reproduce_every_character():
+    for rq, jd_id, parent_unit in (("RQ-029", "B03_en_warehouse_supervisor", "0fc3081a294a:L19:"), ("RQ-030", "B07_ar_accountant", "30fb2f042757:L21:")):
+        kids = [c for c in CHILDREN if c["parent_rq_id"] == rq]
+        assert kids and all(c["parent_unit_id"].startswith(parent_unit) for c in kids)
+        jd = JDS[jd_id]
+        start = int(kids[0]["start"])
+        end = int(kids[-1]["end"])
+        assert jd[start:end] == "".join(jd[int(c["start"]):int(c["end"])] for c in kids), "children reproduce the parent exactly"
+        for a, b in zip(kids, kids[1:]):
+            assert a["end"] == b["start"], "children are contiguous: no gap, no overlap"
+        for c in kids:
+            assert c["child_text"] == jd[int(c["content_start"]):int(c["content_end"])].strip()
+            assert int(c["start"]) <= int(c["content_start"]) <= int(c["content_end"]) <= int(c["end"])
+
+
+def test_child_offsets_are_deterministic_and_rebuilt_identically():
+    import build_children as BC
+    for rq in ("RQ-029", "RQ-030"):
+        kids = [c for c in CHILDREN if c["parent_rq_id"] == rq]
+        jd_id = kids[0]["jd_id"]
+        spans = BC.split_children(JDS[jd_id], int(kids[0]["start"]), int(kids[-1]["end"]))
+        assert spans == [(int(c["start"]), int(c["end"])) for c in kids]
+
+
+def test_an_or_alternative_stays_in_one_child():
+    c = next(c for c in CHILDREN if "visa" in c["child_text"])
+    assert "a valid UAE residence visa or be willing to relocate" in c["child_text"]
+    assert c["child_id"] == "RQ-029/C03"
+
+
+def test_children_carry_the_six_semantic_role_choices_and_no_decision():
+    for c in CHILDREN:
+        assert c["semantic_role_choices"] == " | ".join(["scoreable requirement", "non-scoreable condition", "post-hiring condition",
+                                                          "informational benefit", "background", "uncertain"])
+        assert c["semantic_role_decision"] == ""
+        assert c["proposed_role_candidate"] in c["semantic_role_choices"]
+
+
+def test_sentence_level_judgments_apply_only_to_children_inside_their_statement():
+    by = {c["child_id"]: c["existing_judgment_applies"] for c in CHILDREN}
+    assert by["RQ-029/C01"].startswith("S010") and by["RQ-029/C02"].startswith("S010") and by["RQ-029/C03"].startswith("S010")
+    assert by["RQ-029/C04"] == "" and by["RQ-029/C05"] == ""
+    assert "S003" in by["RQ-030/C01"] and "S011" in by["RQ-030/C01"] and "S003" in by["RQ-030/C02"]
+    assert by["RQ-030/C03"] == ""
+
+
+def test_children_do_not_enter_the_replay_until_decided():
+    replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
+    expected_blocks = {"requirement", "uncertain", "unresolved", "repeated", "conflict_modifier", "excluded_injection"}
+    for g in replay["groups"]:
+        for jd, answers in replay["groups"][g].items():
+            for a in answers:
+                assert set(a["uncovered"]) == expected_blocks, "children add no block: nothing is decided at child level yet"
+    b03 = [a for g in replay["groups"] for a in replay["groups"][g].get("B03_en_warehouse_supervisor", [])]
+    for a in b03:
+        assert a["coverage"]["requirement_units"] == 9, "the uncertain parent is no longer a requirement"
+        assert all(sp["first_line"] != 19 for sp in a["uncovered"].get("requirement", []))
 
 
 def test_rq_ids_are_stable_and_the_queue_is_not_renumbered():

@@ -27,6 +27,7 @@ HEADING_TERMS = ["required", "requirement", "must", "need", "qualif", "experienc
                  "certif", "degree", "competenc", "duties", "responsibilit", "years", "متطلب", "المهام", "المؤهلات", "الخبرة", "المهارات",
                  "يفضل", "مطلوب", "خبرة", "إجادة", "معرفة", "القدرة", "شهادة", "مؤهل"]
 CHOICES = "requirement | heading | background | uncertain"
+ROLE_CHOICES = ["scoreable requirement", "non-scoreable condition", "post-hiring condition", "informational benefit", "background", "uncertain"]
 
 
 def sha_file(path: pathlib.Path) -> str:
@@ -127,10 +128,23 @@ def assign_review_order(queue: list[dict]) -> None:
         q["review_order"] = n
 
 
-def next_batch(queue: list[dict], size: int = BATCH_SIZE) -> list[dict]:
-    """The next open rows to review, in document order within priority: never more than `size` rows."""
+def load_children() -> list[dict]:
+    """Child review units of uncertain parents (review_children.csv, built by build_children.py). Their semantic roles are not decided here."""
+    path = HERE / "review_children.csv"
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8") as fh:
+        return [{**r, "semantic_role_decision": r.get("semantic_role_decision", "")} for r in csv.DictReader(fh)]
+
+
+def next_batch(queue: list[dict], size: int = BATCH_SIZE, children: list[dict] | None = None) -> list[str]:
+    """The next items to review, never more than `size`. Pending child units come first, in document order (child index within parent);
+    then open queue rows in document order within priority. Returns ids."""
+    pending = [c for c in (children or []) if not c["semantic_role_decision"]]
+    if pending:
+        return [c["child_id"] for c in sorted(pending, key=lambda c: (JD_ORDER.index(c["jd_id"]), int(c["start"])))][:size]
     open_rows = [q for q in queue if q["review_status"] == "open"]
-    return sorted(open_rows, key=lambda q: (q["priority"], JD_ORDER.index(q["jd_id"]), int(q["first_line"])))[:size]
+    return [q["rq_id"] for q in sorted(open_rows, key=lambda q: (q["priority"], JD_ORDER.index(q["jd_id"]), int(q["first_line"])))][:size]
 
 
 def write_csv(queue: list[dict]) -> None:
@@ -167,7 +181,16 @@ def write_md(queue: list[dict], summ: dict) -> None:
         t = {k: summ["jd_by_type"].get(f"{j}|{k}", 0) for k in ("requirement", "heading", "background", "uncertain")}
         out.append(f"| {j} | {cells[0]} | {cells[1]} | {cells[2]} | {summ['by_jd'][j]} | {t['requirement']} | {t['heading']} | {t['background']} | {t['uncertain']} |")
     out += ["", f"By priority: P1 {summ['by_priority'][1]}, P2 {summ['by_priority'][2]}, P3 {summ['by_priority'][3]}.", ""]
-    out += [f"Next batch (document order, no more than {BATCH_SIZE} rows): " + ", ".join(summ["next_batch"]) + ".", ""]
+    out += [f"Next batch (document order, no more than {BATCH_SIZE} items): " + ", ".join(summ["next_batch"]) + ".", ""]
+    children = load_children()
+    if children:
+        out += ["## Child review units (uncertain parents RQ-029 and RQ-030)", "",
+                "Each child is an exact, partitioned piece of its parent (offsets in `review_children.csv`). The parent stays unresolved. Each child",
+                "carries a Claude-proposed semantic role, which is not a decision. The choices are: " + " | ".join(ROLE_CHOICES) + ".", "",
+                "| child | text | proposed role (candidate) | judgment that applies | semantic-role decision |", "|---|---|---|---|---|"]
+        for c in children:
+            out.append(f"| {c['child_id']} | {c['child_text']} | {c['proposed_role_candidate']} | {c['existing_judgment_applies'] or '-'} | _(blank)_ |")
+        out.append("")
     out += ["Review status: " + ", ".join(f"{k} {v}" for k, v in sorted(summ["review_status"].items())) + ". Confirmed decisions come from "
             "`reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not "
             "a confirmed requirement or exclusion in any benchmark result.", ""]
@@ -203,7 +226,9 @@ def main() -> int:
     assign_review_order(queue)
     write_csv(queue)
     summ = summary(queue, rows)
-    summ["next_batch"] = [q["rq_id"] for q in next_batch(queue)]
+    children = load_children()
+    summ["next_batch"] = next_batch(queue, children=children)
+    summ["child_units"] = {"total": len(children), "pending_semantic_role": sum(1 for c in children if not c["semantic_role_decision"])}
     write_md(queue, summ)
     (HERE / "results" / "review_queue_summary.json").write_text(json.dumps(summ, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"queued {summ['queued_rows']} rows in {summ['batches']} batches; P1 {summ['by_priority'][1]}, P2 {summ['by_priority'][2]}, P3 {summ['by_priority'][3]}")
