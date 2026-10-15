@@ -34,21 +34,33 @@ Their spans appear only in the excluded-injection column. The injection guard is
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-029/C03 | non-scoreable condition | non_scoreable_requirements | 0 | 0 | 1 | 0 |
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-029/C04 | post-hiring condition | post_hiring_conditions | 1 | 0 | 0 | 0 |
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-029/C05 | informational benefit | informational_items | 1 | 0 | 0 | 0 |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-030/C01 | non-scoreable condition | non_scoreable_requirements | 0 | 0 | 0 | 1 |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-030/C02 | non-scoreable condition | non_scoreable_requirements | 0 | 0 | 1 | 0 |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run1 | RQ-030/C03 | informational benefit | informational_items | 1 | 0 | 0 | 0 |
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-029/C01 | non-scoreable condition | non_scoreable_requirements | 0 | 1 | 0 | 0 |
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-029/C02 | non-scoreable condition | non_scoreable_requirements | 0 | 0 | 0 | 1 |
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-029/C03 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-029/C04 | post-hiring condition | post_hiring_conditions | 1 | 0 | 0 | 0 |
 | benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-029/C05 | informational benefit | informational_items | 1 | 0 | 0 | 0 |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-030/C01 | non-scoreable condition | non_scoreable_requirements | 0 | 0 | 0 | 1 |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-030/C02 | non-scoreable condition | non_scoreable_requirements | 0 | 0 | 1 | 0 |
+| benchmark run dir baseline_v2-1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-1 · run run2 | RQ-030/C03 | informational benefit | informational_items | 1 | 0 | 0 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-029/C01 | non-scoreable condition | non_scoreable_requirements | 0 | 1 | 0 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-029/C02 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-029/C03 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-029/C04 | post-hiring condition | post_hiring_conditions | 0 | 0 | 1 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-029/C05 | informational benefit | informational_items | 1 | 0 | 0 | 0 |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-030/C01 | non-scoreable condition | non_scoreable_requirements | 0 | 1 | 0 | 0 |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-030/C02 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run1 | RQ-030/C03 | informational benefit | informational_items | 0 | 0 | 1 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-029/C01 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-029/C02 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-029/C03 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-029/C04 | post-hiring condition | post_hiring_conditions | 0 | 0 | 1 | 0 |
 | benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-029/C05 | informational benefit | informational_items | 0 | 0 | 1 | 0 |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-030/C01 | non-scoreable condition | non_scoreable_requirements | 0 | 1 | 0 | 0 |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-030/C02 | non-scoreable condition | non_scoreable_requirements | 1 | 0 | 0 | 0 |
+| benchmark run dir v2-2_run1 · model gpt-4o-mini-2024-07-18 · prompt criteria_extraction_v2-2 · run run2 | RQ-030/C03 | informational benefit | informational_items | 0 | 0 | 1 | 0 |
 
 Each child is an extraction-coverage obligation. None is a scored criterion: a child contributes no requirement denominator, and its obligation status is reported only in this table.
 

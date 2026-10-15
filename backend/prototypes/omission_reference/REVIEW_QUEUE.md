@@ -20,7 +20,7 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Next batch (document order, no more than 5 items): RQ-030/C01, RQ-030/C02, RQ-030/C03.
+Next batch (document order, no more than 5 items): RQ-033, RQ-034, RQ-035, RQ-031, RQ-032.
 
 ## Child review units (uncertain parents RQ-029 and RQ-030)
 
@@ -34,11 +34,11 @@ carries a Claude-proposed semantic role, which is not a decision. The choices ar
 | RQ-029/C03 | and candidates must hold a valid UAE residence visa or be willing to relocate. | non-scoreable condition | S010 (sentence-level: child content inside its statement) | non-scoreable condition |
 | RQ-029/C04 | A background check and two professional references will be requested before the start date. | post-hiring condition | - | post-hiring condition |
 | RQ-029/C05 | We offer a transport allowance. | informational benefit | - | informational benefit |
-| RQ-030/C01 | الشروط: الراتب بالريال السعودي، | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | _(blank)_ |
-| RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | _(blank)_ |
-| RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | _(blank)_ |
+| RQ-030/C01 | الشروط: الراتب بالريال السعودي، | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | non-scoreable condition |
+| RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | non-scoreable condition |
+| RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | informational benefit |
 
-Review status: open 14, resolved 27, resolved_by_children 1, unresolved (uncertain) 2. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: open 14, resolved 27, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -291,8 +291,8 @@ Review status: open 14, resolved 27, resolved_by_children 1, unresolved (uncerta
 - Proposed type: **requirement** — requirement line under 'يفضل'
 - Priority: P2 — connected to a confirmed S-judgment
 - Existing confirmed judgment: · judgment: S003 (false alarm, sentence within unit, statement: الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام); S011 (false alarm, sentence within unit, statement: الشروط: الراتب بالريال السعودي، والعمل في مدينة الرياض بدوام) · scope: sentence within unit
-- Choices: requirement | heading | background | uncertain · Status: **unresolved (uncertain)** · Confirmed decision: **uncertain** (Asaad Hijjah, 2026-10-15)
-- Benchmark use: uncertain parent: excluded from confirmed inclusion and exclusion; decided only through its child units, which are pending
+- Choices: requirement | heading | background | uncertain · Status: **resolved_by_children** · Confirmed decision: **resolved_by_children** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: resolved by its child units (RQ-030/C01, RQ-030/C02, RQ-030/C03); the parent is not counted separately, and each child is an extraction-coverage obligation
 
 ### B07 (P2–P3, 5 rows)
 

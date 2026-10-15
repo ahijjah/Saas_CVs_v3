@@ -169,13 +169,15 @@ def apply_children(queue: list[dict], children: list[dict]) -> None:
 
 
 def next_batch(queue: list[dict], size: int = BATCH_SIZE, children: list[dict] | None = None) -> list[str]:
-    """The next items to review, never more than `size`. Pending child units come first, in document order (child index within parent);
-    then open queue rows in document order within priority. Returns ids."""
+    """The next items to review, never more than `size`. Pending child units come first, in document order (child index within parent).
+    Otherwise the batch is selected by priority and then presented in document order (JD order, then line). Returns ids."""
     pending = [c for c in (children or []) if not c["semantic_role_decision"]]
     if pending:
         return [c["child_id"] for c in sorted(pending, key=lambda c: (JD_ORDER.index(c["jd_id"]), int(c["start"])))][:size]
     open_rows = [q for q in queue if q["review_status"] == "open"]
-    return [q["rq_id"] for q in sorted(open_rows, key=lambda q: (q["priority"], JD_ORDER.index(q["jd_id"]), int(q["first_line"])))][:size]
+    chosen = sorted(open_rows, key=lambda q: (q["priority"], JD_ORDER.index(q["jd_id"]), int(q["first_line"])))[:size]
+    # Selection follows priority; presentation follows document order (JD order, then line).
+    return [q["rq_id"] for q in sorted(chosen, key=lambda q: (JD_ORDER.index(q["jd_id"]), int(q["first_line"])))]
 
 
 def write_csv(queue: list[dict]) -> None:

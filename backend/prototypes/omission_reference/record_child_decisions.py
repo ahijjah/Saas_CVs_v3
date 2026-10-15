@@ -21,6 +21,11 @@ ROLES = ["scoreable requirement", "non-scoreable condition", "post-hiring condit
 FIELDS = ["child_id", "parent_rq_id", "parent_unit_id", "jd_id", "start", "end", "content_start", "content_end", "child_text",
           "confirmed_role", "reviewer", "confirmed_date", "reason", "status", "obligation", "judgment_scope_confirmed"]
 CHILD_BATCHES = {
+    "RQ-030": {"file": "CHILD_CONFIRMED_queue_Asaad-Hijjah_2026-10-15_RQ-030.csv", "decisions": [
+        ("RQ-030/C01", "non-scoreable condition", "salary in Saudi riyals."),
+        ("RQ-030/C02", "non-scoreable condition", "Riyadh work location and full-time schedule."),
+        ("RQ-030/C03", "informational benefit", "medical insurance and annual leave."),
+    ], "scopes": [("S003", ["RQ-030/C01", "RQ-030/C02"]), ("S011", ["RQ-030/C01", "RQ-030/C02"])]},
     "RQ-029": {"file": "CHILD_CONFIRMED_queue_Asaad-Hijjah_2026-10-15_RQ-029.csv", "decisions": [
         ("RQ-029/C01", "non-scoreable condition", "rotating night shifts."),
         ("RQ-029/C02", "non-scoreable condition", "occasional travel to the Abu Dhabi depot."),
@@ -38,20 +43,24 @@ def load_children() -> dict:
         return {r["child_id"]: r for r in csv.DictReader(fh)}
 
 
-def check_s010_scope(children: dict, parent_rq: str, named: list[str]) -> None:
-    """S010 must apply to exactly the named children: their content covers the statement, and no other child lies inside it."""
+def check_judgment_scope(children: dict, parent_rq: str, judgment: str, named: list[str]) -> None:
+    """The judgment must apply to exactly the named children: their content covers its statement, and no other child lies inside it."""
     jd_id = children[named[0]]["jd_id"]
     parent = [c for c in children.values() if c["parent_rq_id"] == parent_rq]
     jd = (HERE / "jd" / f"{jd_id}.txt").read_bytes().decode("utf-8")
     start, end = int(parent[0]["start"]), int(parent[-1]["end"])
-    [(rid, a, b)] = BC.judgment_spans(jd, start, end, ["S010"])
+    [(rid, a, b)] = BC.judgment_spans(jd, start, end, [judgment])
     inside = [c["child_id"] for c in parent if int(c["content_start"]) >= a and int(c["content_end"]) <= b]
     if sorted(inside) != sorted(named):
-        raise SystemExit(f"S010 applies to {inside}, not to {named}")
+        raise SystemExit(f"{judgment} applies to {inside}, not to {named}")
     lo = min(int(children[n]["content_start"]) for n in named)
     hi = max(int(children[n]["content_end"]) for n in named)
     if (lo, hi) != (a, b):
-        raise SystemExit(f"S010 statement is {(a, b)} but the named children cover {(lo, hi)}")
+        raise SystemExit(f"{judgment} statement is {(a, b)} but the named children cover {(lo, hi)}")
+
+
+def check_s010_scope(children: dict, parent_rq: str, named: list[str]) -> None:
+    check_judgment_scope(children, parent_rq, "S010", named)
 
 
 def build_rows(parent_rq: str, spec: dict) -> list[dict]:
@@ -61,6 +70,12 @@ def build_rows(parent_rq: str, spec: dict) -> list[dict]:
     if spec.get("s010_scope"):
         check_s010_scope(children, parent_rq, spec["s010_scope"]["children"])
         scope_ok = "S010 applies exactly to " + ", ".join(c.split("/")[1] for c in spec["s010_scope"]["children"]) + " (checked from exact offsets)"
+    if spec.get("scopes"):
+        parts = []
+        for judgment, named in spec["scopes"]:
+            check_judgment_scope(children, parent_rq, judgment, named)
+            parts.append(f"{judgment} applies exactly to " + ", ".join(c.split("/")[1] for c in named))
+        scope_ok = "; ".join(parts) + " (checked from exact offsets)"
     for child_id, role, reason in spec["decisions"]:
         if child_id not in children:
             raise SystemExit(f"{child_id}: not a child unit")

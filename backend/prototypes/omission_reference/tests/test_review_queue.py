@@ -35,7 +35,7 @@ def test_the_only_reviewer_decisions_are_the_six_whole_unit_matches_from_the_pac
 def test_the_queue_shows_a_decision_only_for_the_rows_in_the_confirmed_submission():
     submitted = {r["rq_id"]: r["confirmed_decision"] for r in SUBMISSION}
     for r in QUEUE:
-        if r["rq_id"] == "RQ-029":
+        if r["rq_id"] in ("RQ-029", "RQ-030"):
             assert r["reviewer_decision"] == "resolved_by_children", "the parent's uncertain submission is preserved; its children decide it"
         elif r["rq_id"] in submitted:
             assert r["reviewer_decision"] == submitted[r["rq_id"]]
@@ -200,8 +200,8 @@ def test_twenty_seven_rows_are_resolved_and_rq_003_remains_unresolved_in_the_que
     resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
     assert resolved == {f"RQ-{n:03d}" for n in range(1, 31)} - {"RQ-003", "RQ-029", "RQ-030"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 27 and summary["review_status"]["unresolved (uncertain)"] == 2
-    assert summary["review_status"]["resolved_by_children"] == 1
+    assert summary["review_status"]["resolved"] == 27 and summary["review_status"]["unresolved (uncertain)"] == 1
+    assert summary["review_status"]["resolved_by_children"] == 2
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -333,10 +333,13 @@ def test_the_b08_repeated_unit_is_not_a_second_requirement_in_the_replay():
             assert a["coverage"]["requirement_units"] == 8, "the repeated unit is not a requirement denominator"
 
 
-def test_the_next_batch_is_the_pending_rq_030_child_units_before_other_queue_rows():
+def test_no_child_unit_is_pending_and_the_next_batch_is_five_rows_in_document_order():
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["next_batch"] == ["RQ-030/C01", "RQ-030/C02", "RQ-030/C03"]
-    assert summary["child_units"] == {"total": 8, "decided": 5, "pending_semantic_role": 3}
+    assert summary["child_units"] == {"total": 8, "decided": 8, "pending_semantic_role": 0}
+    assert summary["next_batch"] == ["RQ-033", "RQ-034", "RQ-035", "RQ-031", "RQ-032"]
+    assert len(summary["next_batch"]) <= 5
+    doc = sorted(summary["next_batch"], key=lambda rq: (Q.JD_ORDER.index(QUEUE_BY_RQ[rq]["jd_id"]), int(QUEUE_BY_RQ[rq]["first_line"])))
+    assert summary["next_batch"] == doc, "presented in document order"
 
 
 def test_priority_one_is_fully_decided_after_batch_five():
@@ -362,8 +365,9 @@ def test_batch_six_records_three_requirements_and_two_uncertain_parents():
 def test_uncertain_parents_are_excluded_from_confirmed_inclusion_and_exclusion():
     for rq in ("RQ-029", "RQ-030"):
         assert "excluded from confirmed inclusion and exclusion" in SUBMISSION_BY_RQ[rq]["benchmark_use"]
-    assert QUEUE_BY_RQ["RQ-030"]["review_status"].startswith("unresolved")
     assert QUEUE_BY_RQ["RQ-029"]["review_status"] == "resolved_by_children"
+    assert QUEUE_BY_RQ["RQ-030"]["review_status"] == "resolved_by_children"
+    assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
 
 
 def test_each_parent_is_partitioned_into_children_that_reproduce_every_character():
@@ -506,25 +510,29 @@ def test_each_child_maps_to_the_list_the_decision_names():
     replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
     seen = {}
     for g in replay["groups"]:
-        for a in replay["groups"][g].get("B03_en_warehouse_supervisor", []):
-            for ob in a["child_obligations"]:
-                seen.setdefault(ob["child_id"], set()).add(ob["expected_list"])
-                assert ob["status"] in {"met", "partial", "misrouted", "missing"}
+        for jd in ("B03_en_warehouse_supervisor", "B07_ar_accountant"):
+            for a in replay["groups"][g].get(jd, []):
+                for ob in a["child_obligations"]:
+                    seen.setdefault(ob["child_id"], set()).add(ob["expected_list"])
+                    assert ob["status"] in {"met", "partial", "misrouted", "missing"}
     assert seen == {"RQ-029/C01": {"non_scoreable_requirements"}, "RQ-029/C02": {"non_scoreable_requirements"},
                     "RQ-029/C03": {"non_scoreable_requirements"}, "RQ-029/C04": {"post_hiring_conditions"},
-                    "RQ-029/C05": {"informational_items"}}
+                    "RQ-029/C05": {"informational_items"}, "RQ-030/C01": {"non_scoreable_requirements"},
+                    "RQ-030/C02": {"non_scoreable_requirements"}, "RQ-030/C03": {"informational_items"}}
 
 
 def test_children_are_never_scored_criteria_and_the_parent_is_not_a_requirement_block():
     import replay_ref as RR
     b03 = json.loads((HERE / "annotations" / "B03_en_warehouse_supervisor.candidate.json").read_text(encoding="utf-8"))
-    eff = RR.effective_types("B03_en_warehouse_supervisor", b03)
-    assert eff[19] == "by_children"
+    b07 = json.loads((HERE / "annotations" / "B07_ar_accountant.candidate.json").read_text(encoding="utf-8"))
+    assert RR.effective_types("B03_en_warehouse_supervisor", b03)[19] == "by_children"
+    assert RR.effective_types("B07_ar_accountant", b07)[21] == "by_children"
     replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
     for g in replay["groups"]:
-        for a in replay["groups"][g].get("B03_en_warehouse_supervisor", []):
-            assert a["coverage"]["requirement_units"] == 9, "children and the parent add no requirement"
-            assert all(sp["first_line"] != 19 for blk in a["uncovered"].values() for sp in blk)
+        for jd, want, parent_line in (("B03_en_warehouse_supervisor", 9, 19), ("B07_ar_accountant", 10, 21)):
+            for a in replay["groups"][g].get(jd, []):
+                assert a["coverage"]["requirement_units"] == want, "children and the parent add no requirement"
+                assert all(sp["first_line"] != parent_line for blk in a["uncovered"].values() for sp in blk)
 
 
 def test_a_child_quoted_in_the_expected_list_is_met_and_in_another_list_is_misrouted_and_absent_is_missing():
@@ -553,3 +561,43 @@ def test_a_partly_quoted_or_child_is_partial_not_met():
 def test_the_child_status_report_states_that_no_child_is_a_scored_criterion():
     md = (HERE / "results" / "replay_report.md").read_text(encoding="utf-8")
     assert "never a scored criterion" in md and "RQ-029/C03" in md
+
+
+# ── RQ-030 child decisions ─────────────────────────────────────────────────────────────────────────────────────────────────
+CHILD30 = [r for r in csv.DictReader((HERE / "reviews" / "CHILD_CONFIRMED_queue_Asaad-Hijjah_2026-10-15_RQ-030.csv").open(encoding="utf-8"))]
+
+
+def test_the_three_rq_030_child_decisions_are_recorded_as_given():
+    assert {r["child_id"]: r["confirmed_role"] for r in CHILD30} == {
+        "RQ-030/C01": "non-scoreable condition", "RQ-030/C02": "non-scoreable condition", "RQ-030/C03": "informational benefit"}
+    assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in CHILD30)
+
+
+def test_s003_and_s011_apply_exactly_to_c01_and_c02_from_exact_offsets():
+    import record_child_decisions as RC
+    children = RC.load_children()
+    for judgment in ("S003", "S011"):
+        RC.check_judgment_scope(children, "RQ-030", judgment, ["RQ-030/C01", "RQ-030/C02"])
+    assert all("S003 applies exactly to C01, C02" in r["judgment_scope_confirmed"] for r in CHILD30)
+    with pytest.raises(SystemExit):
+        RC.check_judgment_scope(children, "RQ-030", "S003", ["RQ-030/C01"])
+
+
+def test_rq_030_is_resolved_by_children_and_its_uncertain_submission_is_preserved():
+    assert QUEUE_BY_RQ["RQ-030"]["review_status"] == "resolved_by_children"
+    assert SUBMISSION_BY_RQ["RQ-030"]["confirmed_decision"] == "uncertain"
+    assert SUBMISSION_BY_RQ["RQ-030"]["status"].startswith("unresolved")
+
+
+def test_the_rq_030_obligations_are_expected_lists_and_not_scored():
+    import replay_ref as RR
+    assert RR.CHILD_OBLIGATION["non-scoreable condition"] == "non_scoreable_requirements"
+    assert RR.CHILD_OBLIGATION["informational benefit"] == "informational_items"
+    replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
+    for g in replay["groups"]:
+        for a in replay["groups"][g].get("B07_ar_accountant", []):
+            ob = {o["child_id"]: o for o in a["child_obligations"] if o["child_id"].startswith("RQ-030")}
+            assert set(ob) == {"RQ-030/C01", "RQ-030/C02", "RQ-030/C03"}
+            assert ob["RQ-030/C01"]["expected_list"] == ob["RQ-030/C02"]["expected_list"] == "non_scoreable_requirements"
+            assert ob["RQ-030/C03"]["expected_list"] == "informational_items"
+            assert a["coverage"]["requirement_units"] == 10

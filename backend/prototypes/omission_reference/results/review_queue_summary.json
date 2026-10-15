@@ -4,8 +4,8 @@
  "batches": 9,
  "review_status": {
   "resolved": 27,
-  "unresolved (uncertain)": 2,
-  "resolved_by_children": 1,
+  "unresolved (uncertain)": 1,
+  "resolved_by_children": 2,
   "open": 14
  },
  "by_jd": {
@@ -69,13 +69,15 @@
  },
  "sheet_sha256": "f71cb861d4c072e6e9000077bfd29b21771da8d1de94a39a5664d63f9949c6c8",
  "next_batch": [
-  "RQ-030/C01",
-  "RQ-030/C02",
-  "RQ-030/C03"
+  "RQ-033",
+  "RQ-034",
+  "RQ-035",
+  "RQ-031",
+  "RQ-032"
  ],
  "child_units": {
   "total": 8,
-  "decided": 5,
-  "pending_semantic_role": 3
+  "decided": 8,
+  "pending_semantic_role": 0
  }
 }

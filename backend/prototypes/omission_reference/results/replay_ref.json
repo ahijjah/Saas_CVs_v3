@@ -3900,32 +3900,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 21,
-        "text": "الشروط:",
-        "class": "intro_wording",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": "، و",
-        "class": "connector_fragment",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -3950,7 +3925,32 @@
        "missing": []
       }
      },
-     "child_obligations": []
+     "child_obligations": [
+      {
+       "child_id": "RQ-030/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "partial",
+       "fraction_expected_list": 0.7143,
+       "fraction_any_list": 0.7143
+      },
+      {
+       "child_id": "RQ-030/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 0.931,
+       "fraction_any_list": 0.931
+      },
+      {
+       "child_id": "RQ-030/C03",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.9643
+      }
+     ]
     }
    ],
    "B08_ar_hr_specialist": [
@@ -4692,32 +4692,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 21,
-        "text": "الشروط:",
-        "class": "intro_wording",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": "، و",
-        "class": "connector_fragment",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -4743,7 +4718,32 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [
+      {
+       "child_id": "RQ-030/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "partial",
+       "fraction_expected_list": 0.7143,
+       "fraction_any_list": 0.7143
+      },
+      {
+       "child_id": "RQ-030/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "met",
+       "fraction_expected_list": 0.931,
+       "fraction_any_list": 0.931
+      },
+      {
+       "child_id": "RQ-030/C03",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.9643
+      }
+     ]
     }
    ],
    "B08_ar_hr_specialist": [
@@ -5440,32 +5440,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 21,
-        "text": "الشروط:",
-        "class": "intro_wording",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": "، و",
-        "class": "connector_fragment",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -5489,7 +5464,32 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [
+      {
+       "child_id": "RQ-030/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "missing",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.7143
+      },
+      {
+       "child_id": "RQ-030/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.931
+      },
+      {
+       "child_id": "RQ-030/C03",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "met",
+       "fraction_expected_list": 0.9643,
+       "fraction_any_list": 0.9643
+      }
+     ]
     }
    ],
    "B08_ar_hr_specialist": [
@@ -6179,32 +6179,7 @@
        }
       ],
       "uncertain": [],
-      "unresolved": [
-       {
-        "first_line": 21,
-        "text": "الشروط:",
-        "class": "intro_wording",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": "، و",
-        "class": "connector_fragment",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       },
-       {
-        "first_line": 21,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "partial"
-       }
-      ],
+      "unresolved": [],
       "repeated": [],
       "conflict_modifier": [],
       "excluded_injection": []
@@ -6228,7 +6203,32 @@
        ]
       }
      },
-     "child_obligations": []
+     "child_obligations": [
+      {
+       "child_id": "RQ-030/C01",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "missing",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.7143
+      },
+      {
+       "child_id": "RQ-030/C02",
+       "role": "non-scoreable condition",
+       "expected_list": "non_scoreable_requirements",
+       "status": "misrouted",
+       "fraction_expected_list": 0.0,
+       "fraction_any_list": 0.931
+      },
+      {
+       "child_id": "RQ-030/C03",
+       "role": "informational benefit",
+       "expected_list": "informational_items",
+       "status": "met",
+       "fraction_expected_list": 0.9643,
+       "fraction_any_list": 0.9643
+      }
+     ]
     }
    ],
    "B08_ar_hr_specialist": [
