@@ -348,6 +348,11 @@ def write_report(data: dict) -> str:
         lines += ["**Conflict and importance modifiers (conflict evidence, not a second scored criterion):**", ""]
         lines += [f"- {v['rq_id']} ({v['jd_id']}, unit `{v['unit_id']}`): {v['relation']}. Reviewer reason: {v['reason']}" for v in modifiers]
         lines += ["", "Their spans appear only in the conflict-modifier column. The related unit keeps its own requirement status.", ""]
+    context = [v for v in subs if v.get("classification_tag") == "contextual_evidence"]
+    if context:
+        lines += ["**Contextual evidence (background/lead-in; no scored criterion, no extraction obligation):**", ""]
+        lines += [f"- {v['rq_id']} ({v['jd_id']}, unit `{v['unit_id']}`), exact source text: \u201c{v['source_text']}\u201d. Reviewer reason: {v['reason']}" for v in context]
+        lines += ["", "Its substance is carried by the detailed duties, so it is not counted as a second requirement.", ""]
     if injections:
         lines += ["**Excluded AI-directed injection text (kept under the injection guard, never a requirement):**", ""]
         lines += [f"- {v['rq_id']} ({v['jd_id']}, unit `{v['unit_id']}`): tag {v['classification_tag']}. {v['reason']}" for v in injections]

@@ -38,7 +38,7 @@ carries a Claude-proposed semantic role, which is not a decision. The choices ar
 | RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | non-scoreable condition |
 | RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | informational benefit |
 
-Review status: resolved 41, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: resolved 42, resolved_by_children 2. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -65,8 +65,8 @@ Review status: resolved 41, resolved_by_children 2, unresolved (uncertain) 1. Co
 - Proposed type: **background** — objective or lead-in paragraph (candidate background)
 - Priority: P1 — proposed background: objective or lead-in paragraph (candidate background)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **unresolved (uncertain)** · Confirmed decision: **uncertain** (Asaad Hijjah, 2026-10-15)
-- Benchmark use: must not be used as a confirmed requirement or as an exclusion in benchmark results
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **background** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: background/lead-in kept as contextual evidence only: no scored criterion and no extraction obligation; its substance is carried by the detailed duties
 
 **RQ-004** · TC20 (en) · line 7 · unit `c0c7132c6bd1:L7:733-750`
 - Source text:  Responsibilities

@@ -3,8 +3,7 @@
  "queued_rows": 44,
  "batches": 9,
  "review_status": {
-  "resolved": 41,
-  "unresolved (uncertain)": 1,
+  "resolved": 42,
   "resolved_by_children": 2
  },
  "by_jd": {

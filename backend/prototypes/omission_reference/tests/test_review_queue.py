@@ -134,14 +134,19 @@ def test_the_md_summary_matches_the_csv_counts():
 CANDIDATES = {jd: json.loads((HERE / "annotations" / f"{jd}.candidate.json").read_text(encoding="utf-8")) for jd in MANIFEST["jds"]}
 
 
+BATCH1_ROWS = {r["rq_id"]: r for r in csv.DictReader((HERE / "reviews" / "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv").open(encoding="utf-8"))}
+
+
 def test_the_submissions_hold_exactly_the_forty_four_decisions_with_reviewer_and_date():
-    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 45)]
+    ids = [r["rq_id"] for r in SUBMISSION]
+    assert sorted(set(ids)) == [f"RQ-{n:03d}" for n in range(1, 45)]
+    assert sorted({i for i in ids if ids.count(i) > 1}) == ["RQ-003"], "RQ-003 is recorded twice: batch one uncertain, then batch ten background"
     assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in SUBMISSION)
 
 
 def test_the_decisions_are_the_ones_given():
     got = {r["rq_id"]: r["confirmed_decision"] for r in SUBMISSION}
-    assert got == {"RQ-001": "requirement", "RQ-002": "requirement", "RQ-003": "uncertain", "RQ-004": "heading", "RQ-005": "heading",
+    assert got == {"RQ-001": "requirement", "RQ-002": "requirement", "RQ-003": "background", "RQ-004": "heading", "RQ-005": "heading",
                    "RQ-006": "heading", "RQ-007": "heading", "RQ-008": "heading", "RQ-009": "heading", "RQ-010": "requirement",
                    "RQ-011": "heading", "RQ-012": "requirement", "RQ-013": "heading", "RQ-014": "heading", "RQ-015": "background",
                    "RQ-016": "heading", "RQ-017": "heading", "RQ-018": "heading", "RQ-019": "requirement", "RQ-020": "heading",
@@ -166,8 +171,9 @@ def test_the_candidate_classifications_are_preserved_in_their_files():
 
 
 def test_the_reasons_are_recorded_as_given_and_missing_reasons_are_stated_not_invented():
-    assert SUBMISSION_BY_RQ["RQ-003"]["reason"] == \
+    assert BATCH1_ROWS["RQ-003"]["reason"] == \
         "substantive duty summary, but potentially duplicates the detailed duties that follow"
+    assert SUBMISSION_BY_RQ["RQ-003"]["reason"].startswith("introduces the detailed duty list")
     assert SUBMISSION_BY_RQ["RQ-010"]["reason"] == "it explicitly requires clear communication of findings to non-technical colleagues."
     assert SUBMISSION_BY_RQ["RQ-008"]["reason"] == "names the qualifications and professional-experience section and contains no requirement itself."
     for rq in ("RQ-001", "RQ-002", "RQ-004", "RQ-005"):
@@ -193,18 +199,20 @@ def test_the_batch_two_source_text_is_exact_and_the_candidates_are_preserved():
     assert SUBMISSION_BY_RQ["RQ-010"]["candidate_type_preserved"] == "uncertain"
 
 
-def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
-    r = SUBMISSION_BY_RQ["RQ-003"]
-    assert r["status"].startswith("unresolved") and "must not be used" in r["benchmark_use"]
-    assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
+def test_rq_003_batch_one_uncertain_decision_is_preserved_and_superseded_by_batch_ten():
+    r = BATCH1_ROWS["RQ-003"]
+    assert r["confirmed_decision"] == "uncertain" and r["status"].startswith("unresolved")
+    assert "must not be used" in r["benchmark_use"]
+    loaded = Q.load_submissions()["c0c7132c6bd1:L9:752-936"]
+    assert loaded["submission"] == "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch10.csv"
+    assert loaded["supersedes"] == "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv"
 
 
 def test_twenty_seven_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
     resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
-    assert resolved == {f"RQ-{n:03d}" for n in range(1, 45)} - {"RQ-003", "RQ-029", "RQ-030"}
+    assert resolved == {f"RQ-{n:03d}" for n in range(1, 45)} - {"RQ-029", "RQ-030"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 41 and summary["review_status"]["unresolved (uncertain)"] == 1
-    assert summary["review_status"]["resolved_by_children"] == 2 and "open" not in summary["review_status"]
+    assert summary["review_status"] == {"resolved": 42, "resolved_by_children": 2}
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -243,10 +251,10 @@ def test_the_replay_counts_rq_001_and_rq_002_as_requirements_and_rq_003_only_as_
     assert unresolved_lines <= {9}
 
 
-def test_the_effective_type_of_rq_003_is_unresolved_and_its_candidate_stays_background():
+def test_the_effective_type_of_rq_003_is_background_and_its_candidate_stays_background():
     import replay_ref as RR
     types = RR.effective_types("TC20", CANDIDATES["TC20"])
-    assert types[9] == "unresolved" and types[3] == "requirement" and types[5] == "requirement" and types[7] == "heading"
+    assert types[9] == "background" and types[3] == "requirement" and types[5] == "requirement" and types[7] == "heading"
     assert {l["first_line"]: l["proposed_type"] for l in CANDIDATES["TC20"]["lines"]}[9] == "background"
 
 
@@ -281,6 +289,7 @@ RECORDED_HASHES = {  # the earlier submissions and the reviewer sheet, as record
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv": "1be5e1906c528a74",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch2.csv": "eeb385eb4ae3dd6f",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch3.csv": "deee39de2d0b4a1a",
+    "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch10.csv": "b8a8e12966829437",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch9.csv": "e354ee1a2d406ad1",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch8.csv": "119eba47f02d87e6",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch7.csv": "fda9d54b2e819d5b",
@@ -376,7 +385,7 @@ def test_uncertain_parents_are_excluded_from_confirmed_inclusion_and_exclusion()
         assert "excluded from confirmed inclusion and exclusion" in SUBMISSION_BY_RQ[rq]["benchmark_use"]
     assert QUEUE_BY_RQ["RQ-029"]["review_status"] == "resolved_by_children"
     assert QUEUE_BY_RQ["RQ-030"]["review_status"] == "resolved_by_children"
-    assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
+    assert QUEUE_BY_RQ["RQ-003"]["review_status"] == "resolved"
 
 
 def test_each_parent_is_partitioned_into_children_that_reproduce_every_character():
@@ -475,8 +484,8 @@ def test_the_injection_guard_is_not_applied_to_other_jds_and_is_not_offset_by_co
                 assert all(a.get("defects", {}).get("injection_guard") is None for a in answers)
 
 
-def test_rq_003_is_still_unresolved_after_batch_four():
-    assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
+def test_rq_003_is_resolved_after_batch_ten_and_no_longer_unresolved():
+    assert QUEUE_BY_RQ["RQ-003"]["review_status"] == "resolved"
 
 
 # ── child decisions for RQ-029 and replay obligations ───────────────────────────────────────────────────────────────────
@@ -760,11 +769,14 @@ def test_batch_nine_records_the_four_final_requirements_and_nothing_else():
     assert SUBMISSION_BY_RQ["RQ-043"]["reason"] == "teamwork competency."
 
 
-def test_rq_003_is_explicitly_unresolved_and_neither_included_nor_excluded_anywhere():
+def test_rq_003_is_background_contextual_evidence_with_no_scored_criterion_or_obligation():
     r = SUBMISSION_BY_RQ["RQ-003"]
-    assert r["confirmed_decision"] == "uncertain" and r["status"].startswith("unresolved")
-    assert "must not be used as a confirmed requirement or as an exclusion" in r["benchmark_use"]
-    assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
+    assert r["confirmed_decision"] == "background" and r["status"] == "resolved"
+    assert r["classification_tag"] == "contextual_evidence"
+    assert "no scored criterion and no extraction obligation" in r["benchmark_use"]
+    assert r["source_text"] == "The Coordinator will support the implementation, stabilization, enhancement, and continuous improvement of ABRS services and related digital platforms through the following activities:"
+    assert "ends with a colon" in r["reason"] and "RQ-033" in r["reason"]
+    assert QUEUE_BY_RQ["RQ-003"]["review_status"] == "resolved" and QUEUE_BY_RQ["RQ-003"]["reviewer_decision"] == "background"
     replay = json.loads((HERE / "results" / "replay_ref.json").read_text(encoding="utf-8"))
     for g in replay["groups"]:
         for a in replay["groups"][g].get("TC20", []):
@@ -775,5 +787,5 @@ def test_rq_003_is_explicitly_unresolved_and_neither_included_nor_excluded_anywh
 def test_all_earlier_amendments_and_submissions_are_still_present():
     names = sorted(p.name for p in (HERE / "reviews").glob("*.csv"))
     assert "AMENDMENT_batch7_RQ-032_Asaad-Hijjah_2026-10-15.csv" in names
-    assert len([n for n in names if n.startswith("CONFIRMED_")]) == 9
+    assert len([n for n in names if n.startswith("CONFIRMED_")]) == 10
     assert len([n for n in names if n.startswith("CHILD_CONFIRMED_")]) == 2

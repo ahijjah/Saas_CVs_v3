@@ -94,16 +94,28 @@ CSV_FIELDS = ["rq_id", "batch", "priority", "priority_reason", "jd_id", "languag
               "review_status", "confirmed_by", "confirmed_date", "benchmark_use", "relation", "review_order"]
 
 
+def batch_number(name: str) -> int:
+    """Batch 1 is the base file (no batch suffix); batchN is N. Later batches supersede earlier ones explicitly, by number."""
+    m = re.search(r"_batch(\d+)\.csv$", name)
+    return int(m.group(1)) if m else 1
+
+
 def load_submissions() -> dict:
-    """Confirmed decisions from reviews/CONFIRMED_*.csv, keyed by unit id. A submission row must match the sheet's unit id and exact text."""
+    """Confirmed decisions from reviews/CONFIRMED_*.csv, keyed by unit id. A submission row must match the sheet's unit id and exact text.
+    When a unit appears in more than one batch, the HIGHER batch number supersedes the lower one (only RQ-003 does, by batch ten); the
+    superseded row stays in its file and is recorded in 'supersedes'."""
     sheet = {r["unit_id"]: r["source_text"] for r in csv.DictReader(SHEET.open(encoding="utf-8"))}
     out = {}
-    for path in sorted((HERE / "reviews").glob("CONFIRMED_*.csv")):
+    for path in sorted((HERE / "reviews").glob("CONFIRMED_*.csv"), key=lambda p: batch_number(p.name)):
         with path.open(encoding="utf-8") as fh:
             for r in csv.DictReader(fh):
                 if sheet.get(r["unit_id"]) != r["source_text"]:
                     raise SystemExit(f"{path.name}: {r['rq_id']} does not match the reviewer sheet; refusing to apply")
-                out[r["unit_id"]] = {**r, "submission": path.name}
+                prior = out.get(r["unit_id"])
+                if prior is not None and batch_number(prior["submission"]) == batch_number(path.name):
+                    raise SystemExit(f"{r['rq_id']} appears twice in batch {batch_number(path.name)}")
+                supersedes = prior["submission"] if prior is not None else ""
+                out[r["unit_id"]] = {**r, "submission": path.name, "supersedes": supersedes}
     return out
 
 

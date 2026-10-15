@@ -84,6 +84,11 @@ BATCHES = {
         ("RQ-043", "requirement", "teamwork competency."),
         ("RQ-044", "requirement", "duty to develop customer dashboards."),
     ]},
+    10: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch10.csv", "decisions": [
+        ("RQ-003", "background",
+         "introduces the detailed duty list and ends with a colon. Its substantive content is already represented by the detailed duties, "
+         "including RQ-033. Counting it separately would duplicate the duties and create false omissions.", None, "contextual_evidence"),
+    ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
           "confirmed_date", "reason", "status", "benchmark_use", "relation", "classification_tag",
@@ -116,6 +121,8 @@ UNCERTAIN_PARENTS = {
                "which are pending"),
 }
 TAG_USE = {
+    "contextual_evidence": ("background/lead-in kept as contextual evidence only: no scored criterion and no extraction obligation; its "
+                            "substance is carried by the detailed duties"),
     "ai_directed_injection": ("excluded from requirement coverage: AI-directed injection text, kept under the injection guard, never extracted "
                               "as a requirement"),
 }

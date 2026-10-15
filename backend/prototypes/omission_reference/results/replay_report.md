@@ -19,6 +19,12 @@ Such units appear only in the repeated-requirement column. Their related unit is
 
 Their spans appear only in the conflict-modifier column. The related unit keeps its own requirement status.
 
+**Contextual evidence (background/lead-in; no scored criterion, no extraction obligation):**
+
+- RQ-003 (TC20, unit `c0c7132c6bd1:L9:752-936`), exact source text: “The Coordinator will support the implementation, stabilization, enhancement, and continuous improvement of ABRS services and related digital platforms through the following activities:”. Reviewer reason: introduces the detailed duty list and ends with a colon. Its substantive content is already represented by the detailed duties, including RQ-033. Counting it separately would duplicate the duties and create false omissions.
+
+Its substance is carried by the detailed duties, so it is not counted as a second requirement.
+
 **Excluded AI-directed injection text (kept under the injection guard, never a requirement):**
 
 - RQ-022 (B12_ar_injection, unit `945b2154c3f2:L14:247-465`): tag ai_directed_injection. AI-directed injection text, not a job requirement.
@@ -81,7 +87,7 @@ Conflict evidence kept for these units (review evidence, not a finding): RQ-021 
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 2-18 | 0 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0-1 | 1 | 0 | 0 | 0-16 | n/a |
+| TC20 | 5 | 37 | 2-18 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0-1 | 1 | 0 | 0 | 0-16 | n/a |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -92,7 +98,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 4 | 0 | 1 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 1 | 1 | 0 | 1 | 0 | n/a |
+| TC20 | 5 | 37 | 4 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 0 | 1 | 0 | n/a |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -105,7 +111,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 21-22 | 0-1 | 0 | 0 | 15 | 0 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 1-2 | 19 | n/a |
+| TC20 | 5 | 37 | 21-22 | 0-1 | 0 | 0 | 15 | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 1 | 1-2 | 19 | n/a |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -134,7 +140,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 20-21 | 0-2 | 0 | 0 | 15-16 | 0 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 1 | 19 | n/a |
+| TC20 | 5 | 37 | 20-21 | 0-2 | 0 | 0 | 15-16 | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 1 | 1 | 19 | n/a |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
