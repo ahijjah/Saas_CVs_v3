@@ -1,0 +1,81 @@
+{
+ "jd_id": "B08_ar_hr_specialist",
+ "status": "CLAUDE-GENERATED CANDIDATE - NOT HUMAN-CONFIRMED",
+ "jd_sha256": "386d19910cf18c2cc9cb5efaf8dcd973847c390dab65a0a67631419158441c58",
+ "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B08_ar_hr_specialist.json",
+ "source_file_sha256": "3cc6cac557f221801cb74edfd006c440a4b102c421ff40174309f278dab5fee2",
+ "lines": [
+  {
+   "first_line": 1,
+   "text": "أخصائي موارد بشرية",
+   "proposed_type": "heading",
+   "reason": "title line of the posting"
+  },
+  {
+   "first_line": 3,
+   "text": "المتطلبات:",
+   "proposed_type": "heading",
+   "reason": "section heading 'المتطلبات:'"
+  },
+  {
+   "first_line": 4,
+   "text": "- خبرة من 3 إلى 5 سنوات في الموارد البشرية.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 5,
+   "text": "- خبرة لا تقل عن ستة أشهر في استخدام نظام Oracle HCM.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 6,
+   "text": "- إجادة Excel وPower BI.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 7,
+   "text": "- إجادة اللغة العربية أو الإنجليزية.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 8,
+   "text": "- معرفة بنظام العمل والتأمينات الاجتماعية.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 9,
+   "text": "- القدرة على التواصل الفعال.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'المتطلبات'"
+  },
+  {
+   "first_line": 11,
+   "text": "الأعمال اليومية:",
+   "proposed_type": "heading",
+   "reason": "section heading 'الأعمال اليومية:'"
+  },
+  {
+   "first_line": 12,
+   "text": "- متابعة الحضور والانصراف.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'الأعمال اليومية'"
+  },
+  {
+   "first_line": 13,
+   "text": "- إعداد تقارير شهرية عن الغياب.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'الأعمال اليومية'"
+  },
+  {
+   "first_line": 15,
+   "text": "ملاحظة: نبحث عن شخص لديه قدرة جيدة على التواصل الفعال مع جميع الموظفين.",
+   "proposed_type": "uncertain",
+   "reason": "closing note repeating the communication requirement of line 9; may be a repetition, not a new requirement"
+  }
+ ]
+}

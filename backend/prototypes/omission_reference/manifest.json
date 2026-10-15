@@ -1,0 +1,114 @@
+{
+ "build_script_sha256": "e975820c17e298dd73d439937c0e2b3c1be3bcb288567ca7e6f09fb0096a22bd",
+ "jds": {
+  "TC20": {
+   "language": "en",
+   "source_file": "tests/fixtures/requirements_v2_technical_coordinator_20/evidence.json",
+   "source_file_sha256": "86a9abe7991ac55899296eb37e2133c5a51280c6d0067b106269bd8777b56590",
+   "jd_sha256": "c0c7132c6bd1373ad1be5fed31db87932dda7717c4a57023b189335e1c02d265",
+   "jd_length": 5546,
+   "physical_lines": 58,
+   "units": 47,
+   "requirement_units": 35,
+   "candidate_counts": {
+    "requirement": 35,
+    "heading": 9,
+    "background": 3,
+    "uncertain": 0
+   },
+   "roles": "duties (16), qualifications, OR (experience and familiarity), independent AND (competencies), location, reporting",
+   "annotation_sha256": "fb17f6e8929f7372057d3609ee235766862069806789530b3efdecaf67775c4a"
+  },
+  "B02_en_data_analyst": {
+   "language": "en",
+   "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B02_en_data_analyst.json",
+   "source_file_sha256": "dd0bc07dd030b3d7776487ff90d709cb7ce23bfad3bd05f75c7d05ec7cef26c4",
+   "jd_sha256": "964ec821ef2c5e5c2abd76014934e31bc69b1d6391ceebb15e3986944a1a9df8",
+   "jd_length": 592,
+   "physical_lines": 17,
+   "units": 13,
+   "requirement_units": 10,
+   "candidate_counts": {
+    "requirement": 9,
+    "heading": 3,
+    "background": 0,
+    "uncertain": 1
+   },
+   "roles": "OR (Python or R), independent AND (SQL, Power BI), duties",
+   "annotation_sha256": "e7681958d8e3a152dce1c48d93ce8515a5c2f1f1febe0bf3ba99aaaeff4cbb75"
+  },
+  "B03_en_warehouse_supervisor": {
+   "language": "en",
+   "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B03_en_warehouse_supervisor.json",
+   "source_file_sha256": "36e09f9e8aed175dce37bd532d29bc83db8f61ef2a80d35aa208af3a34b32da8",
+   "jd_sha256": "0fc3081a294ac8cd9692c0402d108d68c4e8a2836988a21c5a206e642affd793",
+   "jd_length": 769,
+   "physical_lines": 20,
+   "units": 14,
+   "requirement_units": 10,
+   "candidate_counts": {
+    "requirement": 9,
+    "heading": 4,
+    "background": 0,
+    "uncertain": 1
+   },
+   "roles": "independent AND (languages), conditions (shifts, travel, visa or relocation), location, duties, preferred",
+   "annotation_sha256": "b2925fcf6c513a9c23b49682f9211f00ea85706992020c287715c7340515dd8e"
+  },
+  "B07_ar_accountant": {
+   "language": "ar",
+   "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B07_ar_accountant.json",
+   "source_file_sha256": "246228338b4cd2455a3e300712692fa2c3b7efa3ee0b67d48d0dc9ecc22eb616",
+   "jd_sha256": "30fb2f04275795e796bfa166fe5b9dd370a8577783a7b6fd1ad1471bee192154",
+   "jd_length": 493,
+   "physical_lines": 22,
+   "units": 16,
+   "requirement_units": 11,
+   "candidate_counts": {
+    "requirement": 11,
+    "heading": 4,
+    "background": 1,
+    "uncertain": 0
+   },
+   "roles": "company background, conditions (salary, location), benefits, duties, preferred",
+   "annotation_sha256": "ff4e6fcbef700082526d05bbd78b6672db86dbe73990413c9d4483986efb3ba0"
+  },
+  "B08_ar_hr_specialist": {
+   "language": "ar",
+   "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B08_ar_hr_specialist.json",
+   "source_file_sha256": "3cc6cac557f221801cb74edfd006c440a4b102c421ff40174309f278dab5fee2",
+   "jd_sha256": "386d19910cf18c2cc9cb5efaf8dcd973847c390dab65a0a67631419158441c58",
+   "jd_length": 413,
+   "physical_lines": 16,
+   "units": 12,
+   "requirement_units": 9,
+   "candidate_counts": {
+    "requirement": 8,
+    "heading": 3,
+    "background": 0,
+    "uncertain": 1
+   },
+   "roles": "OR (Arabic or English), independent AND (labour law and social insurance), duties, repeated note",
+   "annotation_sha256": "331176bfcb5a91c5620a219243e7fc49e26d2489253f2269ba8bd202b09dbdc4"
+  },
+  "B12_ar_injection": {
+   "language": "ar",
+   "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B12_ar_injection.json",
+   "source_file_sha256": "70db264fdd8f809275c65e90f29c5d6f8a86b1456852da882e8b2c5fbdf30e13",
+   "jd_sha256": "945b2154c3f26ae216d53eb9dfdd25fce6f6e7f57fd0bc4778404c474d8323c2",
+   "jd_length": 503,
+   "physical_lines": 18,
+   "units": 12,
+   "requirement_units": 8,
+   "candidate_counts": {
+    "requirement": 6,
+    "heading": 4,
+    "background": 0,
+    "uncertain": 2
+   },
+   "roles": "independent AND (CSS and HTML), genuine conflict, AI-directed injection text (data, not requirement)",
+   "annotation_sha256": "b7cde4b4fb2966184b4c485741573335a16d791a5f2039c7f66a053288d10ae7"
+  }
+ },
+ "reviewer_sheet_rows": 114
+}

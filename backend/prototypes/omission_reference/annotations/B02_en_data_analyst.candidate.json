@@ -1,0 +1,87 @@
+{
+ "jd_id": "B02_en_data_analyst",
+ "status": "CLAUDE-GENERATED CANDIDATE - NOT HUMAN-CONFIRMED",
+ "jd_sha256": "964ec821ef2c5e5c2abd76014934e31bc69b1d6391ceebb15e3986944a1a9df8",
+ "source_file": "tests/fixtures/requirements_v2_benchmark/cases/B02_en_data_analyst.json",
+ "source_file_sha256": "dd0bc07dd030b3d7776487ff90d709cb7ce23bfad3bd05f75c7d05ec7cef26c4",
+ "lines": [
+  {
+   "first_line": 1,
+   "text": "Data Analyst (Reporting)",
+   "proposed_type": "heading",
+   "reason": "title line of the posting"
+  },
+  {
+   "first_line": 3,
+   "text": "Requirements",
+   "proposed_type": "heading",
+   "reason": "section heading 'Requirements'"
+  },
+  {
+   "first_line": 4,
+   "text": "- 3-5 years of experience in data analysis.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Requirements'"
+  },
+  {
+   "first_line": 5,
+   "text": "- At least 6 months of hands-on experience with Tableau.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Requirements'"
+  },
+  {
+   "first_line": 6,
+   "text": "- Proficiency in Python or R.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Requirements'"
+  },
+  {
+   "first_line": 7,
+   "text": "- SQL and Power BI.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Requirements'"
+  },
+  {
+   "first_line": 8,
+   "text": "- Ability to explain findings to non-technical colleagues.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Requirements'"
+  },
+  {
+   "first_line": 9,
+   "text": "- Understanding of retail sales metrics is an advantage.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'Requirements'"
+  },
+  {
+   "first_line": 11,
+   "text": "What you will do",
+   "proposed_type": "heading",
+   "reason": "section heading 'What you will do'"
+  },
+  {
+   "first_line": 12,
+   "text": "- Build weekly sales dashboards for regional managers.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'What you will do'"
+  },
+  {
+   "first_line": 13,
+   "text": "- Write SQL queries to validate data quality.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'What you will do'"
+  },
+  {
+   "first_line": 14,
+   "text": "- Present monthly findings to the commercial team.",
+   "proposed_type": "requirement",
+   "reason": "requirement line under 'What you will do'"
+  },
+  {
+   "first_line": 16,
+   "text": "Also important: clear communication of findings to non-technical colleagues is expected from everyone on the team.",
+   "proposed_type": "uncertain",
+   "reason": "general expectation sentence with no section; may or may not be a requirement"
+  }
+ ]
+}

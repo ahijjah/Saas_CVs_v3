@@ -8,7 +8,7 @@ reviewer judgments are not modified.
 ## Files
 - `inventory.py`: source units from the ORIGINAL JD text, with stable ids `<sha12>:L<line>:<start>-<end>`.
 - `coverage.py`: quotation coverage (union of credited spans, threshold, ambiguity, verbatim gate, exact uncovered spans).
-- `annotations/tc20.json`: reviewed heading and background lines for the TC20 JD (exact text, keyed by the JD sha256).
+- `annotations/tc20.json`: CLAUDE-GENERATED candidate heading and background lines for the TC20 JD (exact text, keyed by the JD sha256). Not human-confirmed.
 - `replay.py`: reads the stored TC20 answers and writes `results/replay.json`. Stored files are not modified (tested).
 - `preview.py`: writes `preview/inventory_guided_request.txt`: the pinned baseline request plus one marked addition. Not sent.
 - `tests/`: 64 offline tests. Run `python -m pytest prototypes/omission_inventory/tests -q` from `backend/`.
@@ -30,7 +30,7 @@ reviewer judgments are not modified.
 ## Rules (fixed before the replay was run)
 1. Units are physical lines. A soft wrap joins two lines only if they are adjacent (no blank line or whitespace-only line between),
    the second starts with a lowercase Latin letter, and the first has no terminal punctuation. Arabic is never joined (known limit).
-2. Headings and background come only from a reviewed annotation keyed by the JD hash. Length and punctuation never classify a line.
+2. Headings and background come only from a candidate annotation keyed by the JD hash (Claude-generated, not human-confirmed). Length and punctuation never classify a line.
 3. A quote earns credit only if it is an exact substring of the original JD (the frozen verbatim check, unchanged).
 4. A quote that occurs more than once in the JD is ambiguous and earns no credit. An uncovered unit that an ambiguous quote touches is
    routed to `ambiguous`, not `omitted`.
@@ -79,7 +79,7 @@ Denominator: 35 requirement units of the TC20 JD (9 headings and 3 background li
   such units for review (`clause_review_required`) and reports the exact missing text. It does not decide the meaning.
 - Units are physical lines. A three-sentence paragraph line is one unit, so an answer that quotes two of its sentences is partial.
   Sentence-level units were not built, because sentence boundaries in this JD are ambiguous ("Technical Coordinator.").
-- The annotation of headings and background is hand-reviewed for TC20 only. B-case answers (English and Arabic) are not replayed.
+- The annotation of headings and background is a Claude-generated candidate for TC20 only, not human-confirmed. B-case answers (English and Arabic) are not replayed.
 - Arabic wrapped continuations are never joined, so a wrapped Arabic requirement becomes separate units (known limit, tested).
 - The inventory-guided preview is rendered from the pinned baseline (system sha `21a2f942…`, user sha `ff6b334a…`, both verified). It is
   not sent and not validated against any run. A pilot needs an approved cap before its first request. Measured cost for the TC20

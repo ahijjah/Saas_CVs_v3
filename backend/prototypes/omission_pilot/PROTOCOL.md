@@ -17,14 +17,14 @@ pilot. It is not an accuracy claim, not an activation, and not evidence for othe
 ## 3. Fixed for both arms (must be identical)
 - Model `gpt-4.1-2025-04-14` (the snapshot the TC20 repeat batch used). The returned model must equal it, or the run stops.
 - temperature 0.1, max_tokens 6000, response_format `json_object`, timeout 90 s, retries 0.
-- The TC20 JD (sha256 `c0c7132c6bd1…`), its reviewed heading and background annotation (`annotations/tc20.json`), the job context, the
+- The TC20 JD (sha256 `c0c7132c6bd1…`), its candidate heading and background annotation (`annotations/tc20.json`; Claude-generated, not human-confirmed), the job context, the
   output schema of the baseline. The inventory block adds no output field.
 
 ## 4. Outcomes
 1. **Primary (the only outcome that sets the verdict)**: a call *retains* the duty lines when all 16 TC20 duty lines appear as substrings of
    `from_responsibilities` items' `source_text` (the frozen C_RESP semantics). For each arm the pilot reports the exact count of calls
    retaining all 16 out of 10, the proportion, and the exact 95% Clopper–Pearson interval.
-2. **Secondary, descriptive only**: review-candidate spans (`genuine_omission`, word-bearing) across the 35 reviewed requirement units,
+2. **Secondary, descriptive only**: review-candidate spans (`genuine_omission`, word-bearing) across the 35 candidate requirement units,
    reported as median, minimum and maximum per arm. They **never** change the verdict. Total word-bearing spans are also reported.
 3. **Reported separately, never added into a score**: intro wording, paraphrases, punctuation-only spans, review candidates, and the
    coverage counts (quoted units, all-text-quoted units, omitted and partial units).
