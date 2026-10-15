@@ -38,7 +38,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -92,7 +93,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -147,7 +149,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -200,7 +203,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -350,7 +354,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -420,7 +425,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -488,7 +494,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -556,7 +563,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -624,7 +632,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -692,7 +701,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -956,7 +966,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -1220,7 +1231,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -1477,7 +1489,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -1740,7 +1753,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -2004,7 +2018,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -2277,7 +2292,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -2540,7 +2556,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -2809,7 +2826,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -3072,7 +3090,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -3323,7 +3342,8 @@
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ]
+      ],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -3481,7 +3501,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -3652,7 +3673,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -3829,7 +3851,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -3959,15 +3982,16 @@
         "unit_status": "covered"
        }
       ],
-      "uncertain": [
+      "uncertain": [],
+      "unresolved": [],
+      "repeated": [
        {
         "first_line": 15,
         "text": "ملاحظة: نبحث عن شخص لديه قدرة جيدة على التواصل الفعال مع جميع الموظفين.",
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ],
-      "unresolved": []
+      ]
      },
      "defects": {
       "parsed": true,
@@ -4087,7 +4111,8 @@
         "unit_status": "omitted"
        }
       ],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -4253,7 +4278,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -4406,7 +4432,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -4571,7 +4598,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -4702,15 +4730,16 @@
         "unit_status": "covered"
        }
       ],
-      "uncertain": [
+      "uncertain": [],
+      "unresolved": [],
+      "repeated": [
        {
         "first_line": 15,
         "text": "ملاحظة: نبحث عن شخص لديه قدرة جيدة على التواصل الفعال مع جميع الموظفين.",
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ],
-      "unresolved": []
+      ]
      },
      "defects": {
       "parsed": true,
@@ -4830,7 +4859,8 @@
         "unit_status": "omitted"
        }
       ],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -4996,7 +5026,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -5091,7 +5122,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -5257,7 +5289,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -5386,15 +5419,16 @@
         "unit_status": "covered"
        }
       ],
-      "uncertain": [
+      "uncertain": [],
+      "unresolved": [],
+      "repeated": [
        {
         "first_line": 15,
         "text": "ملاحظة: نبحث عن شخص لديه قدرة جيدة على التواصل الفعال مع جميع الموظفين.",
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ],
-      "unresolved": []
+      ]
      },
      "defects": {
       "parsed": true,
@@ -5508,7 +5542,8 @@
         "unit_status": "omitted"
        }
       ],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -5674,7 +5709,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -5775,7 +5811,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -5940,7 +5977,8 @@
        }
       ],
       "uncertain": [],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,
@@ -6057,15 +6095,16 @@
         "unit_status": "omitted"
        }
       ],
-      "uncertain": [
+      "uncertain": [],
+      "unresolved": [],
+      "repeated": [
        {
         "first_line": 15,
         "text": "ملاحظة: نبحث عن شخص لديه قدرة جيدة على التواصل الفعال مع جميع الموظفين.",
         "class": "genuine_omission",
         "unit_status": "omitted"
        }
-      ],
-      "unresolved": []
+      ]
      },
      "defects": {
       "parsed": true,
@@ -6181,7 +6220,8 @@
         "unit_status": "omitted"
        }
       ],
-      "unresolved": []
+      "unresolved": [],
+      "repeated": []
      },
      "defects": {
       "parsed": true,

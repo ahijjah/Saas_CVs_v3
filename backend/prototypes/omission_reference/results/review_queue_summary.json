@@ -3,9 +3,9 @@
  "queued_rows": 44,
  "batches": 9,
  "review_status": {
-  "resolved": 14,
+  "resolved": 19,
   "unresolved (uncertain)": 1,
-  "open": 29
+  "open": 24
  },
  "by_jd": {
   "TC20": 12,
@@ -66,5 +66,12 @@
   "B08_ar_hr_specialist|requirement": 3,
   "B12_ar_injection|requirement": 3
  },
- "sheet_sha256": "f71cb861d4c072e6e9000077bfd29b21771da8d1de94a39a5664d63f9949c6c8"
+ "sheet_sha256": "f71cb861d4c072e6e9000077bfd29b21771da8d1de94a39a5664d63f9949c6c8",
+ "next_batch": [
+  "RQ-023",
+  "RQ-024",
+  "RQ-021",
+  "RQ-022",
+  "RQ-025"
+ ]
 }

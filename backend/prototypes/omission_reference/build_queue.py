@@ -90,7 +90,7 @@ def assign(rows: list[dict]) -> list[dict]:
 
 CSV_FIELDS = ["rq_id", "batch", "priority", "priority_reason", "jd_id", "language", "unit_id", "first_line", "source_text",
               "proposed_type_candidate", "candidate_reason", "existing_confirmed_judgment", "judgment_scope", "choices", "reviewer_decision",
-              "review_status", "confirmed_by", "confirmed_date", "benchmark_use"]
+              "review_status", "confirmed_by", "confirmed_date", "benchmark_use", "relation", "review_order"]
 
 
 def load_submissions() -> dict:
@@ -110,13 +110,27 @@ def apply_submissions(queue: list[dict], subs: dict) -> None:
     for q in queue:
         sub = subs.get(q["unit_id"])
         if sub is None:
-            q.update({"review_status": "open", "confirmed_by": "", "confirmed_date": "", "benchmark_use": "not decided"})
+            q.update({"review_status": "open", "confirmed_by": "", "confirmed_date": "", "benchmark_use": "not decided", "relation": ""})
             continue
         q["reviewer_decision"] = sub["confirmed_decision"]
         q["review_status"] = sub["status"]
         q["confirmed_by"] = sub["reviewer"]
         q["confirmed_date"] = sub["confirmed_date"]
         q["benchmark_use"] = sub["benchmark_use"]
+        q["relation"] = sub.get("relation", "")
+
+
+def assign_review_order(queue: list[dict]) -> None:
+    """Document order for presenting future batches: priority, then JD order, then line. RQ ids are NOT renumbered (earlier submissions refer to them)."""
+    doc = sorted(queue, key=lambda q: (q["priority"], JD_ORDER.index(q["jd_id"]), int(q["first_line"])))
+    for n, q in enumerate(doc, 1):
+        q["review_order"] = n
+
+
+def next_batch(queue: list[dict], size: int = BATCH_SIZE) -> list[dict]:
+    """The next open rows to review, in document order within priority: never more than `size` rows."""
+    open_rows = [q for q in queue if q["review_status"] == "open"]
+    return sorted(open_rows, key=lambda q: (q["priority"], JD_ORDER.index(q["jd_id"]), int(q["first_line"])))[:size]
 
 
 def write_csv(queue: list[dict]) -> None:
@@ -153,6 +167,7 @@ def write_md(queue: list[dict], summ: dict) -> None:
         t = {k: summ["jd_by_type"].get(f"{j}|{k}", 0) for k in ("requirement", "heading", "background", "uncertain")}
         out.append(f"| {j} | {cells[0]} | {cells[1]} | {cells[2]} | {summ['by_jd'][j]} | {t['requirement']} | {t['heading']} | {t['background']} | {t['uncertain']} |")
     out += ["", f"By priority: P1 {summ['by_priority'][1]}, P2 {summ['by_priority'][2]}, P3 {summ['by_priority'][3]}.", ""]
+    out += [f"Next batch (document order, no more than {BATCH_SIZE} rows): " + ", ".join(summ["next_batch"]) + ".", ""]
     out += ["Review status: " + ", ".join(f"{k} {v}" for k, v in sorted(summ["review_status"].items())) + ". Confirmed decisions come from "
             "`reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not "
             "a confirmed requirement or exclusion in any benchmark result.", ""]
@@ -185,8 +200,10 @@ def main() -> int:
         rows = list(csv.DictReader(fh))
     queue = assign(rows)
     apply_submissions(queue, load_submissions())
+    assign_review_order(queue)
     write_csv(queue)
     summ = summary(queue, rows)
+    summ["next_batch"] = [q["rq_id"] for q in next_batch(queue)]
     write_md(queue, summ)
     (HERE / "results" / "review_queue_summary.json").write_text(json.dumps(summ, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"queued {summ['queued_rows']} rows in {summ['batches']} batches; P1 {summ['by_priority'][1]}, P2 {summ['by_priority'][2]}, P3 {summ['by_priority'][3]}")

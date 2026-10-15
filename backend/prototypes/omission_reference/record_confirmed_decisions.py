@@ -36,9 +36,19 @@ BATCHES = {
         ("RQ-014", "heading", "\u201cDuties:\u201d only identifies the section."),
         ("RQ-015", "background", "optional company information, consistent with confirmed whole-unit judgment S004."),
     ]},
+    4: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch4.csv", "decisions": [
+        ("RQ-016", "heading", "\u201cالمهام:\u201d labels the duties section."),
+        ("RQ-017", "heading", "\u201cالمتطلبات:\u201d labels the requirements section."),
+        ("RQ-018", "heading", "\u201cيفضل:\u201d labels the preferred-items section."),
+        ("RQ-019", "requirement",
+         "explicitly requires effective communication, but it repeats or rephrases the communication requirement at B08 line 9 and must not "
+         "create a second scored criterion.",
+         ("B08_ar_hr_specialist", 9)),
+        ("RQ-020", "heading", "\u201cالمتطلبات:\u201d labels the requirements section."),
+    ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
-          "confirmed_date", "reason", "status", "benchmark_use"]
+          "confirmed_date", "reason", "status", "benchmark_use", "relation"]
 
 
 def queue_index() -> dict:
@@ -46,10 +56,26 @@ def queue_index() -> dict:
         return {r["rq_id"]: r for r in csv.DictReader(fh)}
 
 
+def sheet_unit(jd_id: str, first_line: int) -> dict:
+    with (HERE / "reviewer_sheet.csv").open(encoding="utf-8") as fh:
+        for r in csv.DictReader(fh):
+            if r["jd_id"] == jd_id and int(r["first_line"]) == first_line:
+                return r
+    raise SystemExit(f"no unit at {jd_id} line {first_line}")
+
+
 def build_rows(decisions: list, date: str) -> list[dict]:
     queue = queue_index()
     rows = []
-    for rq_id, decision, reason in decisions:
+    for item in decisions:
+        rq_id, decision, reason = item[0], item[1], item[2]
+        relation = ""
+        if len(item) == 4 and item[3]:
+            rel_jd, rel_line = item[3]
+            target = sheet_unit(rel_jd, rel_line)
+            if target["proposed_type_candidate"] != "requirement":
+                raise SystemExit(f"{rq_id}: relation target is not a requirement candidate")
+            relation = f"repeats_content_of {target['unit_id']} ({rel_jd} line {rel_line})"
         if decision not in ALLOWED:
             raise SystemExit(f"{rq_id}: decision '{decision}' is not one of the four choices")
         q = queue.get(rq_id)
@@ -62,7 +88,11 @@ def build_rows(decisions: list, date: str) -> list[dict]:
                      "reason": reason if reason else "no reason recorded (reviewer gave none)",
                      "status": "resolved" if resolved else "unresolved (uncertain)",
                      "benchmark_use": ("confirmed " + decision + " type" if resolved else
-                                       "must not be used as a confirmed requirement or as an exclusion in benchmark results")})
+                                       "must not be used as a confirmed requirement or as an exclusion in benchmark results"),
+                     "relation": relation})
+        if relation:
+            rows[-1]["benchmark_use"] = ("confirmed requirement type, but repeated requirement content: counted only through the related unit, "
+                                         "never as a second scored criterion")
     return rows
 
 

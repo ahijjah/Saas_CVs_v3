@@ -7,11 +7,17 @@ Coverage denominators: EFFECTIVE requirement units (candidate type, or the confi
 unresolved units (a confirmed 'uncertain' decision) are reported in their own blocks: never as a requirement, never as an exclusion.
 Headings and background are not counted. Defects use the existing scorers and frozen benchmark labels (author-written, not reviewer-confirmed).
 
+**Repeated requirement content (not a second scored criterion):**
+
+- RQ-019 (B08_ar_hr_specialist, unit `386d19910cf1:L15:341-412`): repeats_content_of 386d19910cf1:L9:234-262 (B08_ar_hr_specialist line 9). Reviewer reason: explicitly requires effective communication, but it repeats or rephrases the communication requirement at B08 line 9 and must not create a second scored criterion.
+
+Such units appear only in the repeated-requirement column. Their related unit is the one counted.
+
 ## TC20 repeat | model gpt-4.1-2025-04-14 | prompt v2-3 | arm v2-3
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 2-18 | 0 | 1 | 0 | 0 | 0 | 1 | 0-1 | 1 | 0 | 0 | 0-16 |
+| TC20 | 5 | 37 | 2-18 | 0 | 1 | 0 | 0 | 0 | 1 | 0 | 0-1 | 1 | 0 | 0 | 0-16 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -22,7 +28,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 4 | 0 | 1 | 0 | 0 | 0 | 1 | 1 | 1 | 0 | 1 | 0 |
+| TC20 | 5 | 37 | 4 | 0 | 1 | 0 | 0 | 0 | 1 | 0 | 1 | 1 | 0 | 1 | 0 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -35,7 +41,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 21-22 | 0-1 | 0 | 0 | 15 | 0 | 1 | 1 | 1 | 1 | 1-2 | 19 |
+| TC20 | 5 | 37 | 21-22 | 0-1 | 0 | 0 | 15 | 0 | 1 | 0 | 1 | 1 | 1 | 1-2 | 19 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -64,7 +70,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TC20 | 5 | 37 | 20-21 | 0-2 | 0 | 0 | 15-16 | 0 | 1 | 1 | 1 | 1 | 1 | 19 |
+| TC20 | 5 | 37 | 20-21 | 0-2 | 0 | 0 | 15-16 | 0 | 1 | 0 | 1 | 1 | 1 | 1 | 19 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -93,11 +99,11 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 10 | 2 | 0 | 0 | 1 | 20 | 0 | 0 | 0 | 0 | 1 | 1 | 0 |
-| B07_ar_accountant | 1 | 11 | 0 | 0 | 1 | 1 | 22 | 0 | 0 | 0 | 0 | 3 | 2 | 0 |
-| B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 1 | 0 | 1 | 0 | 0 | 0 | 1 |
-| B12_ar_injection | 1 | 6 | 0 | 0 | 0 | 0 | 12 | 2 | 0 | 0 | 1 | 1 | 0 | 0 |
+| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
+| B03_en_warehouse_supervisor | 1 | 10 | 2 | 0 | 0 | 1 | 20 | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 0 |
+| B07_ar_accountant | 1 | 11 | 0 | 0 | 1 | 1 | 22 | 0 | 0 | 0 | 0 | 0 | 3 | 2 | 0 |
+| B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 1 |
+| B12_ar_injection | 1 | 6 | 0 | 0 | 0 | 0 | 12 | 2 | 0 | 0 | 0 | 1 | 1 | 0 | 0 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -109,11 +115,11 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 1 | 2 | 0 |
-| B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 1 | 2 | 2 |
-| B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 1 | 0 | 1 | 0 | 0 | 0 | 1 |
-| B12_ar_injection | 1 | 6 | 0 | 0 | 0 | 0 | 12 | 2 | 0 | 0 | 1 | 1 | 0 | 0 |
+| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
+| B03_en_warehouse_supervisor | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 0 | 1 | 2 | 0 |
+| B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 0 | 1 | 2 | 2 |
+| B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 1 |
+| B12_ar_injection | 1 | 6 | 0 | 0 | 0 | 0 | 12 | 2 | 0 | 0 | 0 | 1 | 1 | 0 | 0 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -126,11 +132,11 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 10 | 2 | 2 | 0 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 2 | 2 |
-| B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 0 | 3 | 2 |
-| B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 1 | 0 | 1 | 0 | 0 | 0 | 1 |
-| B12_ar_injection | 1 | 6 | 2 | 0 | 0 | 0 | 8 | 2 | 0 | 1 | 1 | 0 | 0 | 1 |
+| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
+| B03_en_warehouse_supervisor | 1 | 10 | 2 | 2 | 0 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 2 |
+| B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 0 | 0 | 3 | 2 |
+| B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 1 |
+| B12_ar_injection | 1 | 6 | 2 | 0 | 0 | 0 | 8 | 2 | 0 | 0 | 1 | 1 | 0 | 0 | 1 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
@@ -146,11 +152,11 @@ Genuine spans uncovered in every answer of this group (recurring):
 
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 10 | 2 | 1 | 0 | 0 | 8 | 0 | 0 | 0 | 0 | 1 | 1 | 0 |
-| B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 0 | 3 | 2 |
-| B08_ar_hr_specialist | 1 | 8 | 2 | 0 | 0 | 0 | 12 | 1 | 0 | 1 | 0 | 0 | 0 | 3 |
-| B12_ar_injection | 1 | 6 | 1 | 0 | 0 | 0 | 10 | 2 | 0 | 1 | 0 | 0 | 0 | 1 |
+| B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
+| B03_en_warehouse_supervisor | 1 | 10 | 2 | 1 | 0 | 0 | 8 | 0 | 0 | 0 | 0 | 0 | 1 | 1 | 0 |
+| B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 0 | 0 | 3 | 2 |
+| B08_ar_hr_specialist | 1 | 8 | 2 | 0 | 0 | 0 | 12 | 0 | 0 | 1 | 1 | 0 | 0 | 0 | 3 |
+| B12_ar_injection | 1 | 6 | 1 | 0 | 0 | 0 | 10 | 2 | 0 | 0 | 1 | 0 | 0 | 0 | 1 |
 
 Genuine spans uncovered in every answer of this group (recurring):
 
