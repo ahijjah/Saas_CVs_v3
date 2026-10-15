@@ -89,7 +89,34 @@ def assign(rows: list[dict]) -> list[dict]:
 
 
 CSV_FIELDS = ["rq_id", "batch", "priority", "priority_reason", "jd_id", "language", "unit_id", "first_line", "source_text",
-              "proposed_type_candidate", "candidate_reason", "existing_confirmed_judgment", "judgment_scope", "choices", "reviewer_decision"]
+              "proposed_type_candidate", "candidate_reason", "existing_confirmed_judgment", "judgment_scope", "choices", "reviewer_decision",
+              "review_status", "confirmed_by", "confirmed_date", "benchmark_use"]
+
+
+def load_submissions() -> dict:
+    """Confirmed decisions from reviews/CONFIRMED_*.csv, keyed by unit id. A submission row must match the sheet's unit id and exact text."""
+    sheet = {r["unit_id"]: r["source_text"] for r in csv.DictReader(SHEET.open(encoding="utf-8"))}
+    out = {}
+    for path in sorted((HERE / "reviews").glob("CONFIRMED_*.csv")):
+        with path.open(encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                if sheet.get(r["unit_id"]) != r["source_text"]:
+                    raise SystemExit(f"{path.name}: {r['rq_id']} does not match the reviewer sheet; refusing to apply")
+                out[r["unit_id"]] = {**r, "submission": path.name}
+    return out
+
+
+def apply_submissions(queue: list[dict], subs: dict) -> None:
+    for q in queue:
+        sub = subs.get(q["unit_id"])
+        if sub is None:
+            q.update({"review_status": "open", "confirmed_by": "", "confirmed_date": "", "benchmark_use": "not decided"})
+            continue
+        q["reviewer_decision"] = sub["confirmed_decision"]
+        q["review_status"] = sub["status"]
+        q["confirmed_by"] = sub["reviewer"]
+        q["confirmed_date"] = sub["confirmed_date"]
+        q["benchmark_use"] = sub["benchmark_use"]
 
 
 def write_csv(queue: list[dict]) -> None:
@@ -106,6 +133,7 @@ def summary(queue: list[dict], rows: list[dict]) -> dict:
     jd_prio = Counter((q["jd_id"], q["priority"]) for q in queue)
     jd_type = Counter((q["jd_id"], q["proposed_type_candidate"]) for q in queue)
     return {"sheet_rows": len(rows), "queued_rows": len(queue), "batches": len({q["batch"] for q in queue}),
+            "review_status": dict(Counter(q["review_status"] for q in queue)),
             "by_jd": {j: by_jd.get(j, 0) for j in JD_ORDER}, "by_priority": {p: by_prio.get(p, 0) for p in (1, 2, 3)},
             "by_type": dict(by_type), "jd_by_priority": {f"{j}|P{p}": n for (j, p), n in jd_prio.items()},
             "jd_by_type": {f"{j}|{t}": n for (j, t), n in jd_type.items()},
@@ -125,6 +153,9 @@ def write_md(queue: list[dict], summ: dict) -> None:
         t = {k: summ["jd_by_type"].get(f"{j}|{k}", 0) for k in ("requirement", "heading", "background", "uncertain")}
         out.append(f"| {j} | {cells[0]} | {cells[1]} | {cells[2]} | {summ['by_jd'][j]} | {t['requirement']} | {t['heading']} | {t['background']} | {t['uncertain']} |")
     out += ["", f"By priority: P1 {summ['by_priority'][1]}, P2 {summ['by_priority'][2]}, P3 {summ['by_priority'][3]}.", ""]
+    out += ["Review status: " + ", ".join(f"{k} {v}" for k, v in sorted(summ["review_status"].items())) + ". Confirmed decisions come from "
+            "`reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not "
+            "a confirmed requirement or exclusion in any benchmark result.", ""]
     out += ["## Batches", ""]
     for b in sorted({q["batch"] for q in queue}):
         members = [q for q in queue if q["batch"] == b]
@@ -137,7 +168,9 @@ def write_md(queue: list[dict], summ: dict) -> None:
                     f"- Proposed type: **{q['proposed_type_candidate']}** — {q['candidate_reason']}",
                     f"- Priority: P{q['priority']} — {q['priority_reason']}",
                     f"- Existing confirmed judgment:{scope}",
-                    f"- Choices: {CHOICES} · Reviewer decision: _(blank)_", ""]
+                    f"- Choices: {CHOICES} · Status: **{q['review_status']}**"
+                    + (f" · Confirmed decision: **{q['reviewer_decision']}** ({q['confirmed_by']}, {q['confirmed_date']})" if q["reviewer_decision"] else " · Reviewer decision: _(blank)_"),
+                    f"- Benchmark use: {q['benchmark_use']}", ""]
     p1_tc20 = [q for q in queue if q["jd_id"] == "TC20" and q["priority"] == 1][:5]
     out += ["## Summary by JD, priority and proposed type", "", "| JD | priority | proposed type | rows |", "|---|---|---|---|"]
     for (j, p, t), n in sorted(Counter((q["jd_id"], q["priority"], q["proposed_type_candidate"]) for q in queue).items(),
@@ -151,6 +184,7 @@ def main() -> int:
     with SHEET.open(encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
     queue = assign(rows)
+    apply_submissions(queue, load_submissions())
     write_csv(queue)
     summ = summary(queue, rows)
     write_md(queue, summ)

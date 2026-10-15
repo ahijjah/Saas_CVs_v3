@@ -91,3 +91,15 @@ reason, judgment or decision is changed, and the reviewer decision column is bla
 plus headings that contain requirement language (a routing aid: `HEADING_TERMS`, which the reviewer may dismiss); P2 rows linked to S-judgments,
 with their scope kept; P3 two deterministic requirement rows per JD. Each row appears once, under its highest priority. Batches hold at most
 five rows. The queue holds 44 of 114 rows in 9 batches. The queue is a way to work through review, not a finding.
+
+## Confirmed reviewer decisions (2026-10-15)
+Recorded by `record_confirmed_decisions.py` in `reviews/CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv`, separate from the candidate files, which are
+unchanged: RQ-001 requirement, RQ-002 requirement, RQ-004 heading, RQ-005 heading (all TC20). RQ-003 is **uncertain** (TC20 line 9, "substantive
+duty summary, but potentially duplicates the detailed duties that follow"). It is unresolved and is never a confirmed requirement or an exclusion
+in benchmark results. The replay gives it its own block. RQ-001, RQ-002 and RQ-004/005 were recorded with no stated reason, so the submission
+says "no reason recorded". The reviewer may add reasons later.
+
+Effect on the replay: TC20 coverage now has 37 requirement units (the 35 candidate requirements plus RQ-001 and RQ-002). The 2 headings are not
+counted, and RQ-003 is reported only in the unresolved block. Candidate classifications and the reviewer sheet are unchanged. The queue shows four
+resolved, one unresolved, and 39 open. The paused TC20 pilot is not updated: its inventory still uses the candidate annotation, and changing it
+would need a new manifest and approval.
