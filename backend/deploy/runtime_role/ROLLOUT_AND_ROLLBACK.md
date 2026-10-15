@@ -5,9 +5,8 @@
 
 ## 0. Gates (all required before the first production step)
 
-1. **The after-commit defect is handled** (`PLAN.md` section 4, item B). Either `proposed_rls_context.py` is adopted in `database.py` with its
-   tests passing, or the six functions listed by `context_audit.py` re-set the context after each commit. Without this, the switch silently
-   changes results in those six paths.
+1. **The after-commit defect is handled in the repository** (`PLAN.md` section 4, item B): the helper is adopted in `database.py`
+   (`_reapply_rls_context`) and its tests pass in both modes. Production adoption is unknown and is verified by the release, not assumed.
 2. **The operator's inventory is taken** on production with `inventory.sql` (read-only). Compare it with `PLAN.md` section 1. Any table that has
    a grant or an owner not described there stops the rollout until it is explained.
 3. **The rehearsal passes**: `tests/test_runtime_role_plan.py` and the runtime-mode suites (`PLAN.md` section 3) pass on the release commit.
@@ -121,7 +120,7 @@ switch the application back first.
 
 - Changing the owner of any object, or creating an owner role: separate decision (`PLAN.md` section 6, item 1).
 - Changing `cv_app` from superuser: separate decision, after the owner split.
-- Applying the history RLS policy (`proposed_history_rls.sql`) or adopting the context helper: they are code and policy changes. Recommended
+- Applying the history RLS policy (migration 110) or adopting the context helper (`database.py`): both are in the repository. Verify them in the release, not from this line. Recommended
   before the switch (gate 1), but each is its own reviewed change.
 - Narrowing `platform_secrets` access: separate decision.
 - Enabling re-analysis or any scoring: not part of this plan.
