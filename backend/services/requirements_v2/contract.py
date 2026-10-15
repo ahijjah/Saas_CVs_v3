@@ -83,8 +83,9 @@ NEEDS_CONFIRMATION = "needs_confirmation"    # preferred-only: explicit confirma
 NEEDS_REVIEW = "needs_review"                # structurally or numerically invalid (incl. over-limit extraction)
 NEEDS_CLASSIFICATION_REVIEW = "needs_classification_review"   # unresolved classification warnings, policy requires acknowledgment
 NEEDS_STRUCTURE_REVIEW = "needs_structure_review"   # an item's wording changed while its OR alternatives / experience did not settle
-READINESS_STATES = (READY, NEEDS_ITEMS, NEEDS_CLASSIFICATION_REVIEW, NEEDS_STRUCTURE_REVIEW, NEEDS_CONFIRMATION,
-                    NEEDS_REVIEW)
+NEEDS_STRUCTURAL_REVIEW = "needs_structural_review"   # an open structural finding, or an invalid structural_review block (fail closed)
+READINESS_STATES = (READY, NEEDS_ITEMS, NEEDS_CLASSIFICATION_REVIEW, NEEDS_STRUCTURE_REVIEW, NEEDS_STRUCTURAL_REVIEW,
+                    NEEDS_CONFIRMATION, NEEDS_REVIEW)
 
 SCORING_WEIGHTED = "weighted"
 SCORING_NONE = "none"
