@@ -169,24 +169,47 @@
  "justification": {
   "historical_control_losses": 1,
   "historical_calls": 5,
-  "clopper_pearson_95_for_loss_rate": [
-   0.005,
-   0.716
+  "clopper_pearson_95_for_historical_loss_rate": [
+   0.0051,
+   0.7164
   ],
-  "p_at_least_one_loss_if_rate_is_0.2_by_pairs": {
+  "p_at_least_one_control_loss_if_loss_rate_0.2_by_pairs": {
    "5": 0.672,
    "10": 0.893,
    "15": 0.965,
    "20": 0.988
   },
   "chosen_pairs": 10,
-  "reading": "the historical loss rate is too uncertain to power a rate comparison. With 10 pairs, a 20% loss rate in INVENTORY is caught at least once with probability about 0.89, and a control loss is seen with the same probability. The pilot is descriptive and gated by guards; it cannot establish an improvement."
+  "fisher_examples": {
+   "10/10 vs 9/10 (INVENTORY vs CONTROL)": {
+    "fisher_two_sided_p": 1.0,
+    "verdict": "INCONCLUSIVE"
+   },
+   "10/10 vs 5/10 (INVENTORY vs CONTROL)": {
+    "fisher_two_sided_p": 0.032508,
+    "verdict": "PRIMARY_SUPPORTED"
+   }
+  },
+  "with_inventory_10_of_10_the_largest_control_count_that_is_supported": 5,
+  "exact_power_of_the_rule": {
+   "CONTROL 0.8 vs INVENTORY 1.0": 0.0328,
+   "CONTROL 0.8 vs INVENTORY 0.9": 0.0118,
+   "CONTROL 0.5 vs INVENTORY 1.0": 0.623,
+   "CONTROL 0.5 vs INVENTORY 0.9": 0.2951
+  },
+  "reading": "With 10 calls per arm the rule is exploratory. A 10/10 vs 9/10 result is never supported (p = 1.0). Only a gap of about half the calls, or more, reaches p < 0.05. The power table gives the exact chance of a supported verdict for some true rates; it is low for modest gaps. A supported verdict is a statistical signal in this pilot, not an accuracy claim."
  },
  "thresholds": {
-  "primary_min_control_losses": 1,
-  "primary_inventory_retained": 10,
-  "secondary_median_reduction": 2,
-  "guard_regressions_allowed": 0
+  "fisher_alpha": 0.05,
+  "fisher_test": "two-sided, exact",
+  "guard_regressions_allowed": 0,
+  "verdict_order": [
+   "BLOCKED_GUARD_REGRESSION",
+   "PRIMARY_REGRESSION",
+   "PRIMARY_SUPPORTED",
+   "INCONCLUSIVE",
+   "INCOMPLETE (run stopped)"
+  ]
  },
  "frozen": {
   "control_request_sha256": "da9f2757a9e79617501f3a3a5aa6863d933ee51dfd57ff2e5a86b36ffee56803",
@@ -200,9 +223,9 @@
   "labels_sha256": "6a87da80e142640af1327c4a3fd5a21adb648726a9733a699fa8d3ec67135ef9",
   "evidence_sha256": "86a9abe7991ac55899296eb37e2133c5a51280c6d0067b106269bd8777b56590",
   "settings_sha256": "69c7a01b72f06702c1a32dfc330b32519dbd93189127d5494e49d85d440cb74b",
-  "protocol_sha256": "ff59b8179c088186e3febd56773647f770a77263f8c3dfb795016230794ee893",
-  "pilot_script_sha256": "b717ffd76ff3759843efdc6abfb524c6e31ffb6fb7b718085fe524609fbafcea",
-  "pilot_tests_sha256": "732b0f04ff5e3217aef1fc3d653ae679242ea7846a103247f5c1b935dc20c2de",
+  "protocol_sha256": "03147c3279c91b668ba0c0b8f5241f92a778a55e72e5fbdf4a30bf37c3d8d3c0",
+  "pilot_script_sha256": "fe945c007b6a6c274935aa68cecef086cc645edfc8f25f85105d6d46981860ca",
+  "pilot_tests_sha256": "ef562f47d1379d29563fa13296d479549d1c01486fa98031b38e9c23f86882d4",
   "scorer_sha256": "1c40def472760b9b79b6878cfe3f3186080786d07668d4eadbfe7ae0f5825129",
   "pricing_source_sha256": "fadd6381a166127869dea6d888b09ca969f1f1c47c9dddf3f29d7fb30f28a52a",
   "replay_logic_sha256": {
@@ -211,7 +234,7 @@
    "inventory.py": "afb8dd7de39be98a997ec94088ace67f6b8188173a1c2504a632a86c44496f0a",
    "preview.py": "e804027cd8f82fd37818daa7d4292ea4345223550dc7d248e3f5469d788ff843"
   },
-  "manifest_sha256": "0c65bc94d20b0f11f1aaf03785f443d55ebaca3db09826110dbc5d766e1bd7cb"
+  "manifest_sha256": "0a8540eba63d1e15a76cfa2bfbfc681a9bb2a7a8c84012af17ad38c6076e9e8d"
  },
  "control_request_chars": 29467,
  "inventory_request_chars": 37265,

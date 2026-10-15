@@ -50,23 +50,22 @@ def analysis(retained, guards=None, review=0):
     return {"primary_retained_all": retained == 16, "duty_retained": retained, "guards": g, "review_candidates": review}
 
 
+def arm(k, guards=None, review=0):
+    """k of the PAIRS calls retain all 16 duty lines (the first k pairs); the rest lose them. Guards and review counts apply to every pair."""
+    return [analysis(16 if j <= k else 0, guards, review) for j in range(1, p.PAIRS + 1)]
+
+
 def pairs(control, inventory):
+    """Records for both arms. Each argument is either one analysis (the same in every pair) or a list with one analysis per pair."""
+    per = lambda x: x if isinstance(x, list) else [x] * p.PAIRS  # noqa: E731
     recs = []
-    for k in range(1, p.PAIRS + 1):
-        recs.append({"arm": "CONTROL", "pair": k, "analysis": control})
-        recs.append({"arm": "INVENTORY", "pair": k, "analysis": inventory})
+    for k, (c, i) in enumerate(zip(per(control), per(inventory)), start=1):
+        recs.append({"arm": "CONTROL", "pair": k, "analysis": c})
+        recs.append({"arm": "INVENTORY", "pair": k, "analysis": i})
     return recs
 
 
 # ── protocol and code agree ──────────────────────────────────────────────────────────────────────────────────────────────
-def test_the_protocol_states_the_same_thresholds_as_the_code():
-    assert f"PRIMARY_MIN_CONTROL_LOSSES = {p.PRIMARY_MIN_CONTROL_LOSSES}" in PROTOCOL_TEXT
-    assert f"PRIMARY_INVENTORY_RETAINED = {p.PRIMARY_INVENTORY_RETAINED}" in PROTOCOL_TEXT
-    assert f"SECONDARY_MEDIAN_REDUCTION = {p.SECONDARY_MEDIAN_REDUCTION}" in PROTOCOL_TEXT
-    assert f"GUARD_REGRESSIONS_ALLOWED = {p.GUARD_REGRESSIONS_ALLOWED}" in PROTOCOL_TEXT
-    assert f"{p.PAIRS} pairs" in PROTOCOL_TEXT or "10 pairs" in PROTOCOL_TEXT
-
-
 def test_the_protocol_states_the_reservation_that_the_code_computes():
     assert f"**${TOTAL:.5f}**" in PROTOCOL_TEXT
     for arm in p.ARMS:
@@ -175,11 +174,11 @@ def test_the_run_stops_before_a_call_whose_reservation_would_exceed_the_cap(monk
     assert len(client.calls) == 1, "the first CONTROL call fits; the INVENTORY call would exceed the cap and is not made"
 
 
-def test_a_complete_run_on_stored_answers_gives_no_difference_when_both_arms_retain_the_duties():
+def test_a_complete_run_with_equal_retention_is_inconclusive():
     client = FakeClient([ok(STORED[("v2-3", 1)]) for _ in range(20)])
     out = p.run_pilot(client, approval())
-    assert out["status"] == "complete" and out["decision"]["verdict"] == "NO_PRIMARY_DIFFERENCE"
-    assert out["decision"]["primary_retained_all_calls"] == {"CONTROL": 10, "INVENTORY": 10}
+    assert out["status"] == "complete" and out["decision"]["verdict"] == "INCONCLUSIVE"
+    assert out["decision"]["counts"]["INVENTORY"]["retained_all_duties"] == 10 and out["decision"]["fisher_two_sided_p"] == 1.0
 
 
 def test_a_guard_regression_blocks_the_verdict_even_when_the_primary_outcome_improves():
@@ -192,34 +191,9 @@ def test_a_guard_regression_blocks_the_verdict_even_when_the_primary_outcome_imp
 
 
 # ── verdicts, from paired analyses ──────────────────────────────────────────────────────────────────────────────────────────
-def test_a_primary_and_secondary_signal_needs_full_retention_loss_in_control_and_a_lower_review_median():
-    d = p.decide(pairs(analysis(0, review=16), analysis(16, review=0)))
-    assert d["verdict"] == "PRIMARY_AND_SECONDARY_SIGNAL"
-
-
-def test_a_primary_signal_without_the_secondary_reduction_is_reported_as_primary_only():
-    d = p.decide(pairs(analysis(0, review=3), analysis(16, review=2)))
-    assert d["verdict"] == "PRIMARY_SIGNAL_ONLY"
-
-
-def test_a_primary_loss_in_inventory_is_a_regression():
-    d = p.decide(pairs(analysis(16), analysis(0)))
-    assert d["verdict"] == "PRIMARY_REGRESSION"
-
-
-def test_a_guard_regression_blocks_even_a_perfect_secondary_result():
-    d = p.decide(pairs(analysis(0, review=16), analysis(16, guards={"AND": False}, review=0)))
-    assert d["verdict"] == "BLOCKED_GUARD_REGRESSION" and d["guard_regressions_paired"]["AND"] == 10
-
-
-def test_an_incomplete_run_draws_no_verdict():
-    recs = pairs(analysis(16), analysis(16))[:-1]
-    assert p.decide(recs)["verdict"] == "INCOMPLETE"
-
-
 def test_a_guard_that_failed_in_control_and_still_fails_is_not_a_regression():
     d = p.decide(pairs(analysis(16, guards={"OR": False}), analysis(16, guards={"OR": False})))
-    assert d["guard_regressions_paired"]["OR"] == 0 and d["verdict"] == "NO_PRIMARY_DIFFERENCE"
+    assert d["guard_regressions_paired"]["OR"] == 0 and d["verdict"] == "INCONCLUSIVE"
 
 
 # ── guards on stored text ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -288,6 +262,94 @@ def test_importing_and_dry_running_loads_no_network_client():
 
 def test_the_justification_numbers_match_the_protocol():
     j = p.justification()
-    assert j["p_at_least_one_loss_if_rate_is_0.2_by_pairs"][10] == 0.893
-    assert list(j["clopper_pearson_95_for_loss_rate"]) == [0.005, 0.716]
+    assert j["p_at_least_one_control_loss_if_loss_rate_0.2_by_pairs"][10] == 0.893
+    assert list(j["clopper_pearson_95_for_historical_loss_rate"]) == [0.0051, 0.7164]
     assert "0.672" in PROTOCOL_TEXT and "0.893" in PROTOCOL_TEXT
+
+
+# ── statistical rules (the corrected interpretation) ───────────────────────────────────────────────────────────────────────────
+def test_the_fisher_examples_are_exact():
+    assert p.fisher_two_sided(10, 10, 9, 10) == 1.0, "10/10 against 9/10 is never significant"
+    assert abs(p.fisher_two_sided(10, 10, 5, 10) - 0.0325) < 0.0001, "10/10 against 5/10: about 0.0325"
+
+
+def test_the_fisher_test_is_symmetric_in_the_two_groups_and_bounded():
+    for a, b in ((10, 5), (7, 3), (9, 0), (4, 4)):
+        assert p.fisher_two_sided(a, 10, b, 10) == p.fisher_two_sided(b, 10, a, 10)
+        assert 0.0 <= p.fisher_two_sided(a, 10, b, 10) <= 1.0
+    assert p.fisher_two_sided(4, 10, 4, 10) == 1.0
+
+
+def test_the_clopper_pearson_intervals_are_exact_at_the_extremes():
+    assert p.clopper_pearson(10, 10) == (0.6915, 1.0)
+    assert p.clopper_pearson(0, 10) == (0.0, 0.3085)
+    lower, upper = p.clopper_pearson(5, 10)
+    assert abs(lower - 0.1871) < 0.0005 and abs(upper - 0.8129) < 0.0005
+
+
+def test_a_ten_of_ten_against_nine_of_ten_is_inconclusive_with_p_one():
+    d = p.decide(pairs(arm(9), arm(10)))
+    assert d["verdict"] == "INCONCLUSIVE" and d["fisher_two_sided_p"] == 1.0
+
+
+def test_a_ten_of_ten_against_five_of_ten_is_supported():
+    d = p.decide(pairs(arm(5), arm(10)))
+    assert d["verdict"] == "PRIMARY_SUPPORTED" and d["fisher_two_sided_p"] < p.FISHER_ALPHA
+
+
+def test_a_higher_inventory_that_is_not_significant_is_inconclusive_not_supported():
+    d = p.decide(pairs(arm(8), arm(10)))
+    assert d["verdict"] == "INCONCLUSIVE" and d["fisher_two_sided_p"] >= p.FISHER_ALPHA
+
+
+def test_a_lower_inventory_is_a_primary_regression_even_when_not_significant():
+    d = p.decide(pairs(arm(10), arm(9)))
+    assert d["verdict"] == "PRIMARY_REGRESSION"
+
+
+def test_a_guard_regression_blocks_even_a_supported_primary_result():
+    d = p.decide(pairs(arm(5), arm(10, guards={"AND": False})))
+    assert d["verdict"] == "BLOCKED_GUARD_REGRESSION" and d["fisher_two_sided_p"] < p.FISHER_ALPHA
+
+
+def test_any_single_guard_regression_blocks_the_verdict():
+    for g in p.GUARD_NAMES:
+        d = p.decide(pairs(arm(5, guards={g: True}), arm(10, guards={g: False})))
+        assert d["verdict"] == "BLOCKED_GUARD_REGRESSION", g
+
+
+def test_review_candidate_counts_are_descriptive_and_never_change_the_verdict():
+    base = p.decide(pairs(arm(5, review=0), arm(10, review=0)))
+    many_fewer = p.decide(pairs(arm(5, review=16), arm(10, review=0)))
+    assert base["verdict"] == many_fewer["verdict"] == "PRIMARY_SUPPORTED"
+    assert many_fewer["review_candidates_descriptive_only"]["CONTROL"]["median"] == 16
+
+
+def test_an_incomplete_run_draws_no_verdict_and_no_p_value():
+    d = p.decide(pairs(arm(10), arm(10))[:-1])
+    assert d["verdict"] == "INCOMPLETE" and "fisher_two_sided_p" not in d
+
+
+def test_the_decision_reports_exact_counts_proportions_and_intervals():
+    d = p.decide(pairs(arm(5), arm(10)))
+    assert d["counts"]["INVENTORY"] == {"retained_all_duties": 10, "calls": 10, "proportion": 1.0,
+                                        "ci95_clopper_pearson": [0.6915, 1.0]}
+    assert d["counts"]["CONTROL"]["retained_all_duties"] == 5 and d["counts"]["CONTROL"]["proportion"] == 0.5
+
+
+def test_with_inventory_at_ten_of_ten_the_control_count_must_be_at_most_five():
+    j = p.justification()
+    assert j["with_inventory_10_of_10_the_largest_control_count_that_is_supported"] == 5
+
+
+def test_the_power_at_the_historical_rate_is_reported_as_low():
+    j = p.justification()
+    assert j["exact_power_of_the_rule"]["CONTROL 0.8 vs INVENTORY 1.0"] < 0.1
+
+
+def test_the_protocol_states_the_fisher_rule_and_the_worked_examples():
+    assert "two-sided" in PROTOCOL_TEXT and "p < 0.05" in PROTOCOL_TEXT
+    assert "p = 1.0" in PROTOCOL_TEXT and "0.0325" in PROTOCOL_TEXT
+    assert "PRIMARY_SUPPORTED" in PROTOCOL_TEXT and "INCONCLUSIVE" in PROTOCOL_TEXT
+    assert "PRIMARY_AND_SECONDARY_SIGNAL" not in PROTOCOL_TEXT and "PRIMARY_SIGNAL_ONLY" not in PROTOCOL_TEXT
+    assert "NO_PRIMARY_DIFFERENCE" not in PROTOCOL_TEXT

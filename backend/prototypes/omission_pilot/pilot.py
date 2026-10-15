@@ -45,11 +45,9 @@ GUARD_CHECKS = {"OR": ("C_EXP_OR", "C_FAM_OR"), "AND": ("C_AND",), "category": (
                 "reporting": ("C_REPORTING",)}
 GUARD_NAMES = ("OR", "AND", "category", "location", "reporting", "schema", "invented")
 
-# Interpretation thresholds, fixed before any call.
-PRIMARY_MIN_CONTROL_LOSSES = 1      # a primary signal needs at least one CONTROL call that loses a duty line
-PRIMARY_INVENTORY_RETAINED = PAIRS  # ... and INVENTORY retains all 16 duty lines in every call
-SECONDARY_MEDIAN_REDUCTION = 2      # median review-candidate (genuine_omission) word-bearing spans must fall by at least this much
-GUARD_REGRESSIONS_ALLOWED = 0       # any paired guard regression blocks a favourable reading, whatever the coverage
+# Interpretation rules, fixed before any call (PROTOCOL.md section 6).
+FISHER_ALPHA = 0.05                 # two-sided Fisher exact test; PRIMARY_SUPPORTED needs p < FISHER_ALPHA and INVENTORY above CONTROL
+GUARD_REGRESSIONS_ALLOWED = 0       # any paired guard regression blocks the verdict (no offset by coverage or duty counts)
 
 DUTY_COUNT = 16
 UNITS_REVIEWED = 35
@@ -100,35 +98,67 @@ def schedule() -> list[tuple[str, int]]:
     return order
 
 
+def _binom_cdf(k: int, n: int, p: float) -> float:
+    return sum(math.comb(n, i) * p ** i * (1 - p) ** (n - i) for i in range(k + 1))
+
+
+def clopper_pearson(k: int, n: int, alpha: float = 0.05) -> tuple[float, float]:
+    """Exact two-sided 95% interval for a proportion k/n (bisection on the binomial tail)."""
+    def bisect(f):
+        lo, hi = 0.0, 1.0
+        for _ in range(200):
+            mid = (lo + hi) / 2
+            if f(mid):
+                hi = mid
+            else:
+                lo = mid
+        return (lo + hi) / 2
+    lower = 0.0 if k == 0 else bisect(lambda q: 1 - _binom_cdf(k - 1, n, q) >= alpha / 2)
+    upper = 1.0 if k == n else bisect(lambda q: _binom_cdf(k, n, q) <= alpha / 2)
+    return round(lower, 4), round(upper, 4)
+
+
+def fisher_two_sided(a: int, n1: int, b: int, n2: int) -> float:
+    """Two-sided Fisher exact p-value for a successes out of n1 (group 1) against b out of n2 (group 2). Exact: integer hypergeometric
+    weights, and a table counts when its probability is at most the observed table's probability."""
+    total_draws, successes = n1 + n2, a + b
+    denom = math.comb(total_draws, n1)
+    weight = lambda x: math.comb(successes, x) * math.comb(total_draws - successes, n1 - x)  # noqa: E731
+    observed = weight(a)
+    p = sum(weight(x) for x in range(max(0, successes - (total_draws - n1)), min(successes, n1) + 1) if weight(x) <= observed)
+    return min(1.0, p / denom)
+
+
+def power_fisher(pc: float, pi: float, n: int = PAIRS) -> float:
+    """Exact power of the verdict rule (INVENTORY higher, two-sided Fisher p < FISHER_ALPHA) when the true per-call retention rates are
+    pc (CONTROL) and pi (INVENTORY). Computed by enumerating every pair of outcomes; no simulation."""
+    total = 0.0
+    for a in range(n + 1):
+        for b in range(n + 1):
+            if a > b and fisher_two_sided(a, n, b, n) < FISHER_ALPHA:
+                total += math.comb(n, a) * pi ** a * (1 - pi) ** (n - a) * math.comb(n, b) * pc ** b * (1 - pc) ** (n - b)
+    return round(total, 4)
+
+
 def justification() -> dict:
-    """Historical variability and the call count. Evidence: the TC20 repeat batch on this model (requirements_v2_tc20_repeat): v2-3 kept all
-    16 duty lines in 4 of 5 calls and lost them in call 5; v2-5 kept them in 5 of 5. One loss in five is far too little to estimate a rate."""
-    def binom_cdf(k, n, p):
-        return sum(math.comb(n, i) * p ** i * (1 - p) ** (n - i) for i in range(k + 1))
-
-    def clopper_pearson(k, n, alpha=0.05):
-        def bisect(f, lo, hi):
-            for _ in range(200):
-                mid = (lo + hi) / 2
-                if f(mid):
-                    hi = mid
-                else:
-                    lo = mid
-            return (lo + hi) / 2
-        lower = 0.0 if k == 0 else bisect(lambda p: 1 - binom_cdf(k - 1, n, p) >= alpha / 2, 0.0, 1.0)
-        upper = 1.0 if k == n else bisect(lambda p: binom_cdf(k, n, p) <= alpha / 2, 0.0, 1.0)
-        return round(lower, 3), round(upper, 3)
-
-    historical_losses, historical_n = 1, 5
-    p_hat = 0.2
-    power = {n: round(1 - (1 - p_hat) ** n, 3) for n in (5, 10, 15, 20)}
-    return {"historical_control_losses": historical_losses, "historical_calls": historical_n,
-            "clopper_pearson_95_for_loss_rate": clopper_pearson(historical_losses, historical_n),
-            "p_at_least_one_loss_if_rate_is_0.2_by_pairs": power,
-            "chosen_pairs": PAIRS,
-            "reading": ("the historical loss rate is too uncertain to power a rate comparison. With 10 pairs, a 20% loss rate in INVENTORY "
-                        "is caught at least once with probability about 0.89, and a control loss is seen with the same probability. "
-                        "The pilot is descriptive and gated by guards; it cannot establish an improvement.")}
+    """Historical variability, the call count, and what the pre-registered rule can detect with PAIRS calls per arm.
+    Historical evidence: TC20 repeat batch on this model (requirements_v2_tc20_repeat). v2-3 retained all 16 duty lines in 4 of 5 calls
+    and lost them in one; v2-5 retained them in 5 of 5."""
+    loss_k, loss_n = 1, 5
+    examples = {"10/10 vs 9/10 (INVENTORY vs CONTROL)": {"fisher_two_sided_p": fisher_two_sided(10, 10, 9, 10), "verdict": "INCONCLUSIVE"},
+                "10/10 vs 5/10 (INVENTORY vs CONTROL)": {"fisher_two_sided_p": round(fisher_two_sided(10, 10, 5, 10), 6), "verdict": "PRIMARY_SUPPORTED"}}
+    smallest_supported_control = max(c for c in range(PAIRS + 1) if fisher_two_sided(PAIRS, PAIRS, c, PAIRS) < FISHER_ALPHA)
+    return {"historical_control_losses": loss_k, "historical_calls": loss_n,
+            "clopper_pearson_95_for_historical_loss_rate": clopper_pearson(loss_k, loss_n),
+            "p_at_least_one_control_loss_if_loss_rate_0.2_by_pairs": {n: round(1 - 0.8 ** n, 3) for n in (5, 10, 15, 20)},
+            "chosen_pairs": PAIRS, "fisher_examples": examples,
+            "with_inventory_10_of_10_the_largest_control_count_that_is_supported": smallest_supported_control,
+            "exact_power_of_the_rule": {f"CONTROL {pc} vs INVENTORY {pi}": power_fisher(pc, pi)
+                                         for pc, pi in ((0.8, 1.0), (0.8, 0.9), (0.5, 1.0), (0.5, 0.9))},
+            "reading": ("With 10 calls per arm the rule is exploratory. A 10/10 vs 9/10 result is never supported (p = 1.0). "
+                        "Only a gap of about half the calls, or more, reaches p < 0.05. The power table gives the exact chance of a "
+                        "supported verdict for some true rates; it is low for modest gaps. A supported verdict is a statistical "
+                        "signal in this pilot, not an accuracy claim.")}
 
 
 def freeze(requests: dict) -> dict:
@@ -178,8 +208,8 @@ def dry_run() -> dict:
 
 
 def thresholds() -> dict:
-    return {"primary_min_control_losses": PRIMARY_MIN_CONTROL_LOSSES, "primary_inventory_retained": PRIMARY_INVENTORY_RETAINED,
-            "secondary_median_reduction": SECONDARY_MEDIAN_REDUCTION, "guard_regressions_allowed": GUARD_REGRESSIONS_ALLOWED}
+    return {"fisher_alpha": FISHER_ALPHA, "fisher_test": "two-sided, exact", "guard_regressions_allowed": GUARD_REGRESSIONS_ALLOWED,
+            "verdict_order": ["BLOCKED_GUARD_REGRESSION", "PRIMARY_REGRESSION", "PRIMARY_SUPPORTED", "INCONCLUSIVE", "INCOMPLETE (run stopped)"]}
 
 
 # ── analysis ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -228,30 +258,33 @@ def ev_checks(raw, jd, labels) -> dict:
 
 
 def decide(records: list[dict]) -> dict:
-    """Verdict from paired records. records: [{'arm', 'pair', 'analysis'}]. Thresholds are the pre-registered constants above."""
+    """Verdict from paired records. records: [{'arm', 'pair', 'analysis'}]. Order: BLOCKED_GUARD_REGRESSION, PRIMARY_REGRESSION,
+    PRIMARY_SUPPORTED, INCONCLUSIVE; INCOMPLETE when the run stopped before every call returned. Review-candidate counts are descriptive
+    only and never enter the verdict."""
     by = {(r["arm"], r["pair"]): r["analysis"] for r in records}
     pairs = sorted({r["pair"] for r in records})
     complete = len(records) == 2 * PAIRS and all(by.get((a, k)) for a in ARMS for k in range(1, PAIRS + 1))
     if not complete:
         return {"verdict": "INCOMPLETE", "reason": "the run stopped before every call returned an answer; no verdict is drawn"}
-    primary_c = sum(by[("CONTROL", k)]["primary_retained_all"] for k in pairs)
-    primary_i = sum(by[("INVENTORY", k)]["primary_retained_all"] for k in pairs)
-    med = lambda arm: sorted(by[(arm, k)]["review_candidates"] for k in pairs)[len(pairs) // 2]  # noqa: E731
-    regressions = {g: sum(1 for k in pairs if by[("CONTROL", k)]["guards"][g] and not by[("INVENTORY", k)]["guards"][g]) for g in GUARD_NAMES}
-    guard_total = sum(regressions.values())
-    guard_pass = {arm: {g: sum(by[(arm, k)]["guards"][g] for k in pairs) for g in GUARD_NAMES} for arm in ARMS}
-    if guard_total > GUARD_REGRESSIONS_ALLOWED:
+    k = {arm: sum(by[(arm, j)]["primary_retained_all"] for j in pairs) for arm in ARMS}
+    counts = {arm: {"retained_all_duties": k[arm], "calls": PAIRS, "proportion": round(k[arm] / PAIRS, 4),
+                    "ci95_clopper_pearson": list(clopper_pearson(k[arm], PAIRS))} for arm in ARMS}
+    p = fisher_two_sided(k["INVENTORY"], PAIRS, k["CONTROL"], PAIRS)
+    regressions = {g: sum(1 for j in pairs if by[("CONTROL", j)]["guards"][g] and not by[("INVENTORY", j)]["guards"][g]) for g in GUARD_NAMES}
+    guard_passes = {arm: {g: sum(by[(arm, j)]["guards"][g] for j in pairs) for g in GUARD_NAMES} for arm in ARMS}
+    descriptive = {arm: {"median": sorted(by[(arm, j)]["review_candidates"] for j in pairs)[len(pairs) // 2],
+                         "min": min(by[(arm, j)]["review_candidates"] for j in pairs),
+                         "max": max(by[(arm, j)]["review_candidates"] for j in pairs)} for arm in ARMS}
+    if sum(regressions.values()) > GUARD_REGRESSIONS_ALLOWED:
         verdict = "BLOCKED_GUARD_REGRESSION"
-    elif primary_i < primary_c:
+    elif k["INVENTORY"] < k["CONTROL"]:
         verdict = "PRIMARY_REGRESSION"
-    elif primary_i >= PRIMARY_INVENTORY_RETAINED and (PAIRS - primary_c) >= PRIMARY_MIN_CONTROL_LOSSES:
-        verdict = ("PRIMARY_AND_SECONDARY_SIGNAL" if med("INVENTORY") <= med("CONTROL") - SECONDARY_MEDIAN_REDUCTION
-                   else "PRIMARY_SIGNAL_ONLY")
+    elif k["INVENTORY"] > k["CONTROL"] and p < FISHER_ALPHA:
+        verdict = "PRIMARY_SUPPORTED"
     else:
-        verdict = "NO_PRIMARY_DIFFERENCE"
-    return {"verdict": verdict, "primary_retained_all_calls": {"CONTROL": primary_c, "INVENTORY": primary_i},
-            "review_candidates_median": {"CONTROL": med("CONTROL"), "INVENTORY": med("INVENTORY")},
-            "guard_regressions_paired": regressions, "guard_passes": guard_pass}
+        verdict = "INCONCLUSIVE"
+    return {"verdict": verdict, "counts": counts, "fisher_two_sided_p": round(p, 6), "guard_regressions_paired": regressions,
+            "guard_passes": guard_passes, "review_candidates_descriptive_only": descriptive}
 
 
 # ── execution (library only; no CLI path, no default client) ─────────────────────────────────────────────────────────────
