@@ -31,14 +31,21 @@ INDEPENDENT = "independent"
 
 @dataclass(frozen=True)
 class ReviewedUnit:
-    source_text: str          # exact job-description wording of the reviewed source unit
+    """A reviewed source unit, bound to one exact job description (by SHA-256) and to fixed offsets in it."""
+    unit_id: str              # stable identity of the reviewed unit
+    jd_sha256: str            # SHA-256 of the complete job description (UTF-8) the unit was reviewed in
+    source_start: int         # offsets of source_text in that description
+    source_end: int
+    source_text: str          # exact wording of the reviewed source unit
     kind: str                 # ALTERNATIVES | INDEPENDENT
     tokens: tuple[str, ...]   # the alternatives, or the independent items, named in the unit
 
 
 REVIEWED_UNITS: tuple[ReviewedUnit, ...] = (
-    ReviewedUnit("Proficiency in Python or R", ALTERNATIVES, ("Python", "R")),                # B02 line 6
-    ReviewedUnit("معرفة بـ CSS وHTML", INDEPENDENT, ("CSS", "HTML")),                          # B12 line 6
+    ReviewedUnit("B02_en_data_analyst:L6", "964ec821ef2c5e5c2abd76014934e31bc69b1d6391ceebb15e3986944a1a9df8",
+                 142, 168, "Proficiency in Python or R", ALTERNATIVES, ("Python", "R")),
+    ReviewedUnit("B12_ar_injection:L6", "945b2154c3f26ae216d53eb9dfdd25fce6f6e7f57fd0bc4778404c474d8323c2",
+                 103, 121, "معرفة بـ CSS وHTML", INDEPENDENT, ("CSS", "HTML")),
 )
 
 
@@ -47,13 +54,14 @@ def _has(text: str, token: str) -> bool:
     return re.search(rf"(?<![A-Za-z0-9]){re.escape(token)}(?![A-Za-z0-9])", text, re.IGNORECASE) is not None
 
 
-def _finding_id(code: str, item_ids: list[str]) -> str:
-    digest = hashlib.sha256("|".join([code, *item_ids]).encode("utf-8")).hexdigest()
-    return f"sd-{digest[:16]}"
+def _finding_id(unit: ReviewedUnit, code: str, item_ids: list[str], start: int, end: int) -> str:
+    """Unit identity, JD hash and offsets are part of the ID, so two distinct reviewed units never collide."""
+    parts = [unit.unit_id, unit.jd_sha256, str(start), str(end), code, *item_ids]
+    return f"sd-{hashlib.sha256('|'.join(parts).encode('utf-8')).hexdigest()[:16]}"
 
 
 def _finding(code: str, unit: ReviewedUnit, item_ids: list[str], start: int, end: int, message: str) -> dict:
-    return {"id": _finding_id(code, item_ids), "code": code, "item_ids": item_ids, "source_text": unit.source_text,
+    return {"id": _finding_id(unit, code, item_ids, start, end), "code": code, "item_ids": item_ids, "source_text": unit.source_text,
             "source_start": start, "source_end": end, "message": message, "status": STATUS_OPEN, "resolution": None}
 
 
@@ -87,16 +95,15 @@ def detect(doc: dict, jd_text: str) -> dict:
     Raises ValueError when the document is not a valid draft, including when it already carries a structural block."""
     if validate_draft(doc).errors:
         raise ValueError("structural detection runs only on a valid draft")
+    jd_hash = hashlib.sha256(jd_text.encode("utf-8")).hexdigest()
     findings: list[dict] = []
     seen: set[str] = set()
     for unit in REVIEWED_UNITS:
-        count = jd_text.count(unit.source_text)
-        if count == 0:
+        if unit.jd_sha256 != jd_hash:                  # a different description: the unit does not apply
             continue
-        if count > 1:
-            raise ValueError(f"reviewed unit {unit.source_text!r} is not unique in the description")
-        start = jd_text.index(unit.source_text)
-        end = start + len(unit.source_text)
+        start, end = unit.source_start, unit.source_end
+        if jd_text[start:end] != unit.source_text:     # the offsets must hold the reviewed wording
+            continue
         quoting = [item for c in CATEGORIES for item in doc["categories"][c]["items"]
                    if item.get("source_text") == unit.source_text]
         if unit.kind == ALTERNATIVES:

@@ -9,6 +9,7 @@ import pathlib
 from services.requirements_v2 import contract as C
 from services.requirements_v2.extraction import parse_response
 from services.requirements_v2.readiness import compute_readiness
+from services.requirements_v2 import structural_detection as SD
 from services.requirements_v2.structural_detection import attach, detect
 from services.requirements_v2.structural_review import structural_status
 
@@ -149,3 +150,53 @@ def test_the_split_finding_also_passes_the_contract_and_causes_needs_structural_
     server = attach(doc, B02)
     assert [i for i in structural_status(server, B02).issues if i.code == "structural_review_invalid"] == []
     assert compute_readiness(server, jd_text=B02).state == C.NEEDS_STRUCTURAL_REVIEW
+
+
+# ---- binding: a reviewed unit applies only to its own JD (hash), at its own offsets, with its own wording ----
+
+B02_SHA = "964ec821ef2c5e5c2abd76014934e31bc69b1d6391ceebb15e3986944a1a9df8"
+B12_SHA = "945b2154c3f26ae216d53eb9dfdd25fce6f6e7f57fd0bc4778404c474d8323c2"
+UNRELATED_PYTHON = "Engineer role.\nProficiency in Python or R is needed for this role.\n"
+UNRELATED_CSS = "Front-end role.\nمعرفة بـ CSS وHTML مطلوبة.\n"
+
+
+def test_the_same_python_or_r_wording_in_an_unrelated_jd_produces_no_finding():
+    doc = _draft(UNRELATED_PYTHON, [{"text": "Python", "importance": "required", "source_text": PYTHON_OR_R},
+                                    {"text": "R", "importance": "required", "source_text": PYTHON_OR_R}])
+    assert detect(doc, UNRELATED_PYTHON)["findings"] == []
+
+
+def test_the_same_css_html_wording_in_an_unrelated_jd_produces_no_finding():
+    doc = _draft(UNRELATED_CSS, [{"text": "CSS and HTML", "importance": "required", "source_text": CSS_HTML}])
+    assert detect(doc, UNRELATED_CSS)["findings"] == []
+
+
+def test_a_changed_jd_text_or_hash_produces_no_finding():
+    changed_b02 = B02 + "\nAdditional note."
+    doc = _draft(changed_b02, [{"text": "Python", "importance": "required", "source_text": PYTHON_OR_R},
+                               {"text": "R", "importance": "required", "source_text": PYTHON_OR_R}])
+    assert detect(doc, changed_b02)["findings"] == []
+    changed_b12 = B12.replace("معرفة بـ CSS وHTML", "معرفة بـ CSS وHTML وJS")
+    doc = _draft(changed_b12, [{"text": "CSS and HTML", "importance": "required", "source_text": CSS_HTML}])
+    assert detect(doc, changed_b12)["findings"] == []
+
+
+def test_the_reviewed_units_are_bound_to_the_jd_hash_and_exact_offsets():
+    by_hash = {u.jd_sha256: u for u in SD.REVIEWED_UNITS}
+    assert by_hash[B02_SHA].source_start == 142 and by_hash[B02_SHA].source_end == 168
+    assert by_hash[B12_SHA].source_start == 103 and by_hash[B12_SHA].source_end == 121
+    assert B02[142:168] == PYTHON_OR_R and B12[103:121] == CSS_HTML
+
+
+def test_finding_ids_differ_for_distinct_reviewed_units_even_with_the_same_code_and_items(monkeypatch):
+    twin_a = SD.ReviewedUnit(unit_id="twin-a", jd_sha256=B02_SHA, source_start=142, source_end=168, source_text=PYTHON_OR_R,
+                             kind=SD.ALTERNATIVES, tokens=("Python", "R"))
+    twin_b = SD.ReviewedUnit(unit_id="twin-b", jd_sha256=B02_SHA, source_start=142, source_end=168, source_text=PYTHON_OR_R,
+                             kind=SD.ALTERNATIVES, tokens=("Python", "R"))
+    monkeypatch.setattr(SD, "REVIEWED_UNITS", (twin_a, twin_b))
+    doc = _draft(B02, [{"text": "Python", "importance": "required", "source_text": PYTHON_OR_R},
+                       {"text": "R", "importance": "required", "source_text": PYTHON_OR_R}])
+    findings = detect(doc, B02)["findings"]
+    assert len(findings) == 2
+    assert findings[0]["code"] == findings[1]["code"] and findings[0]["item_ids"] == findings[1]["item_ids"]
+    assert findings[0]["id"] != findings[1]["id"]
