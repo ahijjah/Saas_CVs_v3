@@ -53,6 +53,15 @@ U_ADMIN, U_HR, U_AGENCY = (str(uuid.UUID(int=0x100 + n)) for n in range(3))
 ORG = str(uuid.UUID(int=0x900))
 
 EXTRA_SCHEMA = """
+    -- the access check reads the tenant's subscription (services/entitlement_service.py): both synthetic tenants are active with a validity date
+    CREATE TABLE IF NOT EXISTS tenants (
+        tenant_id UUID PRIMARY KEY, subscription_status VARCHAR(50), plan VARCHAR(50), pending_plan VARCHAR(50),
+        trial_start_at TIMESTAMPTZ, trial_end_at TIMESTAMPTZ, subscription_ends_at TIMESTAMPTZ
+    );
+    INSERT INTO tenants (tenant_id, subscription_status, plan, subscription_ends_at) VALUES
+        ('00000000-0000-0000-0000-000000000001', 'active', 'starter', now() + interval '365 days'),
+        ('00000000-0000-0000-0000-000000000002', 'active', 'starter', now() + interval '365 days')
+    ON CONFLICT (tenant_id) DO NOTHING;
     ALTER TABLE job_criteria ADD COLUMN original_analysis_json JSONB;
     ALTER TABLE job_criteria ADD COLUMN last_edited_by UUID;
     ALTER TABLE job_criteria ADD COLUMN last_edited_at TIMESTAMPTZ;

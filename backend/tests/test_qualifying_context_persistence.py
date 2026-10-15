@@ -263,8 +263,8 @@ class TestOriginalBaseline:
 # ── worker integration (fake DB session; patched model calls) ───────────────
 
 class _Result:
-    def __init__(self, row=None, scalar=None):
-        self._row, self._scalar = row, scalar
+    def __init__(self, row=None, scalar=None, rowcount=0):
+        self._row, self._scalar, self.rowcount = row, scalar, rowcount
 
     def mappings(self):
         return self
@@ -311,6 +311,8 @@ class FakeSession:
             if self.db.flag_error:
                 raise RuntimeError("db down")
             return _Result(scalar=None if self.db.flag == "__missing__" else self.db.flag)
+        if "SET criteria_extraction_status = 'processing'" in sql:
+            return _Result(rowcount=1)                  # the legacy claim: this run holds the job (a real claim reports one row)
         if "FROM job_criteria jc" in sql:
             return _Result(row={"analysis_json": copy.deepcopy(self.db.stored),
                                 "description": self.db.current_description})
@@ -354,6 +356,12 @@ def worker(monkeypatch):
     monkeypatch.setattr(runner, "run_qualifying_context", fake_qc)
     # other tests may stub sqlalchemy.ext.asyncio in sys.modules; the worker swallows registry errors anyway
     monkeypatch.setattr(sa_async, "create_async_engine", no_registry_engine, raising=False)
+    # the access gate is a database check with its own tests (test_extraction_access_gate.py); these fakes model an entitled tenant
+    from services.entitlement_service import FULL, Entitlement
+
+    async def entitled(db, job_id):
+        return Entitlement(state=FULL, subscription_status="active")
+    monkeypatch.setattr("services.extraction_gate.job_entitlement", entitled)
 
     def go(db):
         run(cw._extract_async("job-1", JD, db.session, None))

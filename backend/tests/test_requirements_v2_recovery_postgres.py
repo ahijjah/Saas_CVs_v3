@@ -546,7 +546,7 @@ def test_the_analysis_log_refuses_update_delete_and_truncate(db, monkeypatch):
         with pytest.raises(psycopg2.Error) as exc:
             db.q(sql)
         assert exc.value.pgcode == "42501"                                              # insufficient_privilege: the trigger's refusal
-    assert log_count(db, job) == 2                                                    # requested and completed; nothing else changed them
+    assert log_count(db, job) == 3                                                    # requested, started (the claim) and completed; nothing else changed them
 
 
 def test_a_second_terminal_decision_for_a_candidate_is_refused_by_the_database(db, monkeypatch):
