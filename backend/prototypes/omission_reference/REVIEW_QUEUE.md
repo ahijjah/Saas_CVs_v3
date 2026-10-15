@@ -20,7 +20,7 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Next batch (document order, no more than 5 items): RQ-036, RQ-037, RQ-038, RQ-039, RQ-040.
+Next batch (document order, no more than 5 items): RQ-041, RQ-042, RQ-043, RQ-044.
 
 ## Child review units (uncertain parents RQ-029 and RQ-030)
 
@@ -38,7 +38,7 @@ carries a Claude-proposed semantic role, which is not a decision. The choices ar
 | RQ-030/C02 | والعمل في مدينة الرياض بدوام كامل. | non-scoreable condition | S003 (sentence-level: child content inside its statement); S011 (sentence-level: child content inside its statement) | non-scoreable condition |
 | RQ-030/C03 | نوفر تأمينًا طبيًا وإجازة سنوية. | informational benefit | - | informational benefit |
 
-Review status: open 9, resolved 32, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: open 4, resolved 37, resolved_by_children 2, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -343,40 +343,40 @@ Review status: open 9, resolved 32, resolved_by_children 2, unresolved (uncertai
 - Proposed type: **requirement** — requirement line under 'What you will do'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-037** · B03_en_warehouse_supervisor (en) · line 9 · unit `0fc3081a294a:L9:263-315`
 - Source text: - Working knowledge of inventory management systems.
 - Proposed type: **requirement** — requirement line under 'Required'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-038** · B03_en_warehouse_supervisor (en) · line 16 · unit `0fc3081a294a:L16:388-440`
 - Source text: - Assign tasks to a team of 12 operators each shift.
 - Proposed type: **requirement** — requirement line under 'Duties'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-039** · B07_ar_accountant (ar) · line 7 · unit `30fb2f042757:L7:139-165`
 - Source text: - مطابقة الحسابات البنكية.
 - Proposed type: **requirement** — requirement line under 'المهام'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-040** · B07_ar_accountant (ar) · line 14 · unit `30fb2f042757:L14:308-329`
 - Source text: - إجادة برنامج Excel.
 - Proposed type: **requirement** — requirement line under 'المتطلبات'
 - Priority: P3 — quality-control sample (two proposed requirement rows per JD, deterministic)
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 ### B09 (P3, 4 rows)
 

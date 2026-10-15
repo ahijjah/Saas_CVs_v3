@@ -135,7 +135,7 @@ CANDIDATES = {jd: json.loads((HERE / "annotations" / f"{jd}.candidate.json").rea
 
 
 def test_the_submissions_hold_exactly_the_ten_decisions_with_reviewer_and_date():
-    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 36)]
+    assert sorted(r["rq_id"] for r in SUBMISSION) == [f"RQ-{n:03d}" for n in range(1, 41)]
     assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in SUBMISSION)
 
 
@@ -147,7 +147,8 @@ def test_the_decisions_are_the_ones_given():
                    "RQ-016": "heading", "RQ-017": "heading", "RQ-018": "heading", "RQ-019": "requirement", "RQ-020": "heading",
                    "RQ-021": "requirement", "RQ-022": "background", "RQ-023": "heading", "RQ-024": "heading", "RQ-025": "heading",
                    "RQ-026": "requirement", "RQ-027": "requirement", "RQ-028": "requirement", "RQ-029": "uncertain", "RQ-030": "uncertain",
-                   "RQ-031": "requirement", "RQ-032": "requirement", "RQ-033": "requirement", "RQ-034": "requirement", "RQ-035": "requirement"}
+                   "RQ-031": "requirement", "RQ-032": "requirement", "RQ-033": "requirement", "RQ-034": "requirement", "RQ-035": "requirement",
+                   "RQ-036": "requirement", "RQ-037": "requirement", "RQ-038": "requirement", "RQ-039": "requirement", "RQ-040": "requirement"}
 
 
 def test_each_submitted_unit_matches_the_sheet_exactly_and_keeps_the_candidate_type():
@@ -199,10 +200,10 @@ def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
 
 def test_twenty_seven_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
     resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
-    assert resolved == {f"RQ-{n:03d}" for n in range(1, 36)} - {"RQ-003", "RQ-029", "RQ-030"}
+    assert resolved == {f"RQ-{n:03d}" for n in range(1, 41)} - {"RQ-003", "RQ-029", "RQ-030"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 32 and summary["review_status"]["unresolved (uncertain)"] == 1
-    assert summary["review_status"]["resolved_by_children"] == 2 and summary["review_status"]["open"] == 9
+    assert summary["review_status"]["resolved"] == 37 and summary["review_status"]["unresolved (uncertain)"] == 1
+    assert summary["review_status"]["resolved_by_children"] == 2 and summary["review_status"]["open"] == 4
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -279,6 +280,7 @@ RECORDED_HASHES = {  # the earlier submissions and the reviewer sheet, as record
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15.csv": "1be5e1906c528a74",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch2.csv": "eeb385eb4ae3dd6f",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch3.csv": "deee39de2d0b4a1a",
+    "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch8.csv": "119eba47f02d87e6",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch7.csv": "fda9d54b2e819d5b",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch6.csv": "2fcebe9825059dec",
     "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch5.csv": "e7d5134305985361",

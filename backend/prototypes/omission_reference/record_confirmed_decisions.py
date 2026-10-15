@@ -71,6 +71,13 @@ BATCHES = {
         ("RQ-032", "requirement", "one source unit that must produce two independent skill items: CSS and HTML, consistent with S008.",
          None, None, ["CSS", "HTML"]),
     ]},
+    8: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch8.csv", "decisions": [
+        ("RQ-036", "requirement", "duty to build weekly sales dashboards for regional managers."),
+        ("RQ-037", "requirement", "required working knowledge of inventory management systems."),
+        ("RQ-038", "requirement", "duty to assign tasks to 12 operators each shift."),
+        ("RQ-039", "requirement", "duty to reconcile bank accounts."),
+        ("RQ-040", "requirement", "required Excel proficiency."),
+    ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
           "confirmed_date", "reason", "status", "benchmark_use", "relation", "classification_tag",
