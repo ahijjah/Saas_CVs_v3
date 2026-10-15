@@ -133,14 +133,15 @@ CANDIDATES = {jd: json.loads((HERE / "annotations" / f"{jd}.candidate.json").rea
 
 
 def test_the_submissions_hold_exactly_the_ten_decisions_with_reviewer_and_date():
-    assert [r["rq_id"] for r in SUBMISSION] == [f"RQ-{n:03d}" for n in range(1, 11)]
+    assert [r["rq_id"] for r in SUBMISSION] == [f"RQ-{n:03d}" for n in range(1, 16)]
     assert all(r["reviewer"] == "Asaad Hijjah" and r["confirmed_date"] == "2026-10-15" for r in SUBMISSION)
 
 
 def test_the_decisions_are_the_ones_given():
     got = {r["rq_id"]: r["confirmed_decision"] for r in SUBMISSION}
     assert got == {"RQ-001": "requirement", "RQ-002": "requirement", "RQ-003": "uncertain", "RQ-004": "heading", "RQ-005": "heading",
-                   "RQ-006": "heading", "RQ-007": "heading", "RQ-008": "heading", "RQ-009": "heading", "RQ-010": "requirement"}
+                   "RQ-006": "heading", "RQ-007": "heading", "RQ-008": "heading", "RQ-009": "heading", "RQ-010": "requirement",
+                   "RQ-011": "heading", "RQ-012": "requirement", "RQ-013": "heading", "RQ-014": "heading", "RQ-015": "background"}
 
 
 def test_each_submitted_unit_matches_the_sheet_exactly_and_keeps_the_candidate_type():
@@ -165,6 +166,16 @@ def test_the_reasons_are_recorded_as_given_and_missing_reasons_are_stated_not_in
         assert SUBMISSION_BY_RQ[rq]["reason"] == "no reason recorded (reviewer gave none)"
 
 
+def test_batch_three_source_text_is_exact_and_rq_012_candidate_is_preserved():
+    sheet = {r["unit_id"]: r for r in SHEET_ROWS}
+    for rq in ("RQ-011", "RQ-012", "RQ-013", "RQ-014", "RQ-015"):
+        r = SUBMISSION_BY_RQ[rq]
+        assert sheet[r["unit_id"]]["source_text"] == r["source_text"]
+        assert r["candidate_type_preserved"] == sheet[r["unit_id"]]["proposed_type_candidate"]
+    assert SUBMISSION_BY_RQ["RQ-012"]["candidate_type_preserved"] == "uncertain"
+    assert SUBMISSION_BY_RQ["RQ-015"]["candidate_type_preserved"] == "background"
+
+
 def test_the_batch_two_source_text_is_exact_and_the_candidates_are_preserved():
     sheet = {r["unit_id"]: r for r in SHEET_ROWS}
     for rq in ("RQ-006", "RQ-007", "RQ-008", "RQ-009", "RQ-010"):
@@ -180,11 +191,11 @@ def test_rq_003_is_unresolved_and_never_a_confirmed_requirement_or_exclusion():
     assert QUEUE_BY_RQ["RQ-003"]["review_status"].startswith("unresolved")
 
 
-def test_nine_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
+def test_fourteen_rows_are_resolved_and_rq_003_remains_unresolved_in_the_queue_and_summary():
     resolved = {r["rq_id"] for r in QUEUE if r["review_status"] == "resolved"}
-    assert resolved == {f"RQ-{n:03d}" for n in range(1, 11)} - {"RQ-003"}
+    assert resolved == {f"RQ-{n:03d}" for n in range(1, 16)} - {"RQ-003"}
     summary = json.loads((HERE / "results" / "review_queue_summary.json").read_text(encoding="utf-8"))
-    assert summary["review_status"]["resolved"] == 9 and summary["review_status"]["unresolved (uncertain)"] == 1
+    assert summary["review_status"]["resolved"] == 14 and summary["review_status"]["unresolved (uncertain)"] == 1
 
 
 def test_a_submission_that_does_not_match_the_sheet_is_refused(tmp_path, monkeypatch):
@@ -228,6 +239,15 @@ def test_the_effective_type_of_rq_003_is_unresolved_and_its_candidate_stays_back
     types = RR.effective_types("TC20", CANDIDATES["TC20"])
     assert types[9] == "unresolved" and types[3] == "requirement" and types[5] == "requirement" and types[7] == "heading"
     assert {l["first_line"]: l["proposed_type"] for l in CANDIDATES["TC20"]["lines"]}[9] == "background"
+
+
+def test_batch_three_effective_types_and_the_rq_015_background_exclusion():
+    import replay_ref as RR
+    b03 = json.loads((HERE / "annotations" / "B03_en_warehouse_supervisor.candidate.json").read_text(encoding="utf-8"))
+    eff = RR.effective_types("B03_en_warehouse_supervisor", b03)
+    assert eff[3] == "requirement" and eff[5] == "heading" and eff[15] == "heading"
+    b07 = json.loads((HERE / "annotations" / "B07_ar_accountant.candidate.json").read_text(encoding="utf-8"))
+    assert RR.effective_types("B07_ar_accountant", b07)[3] == "background"
 
 
 def test_the_batch_two_decisions_change_the_effective_types_and_no_candidate_file():

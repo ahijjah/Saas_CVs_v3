@@ -3505,13 +3505,19 @@
    "B03_en_warehouse_supervisor": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 9,
       "partial": 0,
-      "omitted": 0
+      "omitted": 1
      },
      "uncovered": {
       "requirement": [
+       {
+        "first_line": 3,
+        "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
+        "class": "genuine_omission",
+        "unit_status": "omitted"
+       },
        {
         "first_line": 6,
         "text": "-",
@@ -3645,14 +3651,7 @@
         "unit_status": "covered"
        }
       ],
-      "uncertain": [
-       {
-        "first_line": 3,
-        "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
-        "class": "genuine_omission",
-        "unit_status": "omitted"
-       }
-      ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {
@@ -4278,136 +4277,135 @@
    "B03_en_warehouse_supervisor": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 9,
       "partial": 0,
-      "omitted": 0
+      "omitted": 1
      },
      "uncovered": {
       "requirement": [
-       {
-        "first_line": 6,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 6,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 7,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 7,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 8,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 8,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 9,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 9,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 12,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 12,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 13,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 13,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 16,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 16,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 17,
-        "text": "-",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 17,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       },
-       {
-        "first_line": 19,
-        "text": ".",
-        "class": "punctuation_only",
-        "unit_status": "covered"
-       }
-      ],
-      "uncertain": [
        {
         "first_line": 3,
         "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
         "class": "genuine_omission",
         "unit_status": "omitted"
+       },
+       {
+        "first_line": 6,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 6,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 7,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 7,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 8,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 8,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 9,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 9,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 12,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 12,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 13,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 13,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 16,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 16,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 17,
+        "text": "-",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 17,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 19,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 19,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
+       },
+       {
+        "first_line": 19,
+        "text": ".",
+        "class": "punctuation_only",
+        "unit_status": "covered"
        }
       ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {
@@ -5024,13 +5022,19 @@
    "B03_en_warehouse_supervisor": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 6,
       "partial": 1,
-      "omitted": 2
+      "omitted": 3
      },
      "uncovered": {
       "requirement": [
+       {
+        "first_line": 3,
+        "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
+        "class": "genuine_omission",
+        "unit_status": "omitted"
+       },
        {
         "first_line": 6,
         "text": "-",
@@ -5086,14 +5090,7 @@
         "unit_status": "partial"
        }
       ],
-      "uncertain": [
-       {
-        "first_line": 3,
-        "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
-        "class": "genuine_omission",
-        "unit_status": "omitted"
-       }
-      ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {
@@ -5703,13 +5700,19 @@
    "B03_en_warehouse_supervisor": [
     {
      "coverage": {
-      "requirement_units": 9,
+      "requirement_units": 10,
       "covered": 8,
       "partial": 1,
-      "omitted": 0
+      "omitted": 1
      },
      "uncovered": {
       "requirement": [
+       {
+        "first_line": 3,
+        "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
+        "class": "genuine_omission",
+        "unit_status": "omitted"
+       },
        {
         "first_line": 6,
         "text": "-",
@@ -5771,14 +5774,7 @@
         "unit_status": "partial"
        }
       ],
-      "uncertain": [
-       {
-        "first_line": 3,
-        "text": "We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.",
-        "class": "genuine_omission",
-        "unit_status": "omitted"
-       }
-      ],
+      "uncertain": [],
       "unresolved": []
      },
      "defects": {

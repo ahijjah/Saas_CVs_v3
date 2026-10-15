@@ -29,6 +29,13 @@ BATCHES = {
         ("RQ-009", "heading", "names the skills and competencies section."),
         ("RQ-010", "requirement", "it explicitly requires clear communication of findings to non-technical colleagues."),
     ]},
+    3: {"date": "2026-10-15", "file": "CONFIRMED_queue_Asaad-Hijjah_2026-10-15_batch3.csv", "decisions": [
+        ("RQ-011", "heading", "\u201cRequirements\u201d only identifies the section."),
+        ("RQ-012", "requirement", "it contains the Jebel Ali work location, which must be retained and routed as a non-scoreable location condition."),
+        ("RQ-013", "heading", "\u201cRequired:\u201d only identifies the section."),
+        ("RQ-014", "heading", "\u201cDuties:\u201d only identifies the section."),
+        ("RQ-015", "background", "optional company information, consistent with confirmed whole-unit judgment S004."),
+    ]},
 }
 FIELDS = ["rq_id", "jd_id", "unit_id", "first_line", "source_text", "candidate_type_preserved", "confirmed_decision", "reviewer",
           "confirmed_date", "reason", "status", "benchmark_use"]

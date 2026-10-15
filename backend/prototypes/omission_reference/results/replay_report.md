@@ -94,7 +94,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 9 | 1 | 0 | 0 | 1 | 20 | 1 | 0 | 0 | 0 | 1 | 1 | 0 |
+| B03_en_warehouse_supervisor | 1 | 10 | 2 | 0 | 0 | 1 | 20 | 0 | 0 | 0 | 0 | 1 | 1 | 0 |
 | B07_ar_accountant | 1 | 11 | 0 | 0 | 1 | 1 | 22 | 0 | 0 | 0 | 0 | 3 | 2 | 0 |
 | B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 1 | 0 | 1 | 0 | 0 | 0 | 1 |
 | B12_ar_injection | 1 | 6 | 0 | 0 | 0 | 0 | 12 | 2 | 0 | 0 | 1 | 1 | 0 | 0 |
@@ -102,6 +102,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 Genuine spans uncovered in every answer of this group (recurring):
 
 - B02_en_data_analyst L16: Also important:
+- B03_en_warehouse_supervisor L3: We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.
 - B03_en_warehouse_supervisor L19: Terms:
 
 ## benchmark run dir v2-2_run1 | model gpt-4o-mini-2024-07-18 | prompt criteria_extraction_v2-2 | run run2
@@ -109,7 +110,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 9 | 0 | 0 | 0 | 0 | 19 | 1 | 0 | 0 | 0 | 1 | 2 | 0 |
+| B03_en_warehouse_supervisor | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 0 | 0 | 1 | 2 | 0 |
 | B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 1 | 2 | 2 |
 | B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 1 | 0 | 1 | 0 | 0 | 0 | 1 |
 | B12_ar_injection | 1 | 6 | 0 | 0 | 0 | 0 | 12 | 2 | 0 | 0 | 1 | 1 | 0 | 0 |
@@ -117,6 +118,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 Genuine spans uncovered in every answer of this group (recurring):
 
 - B02_en_data_analyst L16: Also important:
+- B03_en_warehouse_supervisor L3: We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.
 - B07_ar_accountant L18: - خبرة في نظام SAP.
 - B07_ar_accountant L19: - شهادة ماجستير.
 
@@ -125,7 +127,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 9 | 1 | 2 | 0 | 0 | 6 | 1 | 0 | 0 | 0 | 0 | 2 | 2 |
+| B03_en_warehouse_supervisor | 1 | 10 | 2 | 2 | 0 | 0 | 6 | 0 | 0 | 0 | 0 | 0 | 2 | 2 |
 | B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 0 | 3 | 2 |
 | B08_ar_hr_specialist | 1 | 8 | 0 | 0 | 0 | 0 | 16 | 1 | 0 | 1 | 0 | 0 | 0 | 1 |
 | B12_ar_injection | 1 | 6 | 2 | 0 | 0 | 0 | 8 | 2 | 0 | 1 | 1 | 0 | 0 | 1 |
@@ -133,6 +135,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 Genuine spans uncovered in every answer of this group (recurring):
 
 - B02_en_data_analyst L16: Also important:
+- B03_en_warehouse_supervisor L3: We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.
 - B03_en_warehouse_supervisor L12: - Arabic language skills.
 - B07_ar_accountant L18: - خبرة في نظام SAP.
 - B07_ar_accountant L19: - شهادة ماجستير.
@@ -144,7 +147,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 | JD | answers | requirement units | genuine spans | paraphrase | intro wording | fragments | punctuation | uncertain-unit spans (genuine) | unresolved-unit spans (genuine) | OR | AND | category | routing | item omissions |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | B02_en_data_analyst | 1 | 10 | 1 | 0 | 0 | 0 | 19 | 0 | 0 | 1 | 0 | 1 | 0 | 0 |
-| B03_en_warehouse_supervisor | 1 | 9 | 1 | 1 | 0 | 0 | 8 | 1 | 0 | 0 | 0 | 1 | 1 | 0 |
+| B03_en_warehouse_supervisor | 1 | 10 | 2 | 1 | 0 | 0 | 8 | 0 | 0 | 0 | 0 | 1 | 1 | 0 |
 | B07_ar_accountant | 1 | 11 | 2 | 0 | 1 | 1 | 18 | 0 | 0 | 0 | 0 | 0 | 3 | 2 |
 | B08_ar_hr_specialist | 1 | 8 | 2 | 0 | 0 | 0 | 12 | 1 | 0 | 1 | 0 | 0 | 0 | 3 |
 | B12_ar_injection | 1 | 6 | 1 | 0 | 0 | 0 | 10 | 2 | 0 | 1 | 0 | 0 | 0 | 1 |
@@ -152,6 +155,7 @@ Genuine spans uncovered in every answer of this group (recurring):
 Genuine spans uncovered in every answer of this group (recurring):
 
 - B02_en_data_analyst L16: Also important:
+- B03_en_warehouse_supervisor L3: We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.
 - B03_en_warehouse_supervisor L19: Terms:
 - B07_ar_accountant L18: - خبرة في نظام SAP.
 - B07_ar_accountant L19: - شهادة ماجستير.

@@ -3,9 +3,9 @@
  "queued_rows": 44,
  "batches": 9,
  "review_status": {
-  "resolved": 9,
+  "resolved": 14,
   "unresolved (uncertain)": 1,
-  "open": 34
+  "open": 29
  },
  "by_jd": {
   "TC20": 12,

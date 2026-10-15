@@ -20,7 +20,7 @@ Rows queued: **44** of 114 in the sheet, in **9** batches of at most 5.
 
 By priority: P1 25, P2 7, P3 12.
 
-Review status: open 34, resolved 9, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
+Review status: open 29, resolved 14, unresolved (uncertain) 1. Confirmed decisions come from `reviews/CONFIRMED_*.csv`; candidate classifications and the reviewer sheet are never changed. An unresolved (uncertain) row is not a confirmed requirement or exclusion in any benchmark result.
 
 ## Batches
 
@@ -115,40 +115,40 @@ Review status: open 34, resolved 9, unresolved (uncertain) 1. Confirmed decision
 - Proposed type: **heading** — section heading 'Requirements'
 - Priority: P1 — heading with requirement term (requirement): check whether the section holds requirements
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **heading** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed heading type
 
 **RQ-012** · B03_en_warehouse_supervisor (en) · line 3 · unit `0fc3081a294a:L3:28-109`
 - Source text: We are hiring a warehouse shift supervisor for our Jebel Ali distribution centre.
 - Proposed type: **uncertain** — introduction; names the work location (Jebel Ali) which would be a non-scoreable location condition
 - Priority: P1 — proposed uncertain: introduction; names the work location (Jebel Ali) which would be a non-scoreable location condition
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **requirement** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed requirement type
 
 **RQ-013** · B03_en_warehouse_supervisor (en) · line 5 · unit `0fc3081a294a:L5:111-120`
 - Source text: Required:
 - Proposed type: **heading** — section heading 'Required:'
 - Priority: P1 — heading with requirement term (required): check whether the section holds requirements
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **heading** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed heading type
 
 **RQ-014** · B03_en_warehouse_supervisor (en) · line 15 · unit `0fc3081a294a:L15:380-387`
 - Source text: Duties:
 - Proposed type: **heading** — section heading 'Duties:'
 - Priority: P1 — heading with requirement term (duties): check whether the section holds requirements
 - Existing confirmed judgment: · judgment: none
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **heading** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed heading type
 
 **RQ-015** · B07_ar_accountant (ar) · line 3 · unit `30fb2f042757:L3:11-87`
 - Source text: نبذة عن الشركة: شركة الأفق للتجارة شركة سعودية تعمل في قطاع المواد الغذائية.
 - Proposed type: **background** — company description ('نبذة عن الشركة'), optional background
 - Priority: P1 — proposed background: company description ('نبذة عن الشركة'), optional background
 - Existing confirmed judgment: · judgment: S004 (false alarm, whole unit, statement: نبذة عن الشركة: شركة الأفق للتجارة شركة سعودية تعمل في قطاع ) · scope: whole unit
-- Choices: requirement | heading | background | uncertain · Status: **open** · Reviewer decision: _(blank)_
-- Benchmark use: not decided
+- Choices: requirement | heading | background | uncertain · Status: **resolved** · Confirmed decision: **background** (Asaad Hijjah, 2026-10-15)
+- Benchmark use: confirmed background type
 
 ### B04 (P1, 5 rows)
 
