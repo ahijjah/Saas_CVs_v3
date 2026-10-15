@@ -84,3 +84,10 @@ programme, and its provenance is not verified here. Do not treat it as synthetic
 ## Next step (not done here)
 A human reviewer confirms or changes each candidate type in `reviewer_sheet.csv`, and decides the sentence-level judgments. Only after that review
 should anyone decide whether an omission pilot is worth a cap. The pilot is not redesigned or executed by this package.
+
+## Review queue (added after the package)
+`REVIEW_QUEUE.md` and `review_queue.csv` are built by `build_queue.py` from `reviewer_sheet.csv`. They are read-only views: no candidate type,
+reason, judgment or decision is changed, and the reviewer decision column is blank. Priorities: P1 proposed background and uncertain units
+plus headings that contain requirement language (a routing aid: `HEADING_TERMS`, which the reviewer may dismiss); P2 rows linked to S-judgments,
+with their scope kept; P3 two deterministic requirement rows per JD. Each row appears once, under its highest priority. Batches hold at most
+five rows. The queue holds 44 of 114 rows in 9 batches. The queue is a way to work through review, not a finding.
