@@ -63,6 +63,16 @@ def test_optional_with_a_cue_that_is_not_linked_to_the_item_fails_closed_to_requ
     assert REVIEW_KEY not in res.requirements, "fails closed to required: no classification warning is created"
 
 
+def test_an_unestablished_optional_cue_records_one_issue_and_fails_closed_to_required():
+    """The cue exists in the job description (B12 line 12) but is not tied to this item (line 6): one issue, required, no block."""
+    raw = _response([{"text": "CSS", "importance": "optional", "importance_cue": "اختيارية", "source_text": CSS_HTML_REQUIRED}])
+    res = parse_response(raw, B12)
+    assert _importances(res.requirements) == ["required"]
+    assert [i.code for i in res.review].count("optional_cue_not_established") == 1
+    assert "importance_invalid_defaulted_required" not in _review_codes(res)
+    assert REVIEW_KEY not in res.requirements, "no classification-warning block is created"
+
+
 def test_optional_is_never_stored_for_any_input():
     inputs = [
         {"text": "a", "importance": "optional"},

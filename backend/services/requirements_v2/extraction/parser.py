@@ -192,9 +192,10 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
         if problem is None:
             declared_norm = OPTIONAL_CUE_MAP[cue]          # established optional cue: stored as preferred, never 'optional'
             note("importance_optional_mapped_to_preferred", f"the optional cue \"{_preview(cue)}\" is mapped to preferred", iid)
-        else:                                              # not established for this item: fails closed (reported below)
+        else:                                              # not established for this item: fails closed to required, one issue only
             note("optional_cue_not_established", f"optional wording \"{_preview(cue)}\" is not established for this "
                                                   f"item ({problem[1]}); set to required", iid, prefix=NEEDS_REVIEW)
+            declared_norm = IMPORTANCE_REQUIRED
     if declared_norm == IMPORTANCE_REQUIRED:
         pass
     elif declared_norm == IMPORTANCE_PREFERRED:
