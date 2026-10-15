@@ -15,6 +15,8 @@ What code does:
     item-specific "Needs review" warning on the item; a cue that merely exists elsewhere in the job description is not
     proof that it applies here. Preferred items carry no weight, so a flagged item stays out of the numeric score until
     the recruiter confirms or changes it.
+  * optional wording: the schema has no 'optional'. An 'optional' classification whose Arabic cue (اختيارية) is established for the
+    item is stored as preferred; otherwise it fails closed to required with a review report. 'optional' is never stored.
   * gives required items equal whole-number weights (100 // n, remainder in list order); over-limit categories keep
     every item, leave those weights unset and are reported
   * normalizes the AI's category weights (explicit, proportional); an unusable proposal applies NOTHING and is reported
@@ -63,6 +65,10 @@ _ITEM_FIELDS = {"text", "importance", "importance_cue", "source_text", "origin",
 _QUOTE_PREVIEW = 80
 
 NEEDS_REVIEW = "Needs review: "
+# Arabic optional wording mapped to the schema's values. The schema has NO 'optional': an optional classification is stored only
+# as preferred, and only when its cue is established for the item (checked exactly like any preferred cue).
+OPTIONAL_CUE_MAP = {"اختيارية": IMPORTANCE_PREFERRED}
+OPTIONAL_DECLARED = "optional"
 # the classification warnings (defined with the acknowledgment contract; re-exported here for the extraction's users)
 IMPORTANCE_CUE_REVIEW_CODES = CLASSIFICATION_WARNING_CODES
 
@@ -177,15 +183,28 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
     importance = IMPORTANCE_REQUIRED
     declared = raw.get("importance")
     declared_norm = declared.strip().lower() if isinstance(declared, str) else None
+    cue = raw.get("importance_cue")
+    if declared_norm in OPTIONAL_CUE_MAP:                  # the cue word itself was given as the importance value
+        cue, declared_norm = declared_norm, OPTIONAL_DECLARED
+    if declared_norm == OPTIONAL_DECLARED and isinstance(cue, str) and cue.strip() in OPTIONAL_CUE_MAP:
+        cue = cue.strip()
+        problem = _cue_problem(cue, jd, span)
+        if problem is None:
+            declared_norm = OPTIONAL_CUE_MAP[cue]          # established optional cue: stored as preferred, never 'optional'
+            note("importance_optional_mapped_to_preferred", f"the optional cue \"{_preview(cue)}\" is mapped to preferred", iid)
+        else:                                              # not established for this item: fails closed to required, one issue only
+            note("optional_cue_not_established", f"optional wording \"{_preview(cue)}\" is not established for this "
+                                                  f"item ({problem[1]}); set to required", iid, prefix=NEEDS_REVIEW)
+            declared_norm = IMPORTANCE_REQUIRED
     if declared_norm == IMPORTANCE_REQUIRED:
         pass
     elif declared_norm == IMPORTANCE_PREFERRED:
         importance = IMPORTANCE_PREFERRED                  # the AI's classification is kept; support is only checked
-        problem = _cue_problem(raw.get("importance_cue"), jd, span)
+        problem = _cue_problem(cue, jd, span)
         if problem:
             note(problem[0], problem[1], iid, prefix=NEEDS_REVIEW)
             classification.append(build_warning(code=problem[0], item_id=iid, category=category,
-                                                cue=raw.get("importance_cue"), source_text=source,
+                                                cue=cue, source_text=source,
                                                 message=review[-1].message))
     elif declared is None and not plain_string:
         note("importance_missing_defaulted_required", "no importance was given; set to required", iid)
