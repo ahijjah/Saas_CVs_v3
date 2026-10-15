@@ -205,7 +205,7 @@ def test_roll_forward_resumes_each_paused_item_exactly_once_and_a_second_resume_
 
     dispatched_apps, extraction = run_resume()
     assert dispatched_apps == 3 and sorted(rec["score"]) == sorted(seeded["apps"][k] for k in ("paused_1", "paused_2", "paused_3"))
-    assert extraction == {"v2": 1, "legacy": 1, "candidates": 0}, extraction
+    assert extraction == {"v2": 1, "legacy": 1, "candidates": 0, "failed": 0}, extraction
     assert rec["legacy"] == [seeded["legacy_job"]] and rec["v2"] and len(rec["v2"]) == 1
     assert "control_stuck" not in str(rec["score"]), "another tenant's work is not dispatched"
 
@@ -214,6 +214,6 @@ def test_roll_forward_resumes_each_paused_item_exactly_once_and_a_second_resume_
     # their own atomic claim, so they are never dispatched twice.
     second_apps, second_extraction = run_resume()
     assert second_apps == 0, "a repeated resume never re-dispatches an application"
-    assert second_extraction == {"v2": 1, "legacy": 1, "candidates": 0}, second_extraction
+    assert second_extraction == {"v2": 1, "legacy": 1, "candidates": 0, "failed": 0}, second_extraction
     assert len(rec["score"]) == 3, "exactly one dispatch per paused application"
     assert paused_state(d, copy) == [], "the resumed applications are no longer marked paused"

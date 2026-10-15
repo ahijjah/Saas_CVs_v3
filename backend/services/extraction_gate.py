@@ -42,8 +42,8 @@ def job_meta(row) -> dict:
 
 async def resume_paused_extraction(db: AsyncSession, tenant_id: str) -> dict:
     """Dispatch the still-pending extraction work of one tenant, if the tenant is entitled now. Returns the counts dispatched by kind.
-    Never raises on a dispatch: the caller logs it. Each dispatch is idempotent (the claims refuse a second run)."""
-    empty = {"v2": 0, "legacy": 0, "candidates": 0}
+    A failed dispatch is counted in "failed" and never raised; the work stays pending. Each dispatch is idempotent (the claims refuse a second run)."""
+    empty = {"v2": 0, "legacy": 0, "candidates": 0, "failed": 0}
     entitlement = await load_entitlement(db, tenant_id)
     if not entitlement.full:
         return empty
@@ -82,16 +82,20 @@ async def resume_paused_extraction(db: AsyncSession, tenant_id: str) -> dict:
     from workers.requirements_v2_extraction_worker import extract_requirements_v2_task, extract_candidate_task  # noqa: PLC0415
     from workers.criteria_worker import extract_criteria_task  # noqa: PLC0415
 
-    counts = dict(empty)
-    for row in v2_rows:
-        extract_requirements_v2_task.delay(row["job_id"], row["token"], row["description"], job_meta(row))
-        counts["v2"] += 1
-    for row in legacy_rows:
-        extract_criteria_task.delay(row["job_id"], row["description"], job_meta(row))
-        counts["legacy"] += 1
-    for row in candidate_rows:
-        extract_candidate_task.delay(row["job_id"], row["version_id"], row["token"], row["description"], job_meta(row))
-        counts["candidates"] += 1
-    if any(counts.values()):
+    # A dispatch that fails (the broker is down) leaves its work exactly as it is: still pending (or requested), with its token. It is not
+    # failed and it is not lost: the next provisioning dispatches it again. The failure is counted and logged, and the caller still completes.
+    counts = {"v2": 0, "legacy": 0, "candidates": 0, "failed": 0}
+    plan = [("v2", extract_requirements_v2_task, row, lambda r: (r["job_id"], r["token"], r["description"], job_meta(r))) for row in v2_rows]
+    plan += [("legacy", extract_criteria_task, row, lambda r: (r["job_id"], r["description"], job_meta(r))) for row in legacy_rows]
+    plan += [("candidates", extract_candidate_task, row,
+              lambda r: (r["job_id"], r["version_id"], r["token"], r["description"], job_meta(r))) for row in candidate_rows]
+    for kind, task, row, args in plan:
+        try:
+            task.delay(*args(row))
+            counts[kind] += 1
+        except Exception as exc:  # noqa: BLE001 - the work stays pending; the failure is reported, not raised
+            counts["failed"] += 1
+            logger.error("tenant %s: could not dispatch paused %s work for job %s: %s", tenant_id, kind, row["job_id"], exc)
+    if counts["v2"] or counts["legacy"] or counts["candidates"] or counts["failed"]:
         logger.info("tenant %s: resumed paused extraction work %s", tenant_id, counts)
     return counts

@@ -85,7 +85,7 @@ def test_a_v2_attempt_queued_while_entitled_makes_no_call_while_suspended_or_exp
     assert job_state(db, job) == before
 
     counts = resume()
-    assert counts == {"v2": 1, "legacy": 0, "candidates": 0}, counts
+    assert counts == {"v2": 1, "legacy": 0, "candidates": 0, "failed": 0}, counts
     assert len(dispatched["v2"]) == 1 and dispatched["v2"][0][:2] == (job, tok)
     assert dispatched["v2"][0][3]["title"] == TITLE
 
@@ -98,7 +98,7 @@ def test_a_v2_attempt_queued_while_entitled_makes_no_call_while_suspended_or_exp
     assert row(db, job)["status"] == "completed" and len(audit(db, "requirements_extraction_completed")) == 1
 
     # after completion, a further resume dispatches nothing
-    assert resume() == {"v2": 0, "legacy": 0, "candidates": 0}
+    assert resume() == {"v2": 0, "legacy": 0, "candidates": 0, "failed": 0}
 
 
 def test_a_superseded_attempt_is_refused_and_the_current_retry_runs_once(db, monkeypatch, dispatched):

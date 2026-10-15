@@ -46,7 +46,7 @@ access:
 - **Legacy criteria extraction** (`extract_criteria_task`): the job stays `pending`.
 - **Re-analysis candidates** (`extract_candidate_task`): the candidate stays `requested`, with no `started` event and no decision.
 
-**Resume** happens in the provisioning request, once the tenant is entitled. It re-dispatches the still-pending work of that tenant only.
+**Resume** happens in the provisioning request, once the tenant is entitled. A dispatch that fails is counted in the response (`failed`) and logged; the work stays pending with its token, the activation still commits, and the next provisioning dispatches it. It re-dispatches the still-pending work of that tenant only.
 Each kind is claimed once, so a repeated resume or a duplicate delivery does not make a second model call:
 
 - Paused applications are claimed by one atomic UPDATE that clears the marker. A repeated resume dispatches nothing for them.
@@ -83,30 +83,47 @@ a future expiry (the tenant resumes its paused work), or a deliberate suspension
 
 No subscription-status schema change is needed: the existing statuses are reused.
 
-## Rollback
+## Recovery: roll-forward is the default
 
-Rolling back the **billing change** is not a configuration switch. The old release has **no** access gate, so rolling the application back
-re-opens recruitment writes and AI processing for suspended and expired tenants. Prefer a roll-forward fix. If a rollback is unavoidable,
-it must be a build that keeps the entitlement gate, or the gate must be restored first.
+**Default path: roll forward.** Fix the defect in a new release and deploy it. Paused work resumes through provisioning, once per item, as
+described above. Nothing needs to be rolled back, and no marker is cleared.
 
-Whatever the build, the **paused work** must be preserved:
+**Fallback release (only if roll-forward is not possible).** A fallback must **retain the entitlement gates**: the entitlement service, the
+recruitment-router dependency, the intake gate, the scoring gate, the three extraction gates and the claims. A fallback without them re-opens
+recruitment writes and AI processing for suspended and expired tenants, and is not an approved recovery. It must also:
+
+- keep migrations **113** (`access_paused` in the stopped-reason constraint) and **114** (the analysis log's `started` event) applied, and
+  leave their constraints in place while any row uses them;
+- **preserve paused intent**: never clear `access_paused`, and never reset a pending or requested extraction item to a state the claims do
+  not recognise. The work stays exactly as it is, and resumes when provisioning runs again on a build with the gates.
+
+**Before any rollback of the application**, in this order:
 
 1. **Disable the watchdog** (the scheduled `reset_stuck_scoring_tasks`) for the whole rollback window. The current watchdog skips paused rows,
-   but the **old** one does not, and would fail them after 15 minutes. Disabling it is the only protection against that.
+   but an **old** one does not, and would fail them after 15 minutes. This is the only protection against that.
 2. **Export the paused-work inventory** before any change, with `psql` on the database (a client-side copy, not run by the guard):
    `\copy (SELECT application_id, job_id, tenant_id, queued_at FROM cv_analyzer.applications WHERE stopped_reason = 'access_paused') TO 'paused_applications.csv' CSV HEADER`
    Keep the file with the change record.
 3. **Run the guard**, `deploy/billing/rollback_access_pause_guard.sql`. It verifies that the constraint still allows `access_paused`, that
    every paused row is still `queued`, and reports how many are older than the watchdog window. It changes nothing.
 4. **Do not clear `access_paused`.** Clearing it drops the tenant's paused intent: the work would never be resumed and would look like
-   ordinary queued work to the old watchdog. Do not drop migration 113's constraint while paused rows exist.
-5. **Do not drop the analysis-log constraint** (migration 114) once any `started` row exists: it is part of the history.
-6. Roll the application back only as described above. Keep the watchdog disabled until the marker-aware build is back.
+   ordinary queued work to the old watchdog. Do not drop migration 113's constraint while paused rows exist, and do not drop migration 114's
+   constraint once any `started` row exists.
+5. Keep the watchdog disabled until the marker-aware build is back.
 
-**Roll-forward.** Re-enable the watchdog only with a build that excludes `access_paused` (the current one). Provisioning a tenant resumes its
-paused work, once per item, as described above.
+**Roll-forward again.** Re-enable the watchdog only with a build that excludes `access_paused` (the current one). Provisioning a tenant resumes
+its paused work, once per item.
 
-**Drill.** `tests/test_billing_rollback_drill.py` runs this procedure on a **restored copy** of a disposable database (pg_dump and pg_restore),
+**Tested guarantees (provisioning to extraction, over the real admin route and PostgreSQL).** `tests/test_provisioning_extraction_http.py`
+queues legacy, requirements-v2 and re-analysis work while entitled, runs it through the real worker entry points after suspension and after
+expiry (zero model calls, unchanged state), provisions through `PATCH /admin/tenants/{id}/subscription` (the work resumes and completes),
+repeats the provisioning and duplicates the deliveries (no further model call, no changed result), leaves another tenant's work untouched,
+applies nothing when the audit row fails (503, no resume), and leaves the work recoverable when a dispatch fails (the activation is committed,
+the failures are reported, and the next provisioning completes the work). These are guarantees about these paths. They are not a claim of
+universal exactly-once execution: a broker may deliver a message more than once, and the claims refuse a second run without a model call, but
+they do not remove the queue message.
+
+**Drill.** `tests/test_billing_rollback_drill.py` runs the rollback procedure on a **restored copy** of a disposable database (pg_dump and pg_restore),
 with dispatch stubbed and no model. It checks that the guard passes and changes nothing, that the guard refuses when the constraint cannot hold
 the marker, that the inventory lists the dateless tenant, that the current watchdog leaves paused work queued, and that roll-forward resumes
 each item once. Run it in both database modes before any production rollback decision.
