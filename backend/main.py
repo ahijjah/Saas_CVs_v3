@@ -7,7 +7,7 @@ from config import get_settings
 from database import engine
 from routers import (
     admin, ai_models, ai_prompts, ai_usage, analytics, applications, approvals, audit_logs, auth,
-    campaigns, client_organizations, comments, dashboard, interviews, jobs, platform_config,
+    campaigns, client_organizations, comments, dashboard, interviews, job_requirements, jobs, platform_config,
     platform_secrets, public, saved_views, subscription_plans, tenant, workflow_policies,
 )
 from routers.candidate_tags import app_router as candidate_tags_app, tag_router as candidate_tags_tags
@@ -43,6 +43,7 @@ app.include_router(public.router)           # no auth — must be before jobs/ap
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(jobs.router)
+app.include_router(job_requirements.router)
 app.include_router(applications.router)
 app.include_router(comments.router)
 app.include_router(interviews.router)
