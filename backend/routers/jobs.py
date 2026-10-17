@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
@@ -13,7 +14,13 @@ from auth.dependencies import CurrentUserDep, get_current_user
 from config import get_settings
 from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
+from services.criteria_status import (
+    ENQUEUE_FAILED_MESSAGE, INSUFFICIENT_MESSAGE, LEGACY_ONLY_PREDICATE, LEGACY_REFUSAL_DETAIL,
+    STALE_PROCESSING_MINUTES, WORKER_FAILED_MESSAGE, display_status,
+)
 from services.subscription_service import can_create_campaign
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 settings = get_settings()
@@ -228,6 +235,11 @@ async def list_jobs(
     else:
         extra_sql = ""
 
+    # The retry cap is needed to show a failed row as blocked. One read, before the list query.
+    max_retries_row = await db.execute(
+        text("SELECT value FROM system_config WHERE key = 'criteria_extraction_max_retries'"),
+    )
+    max_retries = int(max_retries_row.scalar_one_or_none() or 3)
     rows = await db.execute(
         text(f"""
             SELECT
@@ -246,6 +258,8 @@ async def list_jobs(
                 camp.name AS campaign_name,
                 t.name AS tenant_name,
                 jc.criteria_extraction_status,
+                jc.criteria_extraction_error,
+                jc.criteria_extraction_retry_count,
                 COUNT(a.application_id)                                                                          AS applications_total,
                 -- AI Scored: primary classification by processing_status
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored')                           AS applications_scored,
@@ -282,7 +296,8 @@ async def list_jobs(
             LEFT JOIN applications a ON a.job_id = j.job_id
             {base_where}
             {extra_sql}
-            GROUP BY j.job_id, t.name, co.organization_name, camp.name, jc.criteria_extraction_status
+            GROUP BY j.job_id, t.name, co.organization_name, camp.name, jc.criteria_extraction_status,
+                     jc.criteria_extraction_error, jc.criteria_extraction_retry_count
             ORDER BY j.created_at DESC
         """),
         params,
@@ -304,7 +319,9 @@ async def list_jobs(
             "campaign_name":      r["campaign_name"],
             "receive_cv_via_forwarding_email": r["receive_cv_via_forwarding_email"],
             "receive_cv_via_platform_email":   r["receive_cv_via_platform_email"],
-            "criteria_extraction_status":      r["criteria_extraction_status"] or "pending",
+            "criteria_extraction_status":      display_status(
+                r["criteria_extraction_status"] or "pending", r["criteria_extraction_error"],
+                int(r["criteria_extraction_retry_count"] or 0), max_retries),
             "posted_date":        r["created_at"].date().isoformat() if r["created_at"] else None,
             "applications_total":               r["applications_total"],
             "applications_qualified":           r["applications_qualified"],
@@ -456,17 +473,29 @@ async def create_job(
         await save_job_knockout_questions(db, job_id, current_user.tenant_id, body.knockout_questions)
         await db.commit()
 
-    # Queue async AI extraction — does not block job creation
+    # Queue async AI extraction — does not block job creation. If the broker refuses the task, the pending row is moved to failed
+    # with the fixed enqueue message, so the row never waits for a task that will not run. The job is still created.
     from workers.criteria_worker import extract_criteria_task
-    extract_criteria_task.delay(job_id, body.description)
+    criteria_status_value = "pending"
+    message = "Job created successfully. AI criteria extraction started in background."
+    try:
+        extract_criteria_task.delay(job_id, body.description)
+    except Exception:
+        logger.exception("Criteria extraction could not be queued for job %s", job_id)
+        # The tenant context is transaction-local and the pending row has committed: set it again before the compensating write.
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+        await db.execute(_ENQUEUE_FAILED_SQL, {"jid": job_id, "claimed": 0, "message": ENQUEUE_FAILED_MESSAGE})
+        await db.commit()
+        criteria_status_value = "failed"
+        message = "Job created, but AI criteria extraction could not be started. Retry it from the job details."
 
     return {
         "success": True,
         "job_id": job_id,
         "job_code": job_code,
         "platform_email": platform_email,
-        "criteria_extraction_status": "pending",
-        "message": "Job created successfully. AI criteria extraction started in background.",
+        "criteria_extraction_status": criteria_status_value,
+        "message": message,
     }
 
 
@@ -604,7 +633,7 @@ async def get_job_details(
 
     job_code = job["job_code"] or str(job["job_id"])[:8].upper()
 
-    extraction_status    = criteria["criteria_extraction_status"] if criteria else "pending"
+    stored_extraction_status = criteria["criteria_extraction_status"] if criteria else "pending"
     extraction_error     = criteria["criteria_extraction_error"]  if criteria else None
     analysis_json        = criteria["analysis_json"]          if criteria else None
     original_analysis_json = criteria["original_analysis_json"] if criteria else None
@@ -618,6 +647,8 @@ async def get_job_details(
     )
     max_retries = int(cfg_row.scalar_one_or_none() or 3)
 
+    # The stored status is pending, processing, completed or failed. insufficient and blocked are derived here for the API only.
+    extraction_status = display_status(stored_extraction_status, extraction_error, retry_count, max_retries)
     current_description_hash = _normalize_description_hash(job["description"] or "")
     if extraction_status == "blocked" or retry_count >= max_retries:
         retry_blocked_reason: str | None = "max_retries_reached"
@@ -844,7 +875,7 @@ async def update_criteria(
         text("""
             SELECT weight_skills, weight_experience, weight_education,
                    weight_certifications, weight_soft_skills,
-                   weight_domain_knowledge, weight_other
+                   weight_domain_knowledge, weight_other, requirements_schema_version
             FROM job_criteria WHERE job_id = :jid
         """),
         {"jid": job_id},
@@ -852,6 +883,8 @@ async def update_criteria(
     existing = existing_row.mappings().first()
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Criteria not found for this job")
+    if existing["requirements_schema_version"] is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LEGACY_REFUSAL_DETAIL)
 
     # Validate individual weight ranges
     incoming_weights = {
@@ -911,7 +944,7 @@ async def update_criteria(
         if col in update_fields
     )
 
-    await db.execute(
+    result = await db.execute(
         text(f"""
             UPDATE job_criteria SET
                 weight_skills = :weight_skills,
@@ -930,9 +963,14 @@ async def update_criteria(
                 last_edited_at = now()
                 {array_sets}
             WHERE job_id = :jid
+              AND {LEGACY_ONLY_PREDICATE}
         """),
         update_fields,
     )
+    if result.rowcount != 1:
+        # A requirements-v2 job, or a row that changed since the read: nothing was written, so nothing is reported as saved.
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LEGACY_REFUSAL_DETAIL)
     await db.commit()
     return {"success": True, "message": "Criteria updated"}
 
@@ -1101,12 +1139,14 @@ async def update_criteria_content(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     criteria_row = await db.execute(
-        text("SELECT analysis_json FROM job_criteria WHERE job_id = :jid"),
+        text("SELECT analysis_json, requirements_schema_version FROM job_criteria WHERE job_id = :jid"),
         {"jid": job_id},
     )
     existing = criteria_row.mappings().first()
     if not existing:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Criteria not found for this job")
+    if existing["requirements_schema_version"] is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LEGACY_REFUSAL_DETAIL)
 
     current = dict(existing["analysis_json"] or {})
 
@@ -1146,8 +1186,8 @@ async def update_criteria_content(
     from services.ai_service import flatten_criteria_for_scoring
     flat = flatten_criteria_for_scoring(current)
 
-    await db.execute(
-        text("""
+    result = await db.execute(
+        text(f"""
             UPDATE job_criteria SET
                 analysis_json     = CAST(:aj AS jsonb),
                 skills            = :skills,
@@ -1160,6 +1200,7 @@ async def update_criteria_content(
                 last_edited_by    = :uid,
                 last_edited_at    = now()
             WHERE job_id = :jid
+              AND {LEGACY_ONLY_PREDICATE}
         """),
         {
             "aj":                json.dumps(current, ensure_ascii=False),
@@ -1174,8 +1215,79 @@ async def update_criteria_content(
             "jid":               job_id,
         },
     )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LEGACY_REFUSAL_DETAIL)
     await db.commit()
     return {"success": True, "message": "Criteria content updated"}
+
+
+# Legacy criteria retry. Every statement below is tenant-scoped and carries LEGACY_ONLY_PREDICATE: a requirements-v2 job is never
+# retried or rewritten by this route.
+CRITERIA_RETRY_ROLES = ("admin", "recruiter")
+
+_RECOVER_STALE_SQL = f"""
+    UPDATE job_criteria
+    SET criteria_extraction_status = 'failed',
+        criteria_extraction_error  = :failed_message
+    WHERE job_id = :jid
+      AND criteria_extraction_status = 'processing'
+      AND updated_at < now() - make_interval(mins => :minutes)
+      AND {LEGACY_ONLY_PREDICATE}
+      AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
+"""
+
+_CLAIM_RETRY_SQL = f"""
+    UPDATE job_criteria
+    SET criteria_extraction_status = 'pending',
+        criteria_extraction_retry_count = criteria_extraction_retry_count + 1,
+        criteria_extraction_error = NULL
+    WHERE job_id = :jid
+      AND criteria_extraction_status = 'failed'
+      AND criteria_extraction_retry_count < :max_retries
+      AND {LEGACY_ONLY_PREDICATE}
+      AND (criteria_extraction_error IS DISTINCT FROM :insufficient_message
+           OR criteria_last_failed_description_hash IS DISTINCT FROM :description_hash)
+      AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
+    RETURNING criteria_extraction_retry_count
+"""
+
+_RETRY_STATE_SQL = """
+    SELECT jc.criteria_extraction_status, jc.criteria_extraction_error,
+           jc.criteria_extraction_retry_count, jc.criteria_last_failed_description_hash
+    FROM jobs j
+    LEFT JOIN job_criteria jc ON jc.job_id = j.job_id
+    WHERE j.job_id = :jid AND j.tenant_id = :tid
+"""
+
+# Undoes a claim whose task could not be published. Only the same claimed attempt (same retry count, still pending) is moved.
+_ENQUEUE_FAILED_SQL = f"""
+    UPDATE job_criteria
+    SET criteria_extraction_status = 'failed',
+        criteria_extraction_error  = :message
+    WHERE job_id = :jid
+      AND criteria_extraction_status = 'pending'
+      AND criteria_extraction_retry_count = :claimed
+      AND {LEGACY_ONLY_PREDICATE}
+"""
+
+
+def _retry_refusal(state, max_retries: int, description_hash: str) -> HTTPException:
+    """The reason a claim matched no row. Read after the recovery step, so it describes the row as it now stands."""
+    if state is None:
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    stored = state["criteria_extraction_status"] or "pending"
+    if stored != "failed":
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail=f"Criteria extraction cannot be retried in status '{stored}'.")
+    if int(state["criteria_extraction_retry_count"] or 0) >= max_retries:
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="Maximum analysis retries reached for this campaign.")
+    if (state["criteria_extraction_error"] == INSUFFICIENT_MESSAGE
+            and state["criteria_last_failed_description_hash"] == description_hash):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                             detail="Please update the job description with more meaningful details before retrying analysis.")
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Criteria extraction was already re-queued.")
 
 
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
@@ -1184,17 +1296,25 @@ async def retry_criteria_extraction(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Re-queue AI criteria extraction subject to retry limits and description-change check."""
+    """Re-queue AI criteria extraction for a legacy job.
+
+    One transaction recovers a stale processing row (older than STALE_PROCESSING_MINUTES) to failed, then claims a failed row:
+    failed -> pending with the retry counter incremented once, in a single compare-and-set. The claim is committed before the
+    task is published. If publication raises, the same claimed attempt is moved back to failed with the fixed enqueue message
+    and the request returns 503. Two concurrent requests cannot both claim the row: the second finds it pending.
+    """
     from workers.criteria_worker import _normalize_description_hash, extract_criteria_task
+
+    # Only these roles may re-run AI extraction (it costs money). Exact match, before any SQL.
+    if current_user.role not in CRITERIA_RETRY_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only tenant admins and recruiters can retry criteria extraction.")
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     row = await db.execute(
-        text("""
-            SELECT j.description,
-                   jc.criteria_extraction_status,
-                   jc.criteria_extraction_retry_count,
-                   jc.criteria_last_failed_description_hash
+        text(f"""
+            SELECT j.description, jc.requirements_schema_version
             FROM jobs j
             LEFT JOIN job_criteria jc ON jc.job_id = j.job_id
             WHERE j.job_id = :jid AND j.tenant_id = :tid
@@ -1204,6 +1324,8 @@ async def retry_criteria_extraction(
     job = row.mappings().first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    if job["requirements_schema_version"] is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LEGACY_REFUSAL_DETAIL)
 
     cfg_row = await db.execute(
         text("SELECT value FROM system_config WHERE key = 'criteria_extraction_max_retries'"),
@@ -1211,37 +1333,10 @@ async def retry_criteria_extraction(
     )
     max_retries = int(cfg_row.scalar_one_or_none() or 3)
 
-    current_status = job["criteria_extraction_status"] or "pending"
-    retry_count    = int(job["criteria_extraction_retry_count"] or 0)
-    description    = job["description"] or ""
+    description = job["description"] or ""
+    description_hash = _normalize_description_hash(description)
 
-    # Terminal block — already exhausted
-    if current_status == "blocked":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Maximum analysis retries reached for this campaign.",
-        )
-
-    # Only retryable from these states
-    if current_status not in ("insufficient", "failed"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Criteria extraction cannot be retried in status '{current_status}'.",
-        )
-
-    # Enforce retry cap — transition to blocked
-    if retry_count >= max_retries:
-        await db.execute(
-            text("UPDATE job_criteria SET criteria_extraction_status = 'blocked' WHERE job_id = :jid"),
-            {"jid": job_id},
-        )
-        await db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Maximum analysis retries reached for this campaign.",
-        )
-
-    # Quality gate: reject if description still insufficient for AI analysis
+    # Quality gate: reject if the description is still insufficient for AI analysis. Nothing is written before this passes.
     desc_quality = evaluate_description_quality(description)
     if not desc_quality.is_sufficient_for_ai:
         raise HTTPException(
@@ -1249,30 +1344,38 @@ async def retry_criteria_extraction(
             detail=desc_quality.rejection_message(),
         )
 
-    # For insufficient: require a meaningful description change (hash check)
-    if current_status == "insufficient":
-        last_hash = job["criteria_last_failed_description_hash"]
-        if last_hash and _normalize_description_hash(description) == last_hash:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Please update the job description with more meaningful details before retrying analysis.",
-            )
-
-    # Allowed — increment counter and re-queue
+    tenant_params = {"jid": job_id, "tid": current_user.tenant_id}
     await db.execute(
-        text("""
-            UPDATE job_criteria
-            SET criteria_extraction_status        = 'pending',
-                criteria_extraction_retry_count   = criteria_extraction_retry_count + 1,
-                criteria_extraction_error         = NULL
-            WHERE job_id = :jid
-        """),
-        {"jid": job_id},
+        text(_RECOVER_STALE_SQL),
+        {**tenant_params, "failed_message": WORKER_FAILED_MESSAGE, "minutes": STALE_PROCESSING_MINUTES},
     )
+    claimed = (await db.execute(
+        text(_CLAIM_RETRY_SQL),
+        {**tenant_params, "max_retries": max_retries, "insufficient_message": INSUFFICIENT_MESSAGE,
+         "description_hash": description_hash},
+    )).scalar_one_or_none()
+
+    if claimed is None:
+        state = (await db.execute(text(_RETRY_STATE_SQL), tenant_params)).mappings().first()
+        await db.commit()   # keep any stale-row recovery that was just made
+        raise _retry_refusal(state, max_retries, description_hash)
     await db.commit()
 
-    extract_criteria_task.delay(job_id, description)
-    return {"success": True, "message": "Criteria extraction re-queued."}
+    try:
+        extract_criteria_task.delay(job_id, description)
+    except Exception:
+        logger.exception("Criteria extraction could not be re-queued for job %s", job_id)
+        # The tenant context is transaction-local and the claim has committed: set it again before the compensating write.
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+        await db.execute(text(_ENQUEUE_FAILED_SQL), {"jid": job_id, "claimed": claimed, "message": ENQUEUE_FAILED_MESSAGE})
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=ENQUEUE_FAILED_MESSAGE)
+
+    return {
+        "success": True,
+        "message": "Criteria extraction re-queued.",
+        "criteria_extraction_retry_count": int(claimed),
+    }
 
 
 @router.put("/{job_id}")

@@ -21,8 +21,10 @@ for _mod in (
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-# Give sqlalchemy.text a pass-through stub so `text(...)` doesn't blow up.
+# Give sqlalchemy.text a pass-through stub while the service is imported, then put the real function back. The attribute lives on
+# the real package, so a stub left in place would break every later test in the same process that runs SQL.
 import sqlalchemy as _sa
+_real_text = _sa.text
 _sa.text = lambda s: s  # type: ignore[assignment]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +36,7 @@ from services.screening_validation_service import (
     _VALID_STATUSES,
     ValidationResult,
 )
+_sa.text = _real_text
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
