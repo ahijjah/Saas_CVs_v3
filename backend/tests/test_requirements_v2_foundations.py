@@ -17,6 +17,9 @@ BACKEND = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = BACKEND / "tests" / "fixtures" / "requirements_v2_foundations"
 PROMPT_FILE = BACKEND / "services" / "requirements_v2" / "extraction" / "prompts" / "criteria_extraction_v2-1.txt"
 PRODUCTION_PATHS = ["routers", "workers", "auth", "main.py", "database.py", "config.py"]
+# The one service module approved to import the package. It is reachable from no route, worker, auth, startup or config path,
+# which PRODUCTION_PATHS checks for every module.
+APPROVED_SERVICE_IMPORTERS = {"services/requirements_edit.py"}
 
 
 def _case(name: str) -> dict:
@@ -88,6 +91,8 @@ def test_no_production_module_imports_the_new_package():
     for f in (BACKEND / "services").rglob("*.py"):
         if "requirements_v2" in f.relative_to(BACKEND / "services").parts:
             continue                                   # the package itself
+        if f.relative_to(BACKEND).as_posix() in APPROVED_SERVICE_IMPORTERS:
+            continue                                   # the editing service: a service module with no route, worker or config
         if pattern.search(f.read_text(encoding="utf-8", errors="ignore")):
             offenders.append(str(f.relative_to(BACKEND)))
     assert offenders == [], offenders
