@@ -136,9 +136,11 @@ def test_the_copy_route_names_candidate_reuse_and_the_criteria_gate():
     service = (BACKEND / "services" / "application_reuse_service.py").read_text(encoding="utf-8")
     assert "'candidate_reuse', 'awaiting_review', FALSE" in service
     assert "reuse_cv_for_job(" in route
-    assert "CRITERIA_BLOCKING_STATUSES" in route
-    assert 'target_job["status"] != "active"' in route
     assert 'current_user.role not in REUSE_ROLES' in route
+    # the locked, authoritative checks live in the service, inside the writing transaction
+    assert 'target["status"] != "active"' in service
+    assert "CRITERIA_BLOCKING_STATUSES" in service
+    assert "FOR UPDATE" in service and "FOR SHARE" in service
     assert 'REUSE_ROLES = ("admin", "recruiter")' in route
 
 

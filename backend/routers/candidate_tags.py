@@ -11,12 +11,11 @@ from auth.dependencies import CurrentUserDep
 from config import get_settings
 from database import get_db, set_rls_context
 from services.application_reuse_service import (
-    ReuseSourceFileMissing,
-    ReuseSourceHasNoFiles,
+    ReuseError,
     ReuseSourceNotFound,
+    ReuseTargetNotFound,
     reuse_cv_for_job,
 )
-from services.criteria_status import CRITERIA_BLOCKING_STATUSES
 
 app_router = APIRouter(prefix="/applications", tags=["candidates"])
 tag_router = APIRouter(prefix="/tags", tags=["candidates"])
@@ -298,80 +297,27 @@ async def reuse_candidate_to_job(
                             detail="Only tenant admins and recruiters can reuse candidates.")
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
-    # Verify source application exists and belongs to this tenant
-    source = await db.execute(
-        text("""
-            SELECT a.application_id, a.candidate_name, a.candidate_email, a.candidate_phone
-            FROM applications a
-            JOIN jobs j ON j.job_id = a.job_id
-            WHERE a.application_id = CAST(:app_id AS uuid)
-              AND j.tenant_id = CAST(:tid AS uuid)
-        """),
-        {"app_id": application_id, "tid": current_user.tenant_id},
-    )
-    src_app = source.mappings().first()
-    if not src_app:
-        raise HTTPException(status_code=404, detail="Source application not found")
-
-    # Verify target job exists and belongs to this tenant, and is active
-    job_check = await db.execute(
-        text("""
-            SELECT job_id, status FROM jobs
-            WHERE job_id = CAST(:job_id AS uuid)
-              AND tenant_id = CAST(:tid AS uuid)
-        """),
-        {"job_id": body.target_job_id, "tid": current_user.tenant_id},
-    )
-    target_job = job_check.mappings().first()
-    if not target_job:
-        raise HTTPException(status_code=404, detail="Target job not found")
-    if target_job["status"] != "active":
-        raise HTTPException(status_code=409, detail="Target job is not active.")
-
-    # Same criteria gate as CV intake: the target job's analysis must be complete
-    criteria_row = await db.execute(
-        text("SELECT criteria_extraction_status FROM job_criteria WHERE job_id = CAST(:job_id AS uuid)"),
-        {"job_id": body.target_job_id},
-    )
-    criteria_status = criteria_row.scalar_one_or_none() or "pending"
-    if criteria_status in CRITERIA_BLOCKING_STATUSES:
-        raise HTTPException(status_code=409, detail="The target job's criteria analysis is not complete.")
-
-    # Check if candidate already applied to this job
-    existing = await db.execute(
-        text("""
-            SELECT application_id FROM applications
-            WHERE candidate_email = :email
-              AND job_id = CAST(:job_id AS uuid)
-            LIMIT 1
-        """),
-        {"email": src_app["candidate_email"], "job_id": body.target_job_id},
-    )
-    if existing.scalars().first():
-        raise HTTPException(status_code=409, detail="Candidate already applied to this job")
-
-    # The copy: files first, then one committed transaction (see services/application_reuse_service)
+    # The service takes the locks and runs every decisive check in the same transaction that writes. These mappings are the only
+    # thing the route adds.
     try:
-        new_application_id = await reuse_cv_for_job(
+        new_application_id, candidate_name = await reuse_cv_for_job(
             db,
             source_application_id=application_id,
             target_job_id=body.target_job_id,
             tenant_id=current_user.tenant_id,
             files_base_path=get_settings().files_base_path,
         )
-    except ReuseSourceNotFound as exc:
-        raise HTTPException(status_code=404, detail="Source application not found") from exc
-    except ReuseSourceHasNoFiles as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ReuseSourceFileMissing as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (ReuseTargetNotFound, ReuseSourceNotFound) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ReuseError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (OSError, SQLAlchemyError) as exc:
-        raise HTTPException(status_code=500,
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail="The CV could not be copied. Nothing was created.") from exc
 
     return {
         "new_application_id": new_application_id,
-        "candidate_name": src_app["candidate_name"],
+        "candidate_name": candidate_name,
         "message": "Candidate added to new job",
     }
 

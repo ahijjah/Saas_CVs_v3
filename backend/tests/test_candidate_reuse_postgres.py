@@ -10,6 +10,7 @@ grants it SELECT, INSERT and UPDATE so the intake control path can reach its quo
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from types import SimpleNamespace
 
@@ -18,7 +19,7 @@ import psycopg2
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -440,3 +441,224 @@ async def test_each_intake_method_accepts_a_job_with_completed_criteria(built, e
     job = _job(built, tenant, criteria="completed")
     result = await _intake(engine, tenant, job, method, source, tmp_path)
     assert result.status != "INTAKE_BLOCKED", result.status
+
+
+# ---- atomicity and concurrency: every decisive check is locked and holds until the single commit ----
+
+async def _superuser_statement(built, sql, params):
+    """A statement on its own connection as the cluster superuser (bypasses row-level security, so it tests the lock only)."""
+    engine = create_async_engine(f"postgresql+asyncpg://postgres@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
+                                 connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(text(sql), params)
+            return result.rowcount
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture()
+def paused_first_copy(monkeypatch):
+    """Pause the first CV copy after every lock and check has run. The reuse holds its locks until the test releases it."""
+    state = {"entered": 0, "inside": None, "release": None}
+
+    def arm():
+        state["inside"], state["release"] = asyncio.Event(), asyncio.Event()
+
+    original = reuse._copy_settled
+
+    async def paused(source, destination):
+        state["entered"] += 1
+        if state["entered"] == 1:
+            state["inside"].set()
+            await state["release"].wait()
+        await original(source, destination)
+
+    monkeypatch.setattr(reuse, "_copy_settled", paused)
+    state["arm"] = arm
+    return state
+
+
+@pytest.mark.asyncio
+async def test_two_simultaneous_reuses_of_one_candidate_create_only_one_application(built, engine, files_root, scored, paused_first_copy):
+    tenant = _tenant(built)
+    email = f"race{uuid.uuid4().hex[:6]}@example.test"
+    source = _application(built, tenant, _job(built, tenant), email=email, files_root=files_root)
+    target = _job(built, tenant)
+    paused_first_copy["arm"]()
+    try:
+        async with _client(_app(_user(tenant), engine)) as client:
+            first = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
+            await asyncio.wait_for(paused_first_copy["inside"].wait(), 10)
+            second = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
+            await asyncio.sleep(0.5)
+            second_reached_copy = paused_first_copy["entered"] > 1      # only possible if the second request got past its checks
+            paused_first_copy["release"].set()
+            responses = await asyncio.gather(first, second)
+        assert not second_reached_copy
+        assert sorted(r.status_code for r in responses) == [200, 409]
+        assert _applications_on(built, target) == 1
+        assert scored == []
+    finally:
+        paused_first_copy["release"].set()
+
+@pytest.mark.asyncio
+async def test_a_target_status_change_waits_until_the_reuse_commits(built, engine, files_root, scored, paused_first_copy):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"st{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    target = _job(built, tenant)
+    paused_first_copy["arm"]()
+    try:
+        async with _client(_app(_user(tenant), engine)) as client:
+            reuse_call = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
+            await asyncio.wait_for(paused_first_copy["inside"].wait(), 10)
+            change = asyncio.create_task(_superuser_statement(
+                built, "UPDATE jobs SET status = 'closed' WHERE job_id = CAST(:jid AS uuid)", {"jid": target}))
+            await asyncio.sleep(0.5)
+            blocked_while_validated = not change.done()
+            paused_first_copy["release"].set()
+            response = await reuse_call
+            await change
+        assert blocked_while_validated
+        assert response.status_code == 200
+        assert _applications_on(built, target) == 1
+        cur = _cur(built)
+        cur.execute("SELECT status FROM jobs WHERE job_id = %s", (target,))
+        assert cur.fetchone()[0] == "closed"                              # the change applies after the reuse committed
+    finally:
+        paused_first_copy["release"].set()
+
+@pytest.mark.asyncio
+async def test_a_criteria_status_change_waits_until_the_reuse_commits(built, engine, files_root, scored, paused_first_copy):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"cr{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    target = _job(built, tenant)
+    paused_first_copy["arm"]()
+    try:
+        async with _client(_app(_user(tenant), engine)) as client:
+            reuse_call = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
+            await asyncio.wait_for(paused_first_copy["inside"].wait(), 10)
+            change = asyncio.create_task(_superuser_statement(
+                built, "UPDATE job_criteria SET criteria_extraction_status = 'failed' WHERE job_id = CAST(:jid AS uuid)", {"jid": target}))
+            await asyncio.sleep(0.5)
+            blocked_while_validated = not change.done()
+            paused_first_copy["release"].set()
+            response = await reuse_call
+            await change
+        assert blocked_while_validated
+        assert response.status_code == 200
+    finally:
+        paused_first_copy["release"].set()
+
+@pytest.mark.asyncio
+async def test_a_reuse_to_the_same_job_is_refused_and_creates_nothing(built, engine, files_root, scored):
+    tenant = _tenant(built)
+    job = _job(built, tenant)
+    source = _application(built, tenant, job, email=f"same{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": job})
+    assert response.status_code == 409
+    assert _applications_on(built, job) == 1                           # only the source application
+    assert scored == []
+
+
+@pytest.mark.asyncio
+async def test_a_source_delete_waits_for_the_reuse_so_no_cv_less_copy_can_result(built, engine, files_root, scored, paused_first_copy):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"del{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    target = _job(built, tenant)
+    paused_first_copy["arm"]()
+    try:
+        async with _client(_app(_user(tenant), engine)) as client:
+            reuse_call = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
+            await asyncio.wait_for(paused_first_copy["inside"].wait(), 10)
+            delete = asyncio.create_task(_superuser_statement(
+                built, "DELETE FROM applications WHERE application_id = CAST(:aid AS uuid)", {"aid": source}))
+            await asyncio.sleep(0.5)
+            delete_blocked = not delete.done()
+            paused_first_copy["release"].set()
+            response = await reuse_call
+            await delete
+        assert delete_blocked
+        assert response.status_code == 200
+        [copy] = _files_of(built, response.json()["new_application_id"])
+        assert (files_root / copy[1]).read_bytes() == PDF                  # the copy exists and has its bytes
+    finally:
+        paused_first_copy["release"].set()
+
+@pytest.mark.asyncio
+async def test_a_source_deleted_before_the_reuse_gives_not_found_and_no_copy(built, engine, files_root, scored):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"gone{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    target = _job(built, tenant)
+    await _superuser_statement(built, "DELETE FROM applications WHERE application_id = CAST(:aid AS uuid)", {"aid": source})
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target})
+    assert response.status_code == 404
+    assert _applications_on(built, target) == 0
+    assert not (files_root / "tenants" / tenant["tenant"] / "jobs" / target).exists()
+
+
+@pytest.mark.asyncio
+async def test_a_failure_after_the_first_copy_removes_every_destination_file(built, engine, files_root, scored, monkeypatch):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"fail{uuid.uuid4().hex[:6]}@example.test",
+                          files_root=files_root, files=(("cv.pdf", PDF, "a"), ("second.pdf", PDF, "b")))
+    target = _job(built, tenant)
+    calls = []
+    original_copy = reuse._copy_file
+
+    def second_copy_fails(src, dst):
+        calls.append(dst)
+        if len(calls) == 2:
+            raise OSError("simulated disk failure on the second copy")
+        original_copy(src, dst)
+
+    monkeypatch.setattr(reuse, "_copy_file", second_copy_fails)
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target})
+    assert response.status_code == 500
+    assert len(calls) == 2                                              # the first copy was made, then removed
+    assert not calls[0].exists() and not calls[1].exists()
+    assert _applications_on(built, target) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_cancellation_after_the_first_copy_removes_every_destination_file(built, engine, files_root, scored, monkeypatch):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"cancel{uuid.uuid4().hex[:6]}@example.test",
+                          files_root=files_root, files=(("cv.pdf", PDF, "a"), ("second.pdf", PDF, "b")))
+    target = _job(built, tenant)
+    import threading
+    second_started = threading.Event()
+    release_thread = threading.Event()
+    calls = []
+    original_copy = reuse._copy_file
+
+    def second_copy_held(src, dst):
+        calls.append(dst)
+        if len(calls) == 2:
+            second_started.set()
+            release_thread.wait(10)              # the copy is still in progress when the request is cancelled
+        original_copy(src, dst)
+
+    monkeypatch.setattr(reuse, "_copy_file", second_copy_held)
+
+    async def run():
+        async with AsyncSession(engine) as db:
+            await set_rls_context(db, tenant["tenant"], "admin")
+            return await reuse.reuse_cv_for_job(db, source_application_id=source, target_job_id=target,
+                                                tenant_id=tenant["tenant"], files_base_path=str(files_root))
+
+    task = asyncio.create_task(run())
+    while not second_started.is_set():
+        await asyncio.sleep(0.01)
+    task.cancel()
+    release_thread.set()                          # the thread finishes its copy after the cancellation was requested
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(calls) == 2
+    assert not calls[0].exists() and not calls[1].exists()       # both copies gone, including the one finished after cancel
+    assert _applications_on(built, target) == 0
+
+
