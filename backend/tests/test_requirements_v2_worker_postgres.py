@@ -13,10 +13,12 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -130,11 +132,20 @@ def _ids(doc) -> list[str]:
     return [i["id"] for c in C.CATEGORIES for i in doc["categories"][c]["items"]]
 
 
+@pytest.fixture(autouse=True)
+def configured_model(monkeypatch):
+    """The stage has a model in these tests. The registry itself is covered by the unconfigured-stage test below."""
+    async def resolved(Session):
+        return SimpleNamespace(model_name="test-model", client=None)
+
+    monkeypatch.setattr(worker, "_resolve_model", resolved)
+
+
 def _fake_model(monkeypatch, *responses, calls=None, during=None):
     """Replace the single model call. Each call returns the next response; `during` runs before the call returns."""
     pending = list(responses)
 
-    async def fake(description):
+    async def fake(description, resolved):
         if calls is not None:
             calls.append(description)
         if during is not None:
@@ -142,7 +153,7 @@ def _fake_model(monkeypatch, *responses, calls=None, during=None):
         content = pending.pop(0) if len(pending) > 1 else pending[0]
         if isinstance(content, BaseException):
             raise content
-        return _as_content(content), "stop", "test-model"
+        return _as_content(content), "stop"
 
     monkeypatch.setattr(worker, "_request_extraction", fake)
 
@@ -267,8 +278,8 @@ async def test_malformed_model_output_writes_nothing_and_raises_for_retry(built,
 
 @pytest.mark.asyncio
 async def test_a_truncated_response_is_refused_and_writes_nothing(built, engine, monkeypatch):
-    async def truncated(description):
-        return json.dumps(EN_OUTPUT), "length", "test-model"
+    async def truncated(description, resolved):
+        return json.dumps(EN_OUTPUT), "length"
 
     monkeypatch.setattr(worker, "_request_extraction", truncated)
     tenant = _tenant(built)
@@ -385,15 +396,15 @@ async def test_a_database_failure_while_writing_rolls_everything_back(built, eng
     _fake_model(monkeypatch, EN_OUTPUT)
     real_params = worker._persist_params
 
-    def out_of_range(result, **kwargs):
-        params = real_params(result, **kwargs)
+    def out_of_range(*args, **kwargs):
+        params = real_params(*args, **kwargs)
         params["weight_skills"] = 150                 # the SMALLINT is in range, the weights rule is not: the CHECK refuses it
         return params
 
     monkeypatch.setattr(worker, "_persist_params", out_of_range)
     tenant = _tenant(built)
     job = _job(built, tenant, EN_JD)
-    with pytest.raises(Exception):
+    with pytest.raises(IntegrityError):              # the weights_sum_100 CHECK refuses the total, and the transaction rolls back
         await _run(engine, job, EN_JD)
     status, _, _, revision, analysis, original, *_ = _row(built, job)
     assert (status, revision, analysis, original) == ("processing", 0, None, None)
@@ -403,7 +414,7 @@ async def test_a_database_failure_while_writing_rolls_everything_back(built, eng
 async def test_a_failure_while_building_the_write_leaves_the_row_unfinished(built, engine, monkeypatch):
     _fake_model(monkeypatch, EN_OUTPUT)
 
-    def broken(result, **kwargs):
+    def broken(*args, **kwargs):
         raise RuntimeError("builder failed")
 
     monkeypatch.setattr(worker, "_persist_params", broken)
@@ -468,3 +479,23 @@ async def test_a_legacy_row_is_never_claimed_or_changed_by_the_v2_worker(built, 
     assert claim == {} and calls == []
     assert _row(built, job) == before
     assert before[4] == legacy_analysis and before[2] is None
+
+
+# ---- an unconfigured stage fails visibly and is not retried ----
+
+@pytest.mark.asyncio
+async def test_an_unconfigured_model_stage_fails_the_row_visibly_without_a_model_call(built, engine, monkeypatch):
+    calls = []
+    _fake_model(monkeypatch, EN_OUTPUT, calls=calls)
+
+    async def unconfigured(Session):
+        return None
+
+    monkeypatch.setattr(worker, "_resolve_model", unconfigured)
+    monkeypatch.setattr(worker, "_task_engine_and_session", lambda: (engine, _sessions(engine)))
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    result = await asyncio.to_thread(worker.extract_requirements_v2_task.apply, args=(job, EN_JD))
+    assert result.state == "FAILURE" and calls == []
+    status, error, _, revision, analysis, *_ = _row(built, job)
+    assert (status, error, revision, analysis) == ("failed", CS.MODEL_NOT_CONFIGURED_MESSAGE, 0, None)

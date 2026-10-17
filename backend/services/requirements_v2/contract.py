@@ -35,8 +35,8 @@ package treats its inputs as read-only and returns new objects.
       "experience": {"subject": str | None, "min_years": int | None} | None   # experience category only
     }
 
-NOT WIRED into any production path (extraction, API, UI, scoring, intake). Importing this package has no side
-effects and never touches the database or a model.
+Used by the extraction worker (workers/requirements_v2_worker.py), the editing service and its router, and the scoring path.
+The package itself has no side effects and never touches the database or a model.
 """
 from __future__ import annotations
 

@@ -7,13 +7,15 @@ claims a v2 row, so the two paths cannot write the same job.
 Flow:
   1. Claim: pending -> processing, v2 rows only (compare-and-set). The claim token is the row's new updated_at. The claim also
      returns the retired item ids, which a new id must never reuse.
-  2. Request: one call with the pinned criteria_extraction_v2 request (see requirements_v2/extraction).
-  3. Parse: parse_response builds the draft. Ids are a function of the description and the position, so a retry of the same
-     description yields the same ids.
-  4. Validate: the draft must have no parse error, pass the structure contract, use no retired id, and total 0 or 100 in weight.
-     Anything else is an attempt failure, and nothing is written.
-  5. Persist: one UPDATE writes the document, its original, the weight columns, the revision and the status. It is guarded by
-     this claim's token and by "no document yet", and the transaction commits only after it succeeds.
+  2. Model: the stage's model is resolved through the model registry (cv_analyzer). When no stage default is configured the row is
+     marked failed with the fixed configuration message and is not retried.
+  3. Request and parse: the pinned criteria_extraction_v2 request, then parse_response. Ids are a function of the description and the
+     position, so a retry of the same description yields the same ids.
+  4. Validate: the draft must have no parse error, pass the draft contract, reuse no retired id, and total 0 or 100 in weight.
+  5. Finalise: the structural review is attached by the canonical detector from the expectations derived from the document, and the
+     classification and structure review blocks are always present. The final structure is checked again.
+  6. Persist: one UPDATE writes the document, its original, the weights, the revision and the status. It is guarded by this claim's
+     token and by "no document yet", and the transaction commits only after it succeeds.
 
 Retry: an attempt that raises releases the claim to pending. The final attempt marks the row failed with the fixed worker message.
 A cancelled attempt raises CancelledError, which is not caught here: its transaction rolls back and nothing is written.
@@ -23,24 +25,35 @@ import hashlib
 import itertools
 import json
 import logging
+from datetime import datetime, timezone
 
-from services.criteria_status import WORKER_FAILED_MESSAGE
-from services.requirements_v2.contract import CATEGORIES, SCHEMA_VERSION, WEIGHT_COLUMN, collect_item_ids
+from services.criteria_status import MODEL_NOT_CONFIGURED_MESSAGE, WORKER_FAILED_MESSAGE
+from services.requirements_v2.acknowledgment import REVIEW_KEY, empty_review
+from services.requirements_v2.contract import CATEGORIES, ITEM_ID_RE, SCHEMA_VERSION, WEIGHT_COLUMN, collect_item_ids
 from services.requirements_v2.extraction import build_request, parse_response
+from services.requirements_v2.structural_detection import attach
+from services.requirements_v2.structural_expectations import ALTERNATIVES_TOGETHER, jd_sha256, has_token
+from services.requirements_v2.structural_review import READINESS_INVALID, structural_status
+from services.requirements_v2.structure import STRUCTURE_KEY, empty_block
 from services.requirements_v2.validation import validate_draft, validate_structure
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
 _ITEM_ID_PREFIX = "req_"
+STAGE = "cv_analyzer"
 
 
 class InvalidModelOutput(Exception):
     """The model output cannot be stored as a document. The code is for the log; no model text is stored."""
 
 
+class ModelNotConfigured(Exception):
+    """No model is configured for the stage. The attempt is not retried: an operator must configure the stage."""
+
+
 class RequirementsExtractionFailed(Exception):
-    """Raised by the task after its final attempt failed. The message is the fixed server message, never the model or driver text."""
+    """Raised by the task after its final attempt failed. The message is a fixed server message, never model or driver text."""
 
 
 def stable_id_factory(description: str, reserved=()):
@@ -60,8 +73,8 @@ def stable_id_factory(description: str, reserved=()):
 
 
 def checked_document(result, *, retired=()) -> dict:
-    """The one document that may be stored, or InvalidModelOutput. Uses the contract validators; adds only the retired-id and
-    weight-total checks that the validators report as review rather than error."""
+    """The draft document, or InvalidModelOutput. Uses the contract validators; adds the retired-id and weight-total checks that the
+    validators report as review rather than error."""
     if not result.ok:
         raise InvalidModelOutput(result.errors[0].code)
     doc = result.requirements
@@ -79,14 +92,59 @@ def checked_document(result, *, retired=()) -> dict:
     return doc
 
 
-async def _request_extraction(description: str):
-    """One chat-completion call with the pinned request. Returns (content, finish_reason, model). Tests replace this seam."""
-    from services.ai_service import _get_client
+def derive_expectations(doc: dict, description: str) -> dict:
+    """The structural expectation block for this document: one alternatives_together expectation per item whose OR alternatives
+    are two or more words of its own source wording. Nothing else is inferred. The block is bound to the description by its hash."""
+    expectations = []
+    for category in CATEGORIES:
+        for item in doc["categories"][category]["items"]:
+            source = item.get("source_text")
+            alternatives = item.get("alternatives") or []
+            if not source or description.count(source) != 1:
+                continue
+            tokens = []
+            for alternative in alternatives:
+                if has_token(source, alternative) and alternative not in tokens:
+                    tokens.append(alternative)
+            if len(tokens) < 2:
+                continue
+            start = description.index(source)
+            expectations.append({"id": f"exp_{item['id']}", "kind": ALTERNATIVES_TOGETHER, "source_text": source,
+                                 "source_start": start, "source_end": start + len(source), "tokens": tokens})
+    return {"schema_version": 1, "jd_sha256": jd_sha256(description), "expectations": expectations}
 
-    request = build_request(description)
-    response = await _get_client().chat.completions.create(**request)
+
+def finalise_document(doc: dict, description: str) -> dict:
+    """The document to store: the structural review from the canonical detector, the server-owned blocks always present, and a final
+    structural check. Raises InvalidModelOutput when the final structure is not usable."""
+    doc = attach(doc, description, derive_expectations(doc, description))
+    doc.setdefault(REVIEW_KEY, empty_review())
+    doc.setdefault(STRUCTURE_KEY, empty_block())
+    if validate_structure(doc):
+        raise InvalidModelOutput("structure_after_blocks")
+    if any(issue.code == READINESS_INVALID for issue in structural_status(doc, description).issues):
+        raise InvalidModelOutput("structural_review_invalid")
+    return doc
+
+
+async def _resolve_model(Session):
+    """The stage's model from the registry, or None when the stage is not configured. Resolution never raises on its own; a missing
+    stage default is reported as None and handled by the caller."""
+    from database import set_rls_context
+    from services.ai_model_registry_service import resolve_stage_client
+
+    async with Session() as db:
+        await set_rls_context(db, "", "super_admin")
+        return await resolve_stage_client(db, STAGE)
+
+
+async def _request_extraction(description: str, resolved):
+    """One chat-completion call with the pinned request, through the resolved client. Returns (content, finish_reason).
+    Tests replace this seam."""
+    request = build_request(description, model=resolved.model_name)
+    response = await resolved.client.chat.completions.create(**request)
     choice = response.choices[0]
-    return choice.message.content, choice.finish_reason, request["model"]
+    return choice.message.content, choice.finish_reason
 
 
 _CLAIM = """
@@ -127,13 +185,12 @@ _PERSIST = """
 """
 
 
-def _persist_params(result, *, job_id: str, token, model: str) -> dict:
-    doc = result.analysis["requirements"]
+def _persist_params(analysis: dict, original: dict, doc: dict, *, job_id: str, token, model: str) -> dict:
     return {
         "jid": job_id,
         "token": token,
-        "analysis": json.dumps(result.analysis, ensure_ascii=False),
-        "original": json.dumps({"requirements": result.original}, ensure_ascii=False),
+        "analysis": json.dumps(analysis, ensure_ascii=False),
+        "original": json.dumps({"requirements": original}, ensure_ascii=False),
         **{WEIGHT_COLUMN[c]: doc["categories"][c]["weight"] for c in CATEGORIES},
         "model": model,
     }
@@ -167,6 +224,14 @@ def extract_requirements_v2_task(self, job_id: str, description: str) -> None:
     claim: dict = {}
     try:
         loop.run_until_complete(_extract_async(job_id, description, TaskSession, claim))
+    except ModelNotConfigured:
+        # Not retryable: mark the row failed with the configuration message, so the failure is visible and the retry is an operator action.
+        logger.error("[job:%s] No criteria model is configured for stage %s.", job_id, STAGE)
+        try:
+            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession, MODEL_NOT_CONFIGURED_MESSAGE))
+        except Exception as mark_exc:
+            logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
+        raise RequirementsExtractionFailed(MODEL_NOT_CONFIGURED_MESSAGE) from None
     except Exception as exc:
         logger.error("extract_requirements_v2_task failed for job %s (attempt %d/%d): %s",
                      job_id, self.request.retries + 1, self.max_retries + 1, exc)
@@ -179,7 +244,7 @@ def extract_requirements_v2_task(self, job_id: str, description: str) -> None:
                     logger.error("[job:%s] Could not release the claim before retry: %s", job_id, release_exc)
             raise self.retry(exc=exc)
         try:
-            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession))
+            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession, WORKER_FAILED_MESSAGE))
         except Exception as mark_exc:
             logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
         raise RequirementsExtractionFailed(WORKER_FAILED_MESSAGE) from None
@@ -218,12 +283,18 @@ async def _extract_async(job_id: str, description: str, Session, claim: dict) ->
     claim["token"] = token
     logger.info("[job:%s] Requirements v2 extraction started.", job_id)
 
-    content, finish_reason, model = await _request_extraction(description)
+    resolved = await _resolve_model(Session)
+    if resolved is None:
+        raise ModelNotConfigured(STAGE)
+
+    content, finish_reason = await _request_extraction(description, resolved)
     result = parse_response(content, description, finish_reason,
                             id_factory=stable_id_factory(description, reserved=retired))
-    checked_document(result, retired=retired)
+    doc = finalise_document(checked_document(result, retired=retired), description)
+    analysis = result.analysis
+    analysis["requirements"] = doc
 
-    params = _persist_params(result, job_id=job_id, token=token, model=model)
+    params = _persist_params(analysis, result.original, doc, job_id=job_id, token=token, model=resolved.model_name)
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         written = (await db.execute(text(_PERSIST), params)).first()
@@ -245,8 +316,8 @@ async def _release_claim(job_id: str, token, Session) -> None:
         await db.commit()
 
 
-async def _mark_failed(job_id: str, token, Session) -> bool:
-    """Final failure: processing -> failed with the fixed worker message, for the claim that holds `token` only."""
+async def _mark_failed(job_id: str, token, Session, message: str) -> bool:
+    """Final failure: processing -> failed with a fixed message, for the claim that holds `token` only."""
     from database import set_rls_context
     from sqlalchemy import text
 
@@ -254,7 +325,7 @@ async def _mark_failed(job_id: str, token, Session) -> bool:
         return False
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
-        result = await db.execute(text(_MARK_FAILED), {"err": WORKER_FAILED_MESSAGE, "jid": job_id, "token": token})
+        result = await db.execute(text(_MARK_FAILED), {"err": message, "jid": job_id, "token": token})
         await db.commit()
     marked = result.rowcount == 1
     if marked:

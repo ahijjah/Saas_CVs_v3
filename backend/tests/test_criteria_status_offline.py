@@ -100,7 +100,9 @@ def test_every_update_of_job_criteria_carries_the_legacy_predicate_or_is_the_v2_
                 # The requirements-v2 writer guards on its own version (the other direction). It is not a legacy writer.
                 assert "requirements_schema_version = :schema_version" in window, rel
                 continue
-            assert _guarded(window), f"{rel}: UPDATE job_criteria without the legacy predicate"
+            if _guarded(window) or "REQUIREMENTS_V2_PREDICATE" in window or "requirements_schema_version = 2" in window:
+                continue                                # legacy-guarded, or a v2-only statement (it cannot touch a legacy row)
+            raise AssertionError(f"{rel}: UPDATE job_criteria without the legacy predicate")
     # The scan must see the real writers (worker, the legacy PUT routes, the retry route, the requirements-v2 writer).
     assert seen >= 9, seen
 

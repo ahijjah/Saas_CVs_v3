@@ -16,7 +16,7 @@ from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.criteria_status import (
     ENQUEUE_FAILED_MESSAGE, INSUFFICIENT_MESSAGE, LEGACY_ONLY_PREDICATE, LEGACY_REFUSAL_DETAIL,
-    STALE_PROCESSING_MINUTES, WORKER_FAILED_MESSAGE, display_status,
+    REQUIREMENTS_V2_PREDICATE, REQUIREMENTS_V2_SCHEMA_VERSION, STALE_PROCESSING_MINUTES, WORKER_FAILED_MESSAGE, display_status,
 )
 from services.subscription_service import can_create_campaign
 
@@ -454,14 +454,14 @@ async def create_job(
         {"email": platform_email, "jid": job_id},
     )
 
-    # Insert a pending criteria row immediately — AI extraction runs in background.
-    # Default weights (30+25+15+10+10+5+5=100) satisfy the weights_sum_100 constraint.
+    # Insert a pending requirements-v2 criteria row immediately — AI extraction runs in background. Every new job is v2.
+    # The default weights satisfy the weights_sum_100 constraint, and the worker replaces them with the document's weights.
     await db.execute(
         text("""
-            INSERT INTO job_criteria (job_id, criteria_extraction_status)
-            VALUES (:jid, 'pending')
+            INSERT INTO job_criteria (job_id, criteria_extraction_status, requirements_schema_version)
+            VALUES (:jid, 'pending', :schema_version)
         """),
-        {"jid": job_id},
+        {"jid": job_id, "schema_version": REQUIREMENTS_V2_SCHEMA_VERSION},
     )
     await db.commit()
 
@@ -475,16 +475,16 @@ async def create_job(
 
     # Queue async AI extraction — does not block job creation. If the broker refuses the task, the pending row is moved to failed
     # with the fixed enqueue message, so the row never waits for a task that will not run. The job is still created.
-    from workers.criteria_worker import extract_criteria_task
+    from workers.requirements_v2_worker import extract_requirements_v2_task
     criteria_status_value = "pending"
     message = "Job created successfully. AI criteria extraction started in background."
     try:
-        extract_criteria_task.delay(job_id, body.description)
+        extract_requirements_v2_task.delay(job_id, body.description)
     except Exception:
         logger.exception("Criteria extraction could not be queued for job %s", job_id)
         # The tenant context is transaction-local and the pending row has committed: set it again before the compensating write.
         await set_rls_context(db, current_user.tenant_id, current_user.role)
-        await db.execute(_ENQUEUE_FAILED_SQL, {"jid": job_id, "claimed": 0, "message": ENQUEUE_FAILED_MESSAGE})
+        await db.execute(_ENQUEUE_FAILED_V2_SQL, {"jid": job_id, "claimed": 0, "message": ENQUEUE_FAILED_MESSAGE})
         await db.commit()
         criteria_status_value = "failed"
         message = "Job created, but AI criteria extraction could not be started. Retry it from the job details."
@@ -1272,6 +1272,43 @@ _ENQUEUE_FAILED_SQL = f"""
 """
 
 
+# Requirements v2 retry: the same claim discipline as the legacy retry, on v2 rows only. A row that holds a document is never claimed.
+_RECOVER_STALE_V2_SQL = f"""
+    UPDATE job_criteria
+    SET criteria_extraction_status = 'failed',
+        criteria_extraction_error  = :failed_message
+    WHERE job_id = :jid
+      AND criteria_extraction_status = 'processing'
+      AND updated_at < now() - make_interval(mins => :minutes)
+      AND {REQUIREMENTS_V2_PREDICATE}
+      AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
+"""
+
+_CLAIM_RETRY_V2_SQL = f"""
+    UPDATE job_criteria
+    SET criteria_extraction_status = 'pending',
+        criteria_extraction_retry_count = criteria_extraction_retry_count + 1,
+        criteria_extraction_error = NULL
+    WHERE job_id = :jid
+      AND criteria_extraction_status = 'failed'
+      AND analysis_json IS NULL
+      AND criteria_extraction_retry_count < :max_retries
+      AND {REQUIREMENTS_V2_PREDICATE}
+      AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
+    RETURNING criteria_extraction_retry_count
+"""
+
+_ENQUEUE_FAILED_V2_SQL = f"""
+    UPDATE job_criteria
+    SET criteria_extraction_status = 'failed',
+        criteria_extraction_error  = :message
+    WHERE job_id = :jid
+      AND criteria_extraction_status = 'pending'
+      AND criteria_extraction_retry_count = :claimed
+      AND {REQUIREMENTS_V2_PREDICATE}
+"""
+
+
 def _retry_refusal(state, max_retries: int, description_hash: str) -> HTTPException:
     """The reason a claim matched no row. Read after the recovery step, so it describes the row as it now stands."""
     if state is None:
@@ -1288,6 +1325,45 @@ def _retry_refusal(state, max_retries: int, description_hash: str) -> HTTPExcept
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Please update the job description with more meaningful details before retrying analysis.")
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Criteria extraction was already re-queued.")
+
+
+async def _retry_requirements_v2(job_id: str, description: str, current_user, db: AsyncSession) -> dict:
+    """Re-queue the requirements-v2 worker for a v2 row. Only a failed row without a stored document is claimed, and only one
+    concurrent request wins the claim. Enqueue failure is compensated the same way as the legacy retry."""
+    from workers.criteria_worker import _normalize_description_hash
+    from workers.requirements_v2_worker import extract_requirements_v2_task
+
+    cfg_row = await db.execute(
+        text("SELECT value FROM system_config WHERE key = 'criteria_extraction_max_retries'"), {})
+    max_retries = int(cfg_row.scalar_one_or_none() or 3)
+
+    desc_quality = evaluate_description_quality(description)
+    if not desc_quality.is_sufficient_for_ai:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=desc_quality.rejection_message())
+
+    tenant_params = {"jid": job_id, "tid": current_user.tenant_id}
+    await db.execute(text(_RECOVER_STALE_V2_SQL),
+                     {**tenant_params, "failed_message": WORKER_FAILED_MESSAGE, "minutes": STALE_PROCESSING_MINUTES})
+    claimed = (await db.execute(text(_CLAIM_RETRY_V2_SQL), {**tenant_params, "max_retries": max_retries})).scalar_one_or_none()
+    if claimed is None:
+        state = (await db.execute(text(_RETRY_STATE_SQL), tenant_params)).mappings().first()
+        await db.commit()
+        raise _retry_refusal(state, max_retries, _normalize_description_hash(description))
+    await db.commit()
+
+    try:
+        extract_requirements_v2_task.delay(job_id, description)
+    except Exception:
+        logger.exception("Requirements v2 extraction could not be re-queued for job %s", job_id)
+        await set_rls_context(db, current_user.tenant_id, current_user.role)
+        await db.execute(text(_ENQUEUE_FAILED_V2_SQL), {"jid": job_id, "claimed": claimed, "message": ENQUEUE_FAILED_MESSAGE})
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=ENQUEUE_FAILED_MESSAGE)
+    return {
+        "success": True,
+        "message": "Criteria extraction re-queued.",
+        "criteria_extraction_retry_count": int(claimed),
+    }
 
 
 @router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
@@ -1324,7 +1400,10 @@ async def retry_criteria_extraction(
     job = row.mappings().first()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-    if job["requirements_schema_version"] is not None:
+    schema_version = job["requirements_schema_version"]
+    if schema_version == REQUIREMENTS_V2_SCHEMA_VERSION:
+        return await _retry_requirements_v2(job_id, job["description"] or "", current_user, db)
+    if schema_version is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LEGACY_REFUSAL_DETAIL)
 
     cfg_row = await db.execute(
