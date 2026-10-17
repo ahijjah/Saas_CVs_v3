@@ -20,8 +20,9 @@ PRODUCTION_PATHS = ["routers", "workers", "auth", "main.py", "database.py", "con
 # The one service module approved to import the package. It is reachable from no route, worker, auth, startup or config path,
 # which PRODUCTION_PATHS checks for every module.
 APPROVED_SERVICE_IMPORTERS = {"services/requirements_edit.py"}
-# The one worker approved to import the package: the requirements-v2 extraction worker (see workers/requirements_v2_worker.py).
-APPROVED_WORKER_IMPORTERS = {"workers/requirements_v2_worker.py"}
+# The workers approved to import the package: the requirements-v2 extraction worker, and the scoring worker's requirements-v2 branch
+# (the adapter and revision guard in services/requirements_v2/scoring.py). No other production module may import it.
+APPROVED_WORKER_IMPORTERS = {"workers/requirements_v2_worker.py", "workers/cv_score.py"}
 
 
 def _case(name: str) -> dict:

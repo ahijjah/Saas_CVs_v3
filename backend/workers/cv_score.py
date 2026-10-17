@@ -604,6 +604,17 @@ async def _score_cv_async(
             if not criteria:
                 raise RuntimeError(f"No criteria found for job {job_id}")
 
+            # A requirements-v2 job is scored from its stored document. The criteria, weights and revision come from this one row
+            # read, and the score keeps the revision it was built from (see services/requirements_v2/scoring.py).
+            from services.criteria_status import REQUIREMENTS_V2_SCHEMA_VERSION
+            from services.requirements_v2.scoring import lock_revision, scoring_inputs
+            scoring_revision = None
+            if criteria["requirements_schema_version"] == REQUIREMENTS_V2_SCHEMA_VERSION:
+                v2_inputs = scoring_inputs(criteria["analysis_json"], criteria["original_analysis_json"],
+                                           criteria["job_description"] or "", criteria["requirements_revision"])
+                criteria = {**dict(criteria), **v2_inputs.criteria, **v2_inputs.weights}
+                scoring_revision = v2_inputs.revision
+
             weights = {
                 "weight_skills":           criteria["weight_skills"],
                 "weight_experience":       criteria["weight_experience"],
@@ -727,6 +738,8 @@ async def _score_cv_async(
                     """),
                     {"reason": _exit_reason, "aid": application_id},
                 )
+                if scoring_revision is not None:
+                    await lock_revision(db, job_id, scoring_revision)
                 await db.execute(
                     text("""
                         INSERT INTO application_scores (
@@ -739,7 +752,8 @@ async def _score_cv_async(
                             matched_skills, missing_skills,
                             cv_language, gatekeeper_passed,
                             evaluation_notes, reasoning,
-                            scoring_provider
+                            scoring_provider,
+                            requirements_revision_used
                         ) VALUES (
                             :aid,
                             0, 0, 0, 0, 0, 0, 0,
@@ -748,7 +762,8 @@ async def _score_cv_async(
                             :matched, :missing,
                             :cv_lang, false,
                             :notes, :reasoning,
-                            'local'
+                            'local',
+                            :rev_used
                         )
                     """),
                     {
@@ -761,6 +776,7 @@ async def _score_cv_async(
                         "cv_lang":    gatekeeper_result.cv_language,
                         "notes":      _exit_reason,
                         "reasoning":  json.dumps(_reasoning_payload, ensure_ascii=False),
+                        "rev_used":   scoring_revision,
                     },
                 )
                 await db.commit()
@@ -908,6 +924,8 @@ async def _score_cv_async(
 
             score_details = ai_result.get("score_details") or {}
 
+            if scoring_revision is not None:
+                await lock_revision(db, job_id, scoring_revision)
             await db.execute(
                 text("""
                     INSERT INTO application_scores (
@@ -924,7 +942,8 @@ async def _score_cv_async(
                         cv_language, gatekeeper_passed,
                         score_details,
                         scoring_prompt_code, scoring_prompt_version,
-                        scoring_provider
+                        scoring_provider,
+                        requirements_revision_used
                     ) VALUES (
                         :aid,
                         :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
@@ -937,7 +956,8 @@ async def _score_cv_async(
                         :cv_lang, :gk_passed,
                         :score_details,
                         :sc_code, :sc_ver,
-                        'openai'
+                        'openai',
+                        :rev_used
                     )
                 """),
                 {
@@ -958,6 +978,7 @@ async def _score_cv_async(
                     "notes":      ai_result.get("evaluation_notes"),
                     "questions":  ai_result.get("interview_questions", []),
                     "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
+                    "rev_used":   scoring_revision,
                     "raw":        json.dumps(ai_result, ensure_ascii=False),
                     "sim":        gatekeeper_result.semantic_similarity_pct,
                     "skill_ratio": gatekeeper_result.skill_match_ratio,

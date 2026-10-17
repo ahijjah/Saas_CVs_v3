@@ -211,10 +211,12 @@ def test_no_production_module_imports_the_structural_review_contract():
     backend = pathlib.Path(__file__).resolve().parent.parent
     pattern = re.compile(r"structural_review\b|services\.requirements_v2\.structural_review")
     offenders = []
+    approved = {"workers/requirements_v2_worker.py"}   # the extraction worker runs the structural detector and status check
     for rel in ("routers", "workers", "auth", "main.py", "database.py", "config.py"):
         p = backend / rel
         files = [p] if p.is_file() else list(p.rglob("*.py")) if p.exists() else []
-        offenders += [str(f) for f in files if pattern.search(f.read_text(encoding="utf-8", errors="ignore"))]
+        offenders += [str(f) for f in files if f.relative_to(backend).as_posix() not in approved
+                      and pattern.search(f.read_text(encoding="utf-8", errors="ignore"))]
     assert offenders == []
 
 
