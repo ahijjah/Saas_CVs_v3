@@ -13,12 +13,54 @@ import socket
 import subprocess
 import tempfile
 import uuid
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 
 import psycopg2
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 DB_DIR = BACKEND / "db"
 PG_BIN = pathlib.Path(os.environ.get("PG16_BIN", "/usr/lib/postgresql/16/bin"))
+
+# The steps that already fail on the current chain. The chain is valid only if exactly these fail: a new failure, a missing
+# failure, or a failure of schema.sql or of a required migration all fail the validation.
+EXPECTED_PRE_EXISTING_FAILURES: frozenset[str] = frozenset({
+    "010_platform_control.sql",
+    "024_plan_features_seed.sql",
+    "070_sla_thresholds_config.sql",
+    "087_autosave_deterministic_answers.sql",
+})
+REQUIRED_MIGRATIONS: frozenset[str] = frozenset({"093_requirements_v2_storage_schema.sql"})
+
+
+@dataclass(frozen=True)
+class StepFailure:
+    file: str          # "schema.sql" or the migration file name
+    error: str         # the first line of the database error
+
+
+class ChainValidationError(AssertionError):
+    """The migration chain does not match the expected outcome."""
+
+
+def check_chain(failures: Sequence[StepFailure], *, expected: frozenset[str] = EXPECTED_PRE_EXISTING_FAILURES,
+                required: frozenset[str] = REQUIRED_MIGRATIONS) -> None:
+    """Raise ChainValidationError unless the failing steps are exactly `expected`, schema.sql succeeded, and no required migration failed."""
+    problems: list[str] = []
+    names = [f.file for f in failures]
+    if "schema.sql" in names:
+        problems.append(f"schema.sql failed: {[f.error for f in failures if f.file == 'schema.sql']}")
+    for name in sorted(required & set(names)):
+        problems.append(f"required migration {name} failed: {[f.error for f in failures if f.file == name]}")
+    unexpected = sorted(set(names) - expected)
+    if unexpected:
+        problems.append(f"unexpected failures: {[(f.file, f.error) for f in failures if f.file in unexpected]}")
+    missing = sorted(expected - set(names))
+    if missing:
+        problems.append(f"expected failures no longer fail: {missing}")
+    if problems:
+        raise ChainValidationError("migration chain does not match the expected outcome: " + "; ".join(problems))
 
 
 def unavailable_reason() -> str | None:
@@ -46,13 +88,17 @@ class Cluster:
 
     def __init__(self):
         self.dir = pathlib.Path(tempfile.mkdtemp(prefix="req_pg_"))
-        subprocess.run(["chown", "postgres", str(self.dir)], check=True)
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            self.port = s.getsockname()[1]
-        self._as_pg([str(PG_BIN / "initdb"), "-D", str(self.dir / "data"), "-A", "trust", "-E", "UTF8"])
-        self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-o",
-                     f"-p {self.port} -k {self.dir} -c listen_addresses=127.0.0.1", "-l", str(self.dir / "log"), "-w", "start"])
+        try:
+            subprocess.run(["chown", "postgres", str(self.dir)], check=True)
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                self.port = s.getsockname()[1]
+            self._as_pg([str(PG_BIN / "initdb"), "-D", str(self.dir / "data"), "-A", "trust", "-E", "UTF8"])
+            self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-o",
+                         f"-p {self.port} -k {self.dir} -c listen_addresses=127.0.0.1", "-l", str(self.dir / "log"), "-w", "start"])
+        except BaseException:
+            self.stop()                 # a half-started cluster is stopped and removed before the error propagates
+            raise
 
     def _as_pg(self, cmd: list[str]) -> None:
         if os.geteuid() == 0:
@@ -63,17 +109,21 @@ class Cluster:
         return f"host=127.0.0.1 port={self.port} user=postgres dbname={db}"
 
     def stop(self) -> None:
+        """Safe to call on a cluster that never started: the server may not be running, so the stop error is ignored."""
         try:
-            self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-m", "immediate", "stop"])
+            if (self.dir / "data" / "postmaster.pid").exists():
+                self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-m", "immediate", "stop"])
+        except subprocess.CalledProcessError:
+            pass
         finally:
             shutil.rmtree(self.dir, ignore_errors=True)
 
 
 class Database:
-    """A database built from the real chain. `failed` lists every step that did not apply, with its error."""
+    """A database built from the real chain. `failures` records every step that did not apply, with its error."""
 
-    def __init__(self, cluster: Cluster, name: str, admin, conn, failed: list[str]):
-        self.cluster, self.name, self.admin, self.conn, self.failed = cluster, name, admin, conn, failed
+    def __init__(self, cluster: Cluster, name: str, admin, conn, failures: list[StepFailure]):
+        self.cluster, self.name, self.admin, self.conn, self.failures = cluster, name, admin, conn, failures
 
     def close(self) -> None:
         try:
@@ -92,13 +142,30 @@ def build(cluster: Cluster) -> Database:
     conn.autocommit = True
     conn.set_client_encoding("UTF8")
     cur = conn.cursor()
-    failed: list[str] = []
+    failures: list[StepFailure] = []
     steps = [("schema.sql", schema_sql())] + [(p.name, p.read_text(encoding="utf-8")) for p in migration_files()]
     for label, sql in steps:
         try:
             cur.execute(sql)
         except psycopg2.Error as exc:
-            failed.append(f"{label}: {str(exc).splitlines()[0]}")
+            failures.append(StepFailure(label, str(exc).splitlines()[0]))
             cur.execute("ROLLBACK")
         cur.execute("SET search_path = cv_analyzer")
-    return Database(cluster, name, admin, conn, failed)
+    return Database(cluster, name, admin, conn, failures)
+
+
+@contextmanager
+def built_chain() -> Iterator[Database]:
+    """The chain built on a disposable cluster. The cluster is stopped even when construction or the caller's body fails."""
+    reason = unavailable_reason()
+    if reason:
+        raise RuntimeError(reason)
+    cluster = Cluster()
+    try:
+        db = build(cluster)
+        try:
+            yield db
+        finally:
+            db.close()
+    finally:
+        cluster.stop()

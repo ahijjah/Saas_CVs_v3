@@ -10,7 +10,7 @@ import psycopg2
 import psycopg2.errors
 import pytest
 
-from realdb_helper import Cluster, Database, build, unavailable_reason
+from realdb_helper import (EXPECTED_PRE_EXISTING_FAILURES, Database, built_chain, check_chain, unavailable_reason)
 
 MIGRATION = "093_requirements_v2_storage_schema.sql"
 PROBE_ROLE = "cv_storage_probe"
@@ -21,21 +21,13 @@ def db():
     reason = unavailable_reason()
     if reason:
         pytest.skip(reason)
-    cluster = Cluster()
-    built: Database = build(cluster)
-    try:
+    with built_chain() as built:
+        check_chain(built.failures)                      # the failing steps are exactly the known set; 093 and schema.sql succeed
         cur = built.conn.cursor()
-        cur.execute("SELECT 1 FROM information_schema.columns WHERE table_schema = 'cv_analyzer' AND table_name = 'job_criteria'"
-                    " AND column_name = 'requirements_schema_version'")
-        if cur.fetchone() is None:          # the migration is missing or not applied: fail with the real reason
-            pytest.fail(f"{MIGRATION} did not apply. Recorded failures: {built.failed}")
         cur.execute(f"CREATE ROLE {PROBE_ROLE} NOLOGIN")
         cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {PROBE_ROLE}")
         cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.job_criteria, cv_analyzer.jobs TO {PROBE_ROLE}")
         yield built
-    finally:
-        built.close()
-        cluster.stop()
 
 
 def _one(cur, sql, params=()):
@@ -82,8 +74,17 @@ def _rejected(cur, fn) -> bool:
 
 # ---- migration applied on the complete chain ----
 
-def test_the_migration_builds_on_the_complete_current_chain(db):
-    assert not [f for f in db.failed if f.startswith(MIGRATION)], db.failed
+def test_the_real_chain_fails_only_at_the_known_steps(db):
+    """Exactly the expected pre-existing failures, and nothing else: schema.sql and migration 093 both succeeded."""
+    assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
+
+
+def test_migration_093_is_applied_on_the_complete_chain(db):
+    assert not [f for f in db.failures if f.file.startswith("093_")], db.failures
+    cur = db.conn.cursor()
+    assert _one(cur, "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'cv_analyzer'"
+                     " AND table_name = 'job_criteria' AND column_name IN ('requirements_schema_version',"
+                     " 'requirements_revision', 'requirements_retired_item_ids')")[0] == 3
 
 
 # ---- schema version marker ----
