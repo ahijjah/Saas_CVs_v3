@@ -158,6 +158,29 @@ async def _copy_settled(source: Path, destination: Path) -> None:
     task.result()
 
 
+async def _commit_settled(db: AsyncSession) -> bool:
+    """Commit in its own task, so a cancellation of the caller cannot cancel the commit itself.
+
+    Returns True when the caller was cancelled while the commit ran and the commit then succeeded: the transaction is committed, and
+    the caller must keep its files. Returns False when the commit succeeded without cancellation. A commit failure is raised; when
+    the caller was also cancelled, the cancellation is raised instead, once the commit has settled.
+    """
+    task = asyncio.ensure_future(db.commit())
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.wait({task})
+        except asyncio.CancelledError:
+            cancelled = True
+    try:
+        task.result()
+    except BaseException:
+        if cancelled:
+            raise asyncio.CancelledError()
+        raise
+    return cancelled
+
+
 def _remove_copies(copied: list[Path]) -> None:
     """Synchronous on purpose: runs before any awaited cleanup, so a cancellation cannot interrupt it."""
     for destination in copied:
@@ -195,6 +218,7 @@ async def reuse_cv_for_job(
     """
     base = Path(files_base_path)
     copied: list[Path] = []
+    committed = False
     try:
         # 1. target job: tenant-scoped, locked. Serialises reuses onto this job and any status change of it.
         target = (await db.execute(_TARGET_JOB_SQL, {"job_id": target_job_id, "tid": tenant_id})).mappings().first()
@@ -250,13 +274,18 @@ async def reuse_cv_for_job(
         })
         for row, relative in planned:
             await _insert_file_row(db, new_application_id=new_application_id, tenant_id=tenant_id, row=row, file_path=relative)
-        await db.commit()
+        cancelled_during_commit = await _commit_settled(db)
+        committed = True
+        if cancelled_during_commit:
+            raise asyncio.CancelledError()
     except BaseException:
-        # Files first, synchronously; then the awaited rollback; then the original exception is re-raised unchanged.
-        _remove_copies(copied)
-        try:
-            await db.rollback()
-        except BaseException:
-            logger.exception("Rollback after a failed CV reuse did not complete; the session is discarded by its owner.")
+        # Only an uncommitted transaction is undone. Files first, synchronously; then the awaited rollback; then the original
+        # exception is re-raised unchanged. After a successful commit the files and rows must stay together.
+        if not committed:
+            _remove_copies(copied)
+            try:
+                await db.rollback()
+            except BaseException:
+                logger.exception("Rollback after a failed CV reuse did not complete; the session is discarded by its owner.")
         raise
     return new_application_id, source["candidate_name"]

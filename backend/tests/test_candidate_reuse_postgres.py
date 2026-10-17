@@ -662,3 +662,95 @@ async def test_a_cancellation_after_the_first_copy_removes_every_destination_fil
     assert _applications_on(built, target) == 0
 
 
+
+
+# ---- cancellation and failure at the commit point ----
+
+class _GatedSession(AsyncSession):
+    """A session whose commit is held at the commit point, so a test can cancel the request while the commit is running.
+
+    outcome "succeed": the database commit completes, then the caller is held (a cancellation lands after the commit point).
+    outcome "fail": the caller is held, then the commit raises before any database commit.
+    """
+    outcome = "succeed"
+    entered = None
+    release = None
+
+    async def commit(self):
+        if self.outcome == "fail":
+            self.entered.set()
+            await self.release.wait()
+            raise OSError("simulated database commit failure")
+        await super().commit()
+        self.entered.set()
+        await self.release.wait()
+
+
+def _gated_session(engine, outcome, entered, release):
+    class Gated(_GatedSession):
+        pass
+
+    Gated.outcome, Gated.entered, Gated.release = outcome, entered, release
+    return Gated(engine)
+
+
+async def _reuse_through_gate(engine, tenant, source, target, files_root, outcome, entered, release):
+    async with _gated_session(engine, outcome, entered, release) as db:
+        await set_rls_context(db, tenant["tenant"], "admin")
+        return await reuse.reuse_cv_for_job(db, source_application_id=source, target_job_id=target,
+                                            tenant_id=tenant["tenant"], files_base_path=str(files_root))
+
+
+@pytest.mark.asyncio
+async def test_a_cancellation_during_a_successful_commit_keeps_the_rows_and_the_files(built, engine, files_root, scored):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"ccs{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    target = _job(built, tenant)
+    entered, release = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(_reuse_through_gate(engine, tenant, source, target, files_root, "succeed", entered, release))
+    try:
+        await asyncio.wait_for(entered.wait(), 10)          # the database commit has completed; the caller is held
+        task.cancel()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert _applications_on(built, target) == 1
+    cur = _cur(built)
+    cur.execute("SELECT application_id FROM applications WHERE job_id = %s", (target,))
+    new_id = str(cur.fetchone()[0])
+    [copy] = _files_of(built, new_id)
+    assert (files_root / copy[1]).read_bytes() == PDF                # the committed row still has its file
+
+
+@pytest.mark.asyncio
+async def test_a_cancellation_during_a_failed_commit_removes_the_files_and_creates_nothing(built, engine, files_root, scored):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"ccf{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    target = _job(built, tenant)
+    entered, release = asyncio.Event(), asyncio.Event()
+    task = asyncio.create_task(_reuse_through_gate(engine, tenant, source, target, files_root, "fail", entered, release))
+    try:
+        await asyncio.wait_for(entered.wait(), 10)          # the commit is running and will fail; the caller is held
+        task.cancel()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert _applications_on(built, target) == 0
+    target_dir = files_root / "tenants" / tenant["tenant"] / "jobs" / target
+    assert not target_dir.exists() or list(target_dir.iterdir()) == []
+
+
+@pytest.mark.asyncio
+async def test_a_commit_failure_removes_the_files_and_rolls_back(built, engine, files_root, scored):
+    tenant = _tenant(built)
+    source = _application(built, tenant, _job(built, tenant), email=f"ccx{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
+    target = _job(built, tenant)
+    entered, release = asyncio.Event(), asyncio.Event()
+    release.set()
+    with pytest.raises(OSError, match="simulated database commit failure"):
+        await _reuse_through_gate(engine, tenant, source, target, files_root, "fail", entered, release)
+    assert _applications_on(built, target) == 0
+    target_dir = files_root / "tenants" / tenant["tenant"] / "jobs" / target
+    assert not target_dir.exists() or list(target_dir.iterdir()) == []
