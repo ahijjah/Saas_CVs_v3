@@ -130,8 +130,9 @@ def test_generated_ownership_statements_cover_every_cv_analyzer_object_and_nothi
         lines = generate(db.conn, "cv_migrator")
         statements = [line for line in lines if not line.startswith("--")]
         assert not any("REASSIGN" in line.upper() for line in lines)
-        assert statements[0] == "ALTER SCHEMA cv_analyzer OWNER TO cv_migrator;"
-        assert any(line.startswith("ALTER TABLE cv_analyzer.schema_migrations OWNER TO cv_migrator;") for line in lines)
+        # The owner is always emitted as a quoted identifier (psycopg2.sql.Identifier).
+        assert statements[0] == 'ALTER SCHEMA cv_analyzer OWNER TO "cv_migrator";'
+        assert any(line.startswith('ALTER TABLE cv_analyzer.schema_migrations OWNER TO "cv_migrator";') for line in lines)
         # Apply the statements in a transaction that is then rolled back: every relation must end up owned by the new role.
         cur.execute("BEGIN")
         for line in statements:

@@ -18,6 +18,7 @@ Rules, all enforced before any migration runs unless stated otherwise:
 from __future__ import annotations
 
 import hashlib
+import logging
 import pathlib
 import re
 from dataclasses import dataclass, field
@@ -30,6 +31,8 @@ from .manifest import MANIFEST, Entry
 from .sqltext import SqlTextError, migration_body
 
 MIGRATIONS_DIR = pathlib.Path(__file__).resolve().parents[1] / "migrations"
+
+_log = logging.getLogger(__name__)
 
 # Key of the session advisory lock held by an apply-mode run. Two runners on one database cannot both hold it.
 LOCK_KEY = 0x43564D49
@@ -207,8 +210,10 @@ def _plan_run(cur, entries, directory, shas, allow_fresh):
     return ledger_exists, rows, actions
 
 
-def _shas(directory: pathlib.Path, entries: tuple[Entry, ...]) -> dict[str, str]:
-    return {e.file: sha256_of(directory / e.file) for e in entries}
+def _read_blobs(directory: pathlib.Path, entries: tuple[Entry, ...]) -> dict[str, bytes]:
+    """Read every migration once. The checksum and the executed text both come from these bytes, so a file changed on
+    disk after the read cannot be executed under a checksum of its earlier content."""
+    return {e.file: (directory / e.file).read_bytes() for e in entries}
 
 
 _ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
@@ -232,7 +237,8 @@ def run(conn, *, dry_run: bool = False, allow_fresh: bool = False, directory: pa
     `owner_role`, when given, is assumed with SET ROLE before any read or write, so created objects are owned by it.
     `stop_before` truncates the plan before the named file. It exists for tests that need an intermediate state."""
     validate_manifest(entries, directory)
-    shas = _shas(directory, entries)
+    blobs = _read_blobs(directory, entries)
+    shas = {name: hashlib.sha256(data).hexdigest() for name, data in blobs.items()}
     report = Report(dry_run=dry_run)
     cur = conn.cursor()
     if dry_run:
@@ -268,13 +274,24 @@ def run(conn, *, dry_run: bool = False, allow_fresh: bool = False, directory: pa
             conn.autocommit = False
             cur.execute(LEDGER_DDL)
             conn.commit()
-        _apply(conn, cur, entries, directory, shas, rows, actions, report)
+        _apply(conn, cur, entries, blobs, shas, rows, actions, report)
     finally:
+        _finish_session(conn, cur)
+    return report
+
+
+def _finish_session(conn, cur) -> None:
+    """Roll back any open transaction and release the session lock. A failure here must not replace the error that is
+    already propagating. If the connection is gone, PostgreSQL releases the session advisory lock when the backend exits,
+    so a failed release is logged and the original error is what the caller sees."""
+    try:
         if conn.autocommit is False:
             conn.rollback()
         conn.autocommit = True
         cur.execute("SELECT pg_advisory_unlock(%s)", (LOCK_KEY,))
-    return report
+    except psycopg2.Error as exc:
+        _log.warning("migration lock release did not complete (%s); PostgreSQL releases it when the session ends",
+                     str(exc).splitlines()[0])
 
 
 def _truncate(actions: list[Action], stop_before: str | None) -> list[Action]:
@@ -286,13 +303,13 @@ def _truncate(actions: list[Action], stop_before: str | None) -> list[Action]:
     return actions[: names.index(stop_before)]
 
 
-def _apply(conn, cur, entries, directory, shas, rows, actions, report) -> None:
+def _apply(conn, cur, entries, blobs, shas, rows, actions, report) -> None:
     by_file = {e.file: e for e in entries}
     for action in actions:
         if action.kind != "apply":
             continue
         entry = by_file[action.file]
-        raw = (directory / entry.file).read_bytes()
+        raw = blobs[entry.file]
         try:
             body = migration_body(raw.decode("utf-8"))
         except SqlTextError as exc:

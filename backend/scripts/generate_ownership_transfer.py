@@ -14,6 +14,7 @@ import re
 import sys
 
 import psycopg2
+from psycopg2 import sql
 
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
 if str(BACKEND) not in sys.path:
@@ -47,10 +48,32 @@ _ROUTINES = """
 
 # Enum, domain and range types are not owned through ALTER ... OWNER in this generator. Their presence stops it.
 _UNHANDLED_TYPES = """
-    SELECT count(*)
+    SELECT format('%I.%I', n.nspname, t.typname), t.typtype
     FROM pg_type t
     JOIN pg_namespace n ON n.oid = t.typnamespace
-    WHERE n.nspname = 'cv_analyzer' AND t.typtype IN ('e', 'd', 'r', 'm')
+    WHERE n.nspname = 'cv_analyzer' AND t.typtype IN ('e', 'd', 'r', 'm', 'c')
+      AND NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.oid = t.typrelid
+                      AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'i', 'I', 't'))
+"""
+
+# Relation kinds that are neither handled nor deliberately skipped (ordinary and partitioned tables, sequences, views,
+# materialised views are handled; indexes and TOAST follow their table). Foreign tables and standalone composite relations
+# stop the generator rather than being left out silently.
+_UNHANDLED_RELATIONS = """
+    SELECT c.relkind, format('%I.%I', n.nspname, c.relname)
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'cv_analyzer'
+      AND c.relkind NOT IN ('r', 'p', 'S', 'v', 'm', 'i', 'I', 't')
+    ORDER BY c.relname
+"""
+
+# Aggregates and window functions have no ALTER FUNCTION form here, so they stop the generator.
+_UNHANDLED_ROUTINES = """
+    SELECT p.prokind, format('%I.%I', n.nspname, p.proname)
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'cv_analyzer' AND p.prokind IN ('a', 'w')
 """
 
 
@@ -61,25 +84,32 @@ class GenerationError(RuntimeError):
 def generate(conn, target_owner: str) -> list[str]:
     if not _ROLE_NAME.match(target_owner):
         raise GenerationError(f"owner role {target_owner!r} is not a plain role identifier")
+    owner_sql = sql.Identifier(target_owner).as_string(conn)
     previous = conn.autocommit
     conn.autocommit = False
     try:
         cur = conn.cursor()
         cur.execute("SET TRANSACTION READ ONLY")
         cur.execute(_UNHANDLED_TYPES)
-        if cur.fetchone()[0]:
-            raise GenerationError("cv_analyzer contains enum, domain or range types; ownership for them is not generated")
+        for name, typtype in cur.fetchall():
+            raise GenerationError(f"type {name} (typtype {typtype}) is not handled; ownership for it is not generated")
+        cur.execute(_UNHANDLED_RELATIONS)
+        for kind, name in cur.fetchall():
+            raise GenerationError(f"relation {name} (relkind {kind}) is not handled by this generator")
+        cur.execute(_UNHANDLED_ROUTINES)
+        for kind, name in cur.fetchall():
+            raise GenerationError(f"aggregate or window function {name} is not handled by this generator")
 
         lines = [f"-- generated for target owner {target_owner}; review before running",
-                 f"ALTER SCHEMA cv_analyzer OWNER TO {target_owner};"]
+                 f"ALTER SCHEMA cv_analyzer OWNER TO {owner_sql};"]
         cur.execute(_RELATIONS)
         for kind, name, owner in cur.fetchall():
             keyword = _RELATION_KINDS[kind]
-            lines.append(f"ALTER {keyword} {name} OWNER TO {target_owner};  -- was {owner}")
+            lines.append(f"ALTER {keyword} {name} OWNER TO {owner_sql};  -- was {owner}")
         cur.execute(_ROUTINES)
         for kind, signature, owner in cur.fetchall():
             keyword = "PROCEDURE" if kind == "p" else "FUNCTION"
-            lines.append(f"ALTER {keyword} {signature} OWNER TO {target_owner};  -- was {owner}")
+            lines.append(f"ALTER {keyword} {signature} OWNER TO {owner_sql};  -- was {owner}")
         return lines
     finally:
         conn.rollback()

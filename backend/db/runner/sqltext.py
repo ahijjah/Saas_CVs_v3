@@ -3,7 +3,10 @@
 Only top-level statements matter for transaction control. Comments, quoted text and dollar-quoted bodies are skipped, so a
 PL/pgSQL BEGIN inside a function body is not mistaken for transaction control. The runner owns the transaction: a migration
 may open and close one transaction itself, at its first and last statement, and the runner strips those two statements.
-Any other transaction control makes the file unusable and is rejected before anything runs."""
+Any other transaction control makes the file unusable and is rejected before anything runs.
+
+Also rejected before anything runs: psql meta-commands, statements that cannot run inside a transaction (CONCURRENTLY forms,
+VACUUM, database and tablespace DDL, ALTER SYSTEM) and statements that change the session role or authorisation."""
 from __future__ import annotations
 
 import re
@@ -15,10 +18,18 @@ class SqlTextError(ValueError):
 
 
 _DOLLAR = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+_IDENT_CHAR = re.compile(r"[A-Za-z0-9_$]")
 _BEGIN_FORMS = {"BEGIN", "BEGIN WORK", "BEGIN TRANSACTION", "START TRANSACTION"}
 _COMMIT_FORMS = {"COMMIT", "COMMIT WORK", "COMMIT TRANSACTION", "END", "END WORK", "END TRANSACTION"}
 _OTHER_CONTROL = ("ROLLBACK", "SAVEPOINT", "RELEASE", "PREPARE TRANSACTION", "COMMIT PREPARED",
                   "ROLLBACK PREPARED", "SET TRANSACTION", "SET SESSION CHARACTERISTICS")
+# Statements that cannot run inside a transaction block, or that would change who the migration runs as.
+_FORBIDDEN_PREFIXES = ("VACUUM", "CLUSTER", "CREATE DATABASE", "DROP DATABASE", "ALTER DATABASE", "CREATE TABLESPACE",
+                       "DROP TABLESPACE", "ALTER SYSTEM", "REINDEX DATABASE", "REINDEX SYSTEM", "SET ROLE", "RESET ROLE",
+                       "SET SESSION AUTHORIZATION", "RESET SESSION AUTHORIZATION")
+_CONCURRENTLY = re.compile(r"^(CREATE|DROP|REINDEX)\b.*\bCONCURRENTLY\b")
+_DOLLAR_BODY_UPPER = re.compile(r"\$([A-Z_][A-Z0-9_]*)?\$.*?\$\1\$", re.S)
+_META_COMMAND = re.compile(r"(?m)^[ \t]*\\")
 
 
 @dataclass(frozen=True)
@@ -36,18 +47,32 @@ class MigrationBody:
 
 
 def _skip_quoted(sql: str, i: int, quote: str) -> int:
-    j = i + 1
-    while True:
-        k = sql.find(quote, j)
-        if k == -1:
-            raise SqlTextError("unterminated quoted text")
-        if sql.startswith(quote, k + 1):      # doubled quote inside the literal
-            j = k + 2
+    """Return the index just past the literal or identifier that opens at i.
+
+    Doubled quotes stay inside the literal. An escape-string literal (E'...') also honours backslash escapes, so \\' does
+    not end it."""
+    escapes = quote == "'" and i > 0 and sql[i - 1] in "eE" and (i < 2 or not _IDENT_CHAR.match(sql[i - 2]))
+    j, n = i + 1, len(sql)
+    while j < n:
+        c = sql[j]
+        if escapes and c == "\\":
+            j += 2
             continue
-        return k + 1
+        if c == quote:
+            if j + 1 < n and sql[j + 1] == quote:
+                j += 2
+                continue
+            return j + 1
+        j += 1
+    raise SqlTextError("unterminated quoted text")
 
 
 def _skip_dollar(sql: str, i: int) -> int | None:
+    """Return the index just past a dollar-quoted body that opens at i, or None if no dollar quote starts here.
+
+    A dollar sign that continues an identifier (foo$bar$) is part of that identifier, not a quote."""
+    if i > 0 and _IDENT_CHAR.match(sql[i - 1]):
+        return None
     m = _DOLLAR.match(sql, i)
     if not m:
         return None
@@ -59,7 +84,8 @@ def _skip_dollar(sql: str, i: int) -> int | None:
 
 
 def mask_comments(sql: str) -> str:
-    """Return sql with comment characters replaced by spaces. Positions are unchanged."""
+    """Return sql with comment characters replaced by spaces. Positions are unchanged. Block comments nest, as in
+    PostgreSQL; an unterminated block comment is an error."""
     out = list(sql)
     i, n = 0, len(sql)
     while i < n:
@@ -71,8 +97,18 @@ def mask_comments(sql: str) -> str:
                 out[k] = " "
             i = j
         elif sql.startswith("/*", i):
-            j = sql.find("*/", i + 2)
-            j = n if j == -1 else j + 2
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if sql.startswith("/*", j):
+                    depth += 1
+                    j += 2
+                elif sql.startswith("*/", j):
+                    depth -= 1
+                    j += 2
+                else:
+                    j += 1
+            if depth:
+                raise SqlTextError("unterminated block comment")
             for k in range(i, j):
                 if out[k] != "\n":
                     out[k] = " "
@@ -117,6 +153,15 @@ def _is_control(text: str) -> bool:
     return text in _BEGIN_FORMS or text in _COMMIT_FORMS or text.startswith(_OTHER_CONTROL)
 
 
+def _reject_unsupported(statements: list[Statement]) -> None:
+    for st in statements:
+        if st.text.startswith(_FORBIDDEN_PREFIXES):
+            raise SqlTextError(f"statement {st.text[:40]!r} is not allowed in a migration")
+        code = _DOLLAR_BODY_UPPER.sub(" ", st.text)   # 'CONCURRENTLY' inside a function body is not a statement form
+        if _CONCURRENTLY.match(code):
+            raise SqlTextError(f"CONCURRENTLY statements cannot run inside a migration transaction: {st.text[:40]!r}")
+
+
 def migration_body(sql: str) -> MigrationBody:
     """Return the statements to run inside the runner's own transaction.
 
@@ -125,19 +170,22 @@ def migration_body(sql: str) -> MigrationBody:
       * exactly one BEGIN followed by exactly one COMMIT/END, with the COMMIT as the last top-level statement. Both are
         removed; any other statement in the file, before or after the pair's start, runs inside the runner's transaction.
       * exactly one COMMIT/END as the last statement. It is removed.
-    Anything else (a second BEGIN, a COMMIT that is not last, a BEGIN without a COMMIT, ROLLBACK, SAVEPOINT, or a
-    transaction-mode change) raises SqlTextError, before the file runs."""
+    Anything else (a second BEGIN, a COMMIT that is not last, a BEGIN without a COMMIT, ROLLBACK, SAVEPOINT, a
+    transaction-mode change, a psql meta-command, a statement that cannot run in a transaction, or a role change) raises
+    SqlTextError, before the file runs."""
+    if _META_COMMAND.search(sql):
+        raise SqlTextError("psql meta-commands (lines beginning with a backslash) are not allowed in a migration")
     statements = top_level_statements(sql)
+    _reject_unsupported(statements)
     control = [(k, st) for k, st in enumerate(statements) if _is_control(st.text)]
     if not control:
         return MigrationBody(sql=sql, began=False, committed=False)
     last = len(statements) - 1
-    forms = [(k, st) for k, st in control]
-    for k, st in forms:
+    for _, st in control:
         if not (st.text in _BEGIN_FORMS or st.text in _COMMIT_FORMS):
             raise SqlTextError(f"transaction control {st.text[:40]!r} is not allowed in a migration")
-    begins = [(k, st) for k, st in forms if st.text in _BEGIN_FORMS]
-    commits = [(k, st) for k, st in forms if st.text in _COMMIT_FORMS]
+    begins = [(k, st) for k, st in control if st.text in _BEGIN_FORMS]
+    commits = [(k, st) for k, st in control if st.text in _COMMIT_FORMS]
     if len(begins) > 1 or len(commits) > 1:
         raise SqlTextError("a migration may contain at most one BEGIN and one COMMIT")
     if commits and commits[0][0] != last:
