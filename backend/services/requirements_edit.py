@@ -27,7 +27,9 @@ import copy
 import json
 import uuid
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import TYPE_CHECKING, Any, Union
+
+from sqlalchemy import text
 
 from services.requirements_v2.contract import (
     CATEGORIES, IMPORTANCES, ITEM_ID_RE, ORIGIN_RECRUITER_ADDED, Issue, collect_item_ids, is_int,
@@ -39,6 +41,9 @@ from services.requirements_v2.readiness import carry_server_owned
 from services.requirements_v2.structure import record_structure_edits
 from services.requirements_v2.structural_review import READINESS_INVALID, structural_status
 from services.requirements_v2.validation import validate_final, validate_structure
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 EDITOR_ROLES = frozenset({"admin", "recruiter"})
 REQUIREMENTS_SCHEMA_VERSION = 2
@@ -388,33 +393,35 @@ def _weights(doc: dict) -> dict[str, int]:
 
 
 # ---- the write (the only one) ----
-# SQL uses psycopg2 named parameters. The caller passes a DB-API connection inside a transaction it commits or rolls back.
+# An AsyncSession from the application's engine (database.py, asyncpg). The caller owns the transaction: it begins it, commits
+# on success and rolls back on any exception. This module never commits, so a refusal, or any failure after the call, leaves no
+# trace once the caller's transaction rolls back.
 
-_SET_CONTEXT = ("SELECT set_config('app.current_tenant_id', %(tid)s, true),"
-                " set_config('app.current_role', %(role)s, true)")
-_LOAD_JOB = "SELECT j.description FROM jobs j WHERE j.job_id = %(jid)s AND j.tenant_id = %(tid)s"
-_LOCK_CRITERIA = (
+_SET_CONTEXT = text(
+    "SELECT set_config('app.current_tenant_id', :tid, true), set_config('app.current_role', :role, true)")
+_LOAD_JOB = text("SELECT j.description FROM jobs j WHERE j.job_id = :jid AND j.tenant_id = :tid")
+_LOCK_CRITERIA = text(
     "SELECT analysis_json, original_analysis_json, requirements_schema_version, requirements_revision,"
-    " requirements_retired_item_ids FROM job_criteria WHERE job_id = %(jid)s FOR UPDATE")
-_UPDATE_CRITERIA = (
+    " requirements_retired_item_ids FROM job_criteria WHERE job_id = :jid FOR UPDATE")
+_UPDATE_CRITERIA = text(
     "UPDATE job_criteria SET"
-    " analysis_json = jsonb_set(COALESCE(analysis_json, '{}'::jsonb), '{requirements}', CAST(%(doc)s AS jsonb)),"
-    " weight_skills = %(weight_skills)s, weight_experience = %(weight_experience)s,"
-    " weight_education = %(weight_education)s, weight_certifications = %(weight_certifications)s,"
-    " weight_soft_skills = %(weight_soft_skills)s, weight_domain_knowledge = %(weight_domain_knowledge)s,"
-    " weight_other = %(weight_other)s,"
-    " requirements_retired_item_ids = CAST(%(retired)s AS jsonb),"
+    " analysis_json = jsonb_set(COALESCE(analysis_json, '{}'::jsonb), '{requirements}', CAST(:doc AS jsonb)),"
+    " weight_skills = :weight_skills, weight_experience = :weight_experience,"
+    " weight_education = :weight_education, weight_certifications = :weight_certifications,"
+    " weight_soft_skills = :weight_soft_skills, weight_domain_knowledge = :weight_domain_knowledge,"
+    " weight_other = :weight_other,"
+    " requirements_retired_item_ids = CAST(:retired AS jsonb),"
     " requirements_revision = requirements_revision + 1,"
-    " last_edited_by = CAST(%(uid)s AS uuid), last_edited_at = now(), updated_at = now()"
-    " WHERE job_id = %(jid)s AND requirements_revision = %(client_revision)s"
-    " AND requirements_schema_version = %(schema_version)s"
+    " last_edited_by = CAST(:uid AS uuid), last_edited_at = now(), updated_at = now()"
+    " WHERE job_id = :jid AND requirements_revision = :client_revision"
+    " AND requirements_schema_version = :schema_version"
     " RETURNING requirements_revision")
 
 
-def save_operations(conn: Any, user: EditingUser, job_id: str, *, client_revision: int,
-                    ops: tuple[Operation, ...], now: str) -> SaveResult:
-    """Apply a save on a DB-API connection (psycopg2). The caller owns the transaction: commit on success, roll back on any
-    exception. Nothing is written unless every check passes, and the revision is incremented only by the final UPDATE."""
+async def save_operations(db: AsyncSession, user: EditingUser, job_id: str, *, client_revision: int,
+                          ops: tuple[Operation, ...], now: str) -> SaveResult:
+    """Apply a save inside the caller's transaction. Nothing is written unless every check passes. The revision is incremented
+    only by the final UPDATE, and only when it still matches the revision read under the row lock."""
     check_editor(user.role)
     if not is_int(client_revision) or client_revision < 0:
         raise InvalidOperation("client_revision must be a whole number from 0.", code="invalid_revision")
@@ -426,15 +433,12 @@ def save_operations(conn: Any, user: EditingUser, job_id: str, *, client_revisio
     except (TypeError, ValueError) as exc:
         raise JobNotFound("Job not found.") from exc
 
-    cur = conn.cursor()
-    cur.execute(_SET_CONTEXT, {"tid": user.tenant_id, "role": user.role})
-    cur.execute(_LOAD_JOB, {"jid": job_id, "tid": user.tenant_id})
-    job = cur.fetchone()
+    await db.execute(_SET_CONTEXT, {"tid": user.tenant_id, "role": user.role})
+    job = (await db.execute(_LOAD_JOB, {"jid": job_id, "tid": user.tenant_id})).first()
     if job is None:
         raise JobNotFound("Job not found.")
 
-    cur.execute(_LOCK_CRITERIA, {"jid": job_id})
-    criteria = cur.fetchone()
+    criteria = (await db.execute(_LOCK_CRITERIA, {"jid": job_id})).first()
     if criteria is None:
         raise NoRequirementsDocument("This job has no criteria record.")
     analysis_json, original_json, schema_version, revision, retired = criteria
@@ -451,7 +455,7 @@ def save_operations(conn: Any, user: EditingUser, job_id: str, *, client_revisio
     planned = plan_operations(stored, original_analysis.get(REQUIREMENTS_KEY), retired or [], ops,
                               user_id=user.user_id, now=now, jd_text=job[0])
 
-    cur.execute(_UPDATE_CRITERIA, {
+    written = (await db.execute(_UPDATE_CRITERIA, {
         "doc": json.dumps(planned.document, ensure_ascii=False),
         "retired": json.dumps(planned.retired_item_ids),
         "uid": user.user_id,
@@ -459,9 +463,8 @@ def save_operations(conn: Any, user: EditingUser, job_id: str, *, client_revisio
         "client_revision": client_revision,
         "schema_version": REQUIREMENTS_SCHEMA_VERSION,
         **planned.weights,
-    })
-    if cur.rowcount != 1:
+    })).first()
+    if written is None:
         raise RequirementsEditError("The save could not be written.", code="write_failed")
-    (new_revision,) = cur.fetchone()
-    return SaveResult(revision=new_revision, open_structural_finding_ids=planned.open_structural_finding_ids,
+    return SaveResult(revision=written[0], open_structural_finding_ids=planned.open_structural_finding_ids,
                       recorded_structure_edits=planned.recorded_structure_edits)

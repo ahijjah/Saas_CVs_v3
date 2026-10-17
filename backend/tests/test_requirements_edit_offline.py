@@ -307,3 +307,25 @@ def test_planning_never_mutates_its_inputs():
     before = copy.deepcopy((stored, original, body))
     E.plan_operations(stored, original, [], E.parse_operations(body), user_id=USER, now=NOW, jd_text=JD)
     assert (stored, original, body) == before
+
+
+# ---- reachability: the service is imported by nothing but its own tests ----
+
+def test_no_module_outside_the_tests_imports_the_editing_service():
+    """Routers, workers, auth, startup, configuration and every other service module must not import the editing service.
+    It has no route yet, and the first route is a separate, reviewed change."""
+    import pathlib
+    import re
+
+    backend = pathlib.Path(__file__).resolve().parent.parent
+    pattern = re.compile(r"services\.requirements_edit\b|from services import requirements_edit\b")
+    offenders = []
+    for path in backend.rglob("*.py"):
+        rel = path.relative_to(backend).as_posix()
+        if rel.startswith(("tests/", ".", "node_modules")) or "__pycache__" in rel:
+            continue
+        if rel == "services/requirements_edit.py":
+            continue
+        if pattern.search(path.read_text(encoding="utf-8", errors="ignore")):
+            offenders.append(rel)
+    assert offenders == [], offenders

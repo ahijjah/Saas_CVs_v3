@@ -11,27 +11,22 @@ Tests cover:
 """
 from __future__ import annotations
 
-import sys
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-# ── SQLAlchemy stub (same pattern as test_duplicate_detection.py) ─────────────
-_sql_mock = MagicMock()
-_sql_mock.text = lambda q: q
-sys.modules.setdefault("sqlalchemy", _sql_mock)
-sys.modules.setdefault("sqlalchemy.ext.asyncio", MagicMock())
-sys.modules.setdefault("sqlalchemy.pool", MagicMock())
+from _sqlalchemy_stub import sqlalchemy_stubbed  # noqa: E402
 
-from services.intake_notification_service import (  # noqa: E402
-    AttachmentResult,
-    IntakeStatus,
-    _attachment_label,
-    _candidate_subject,
-    build_candidate_email,
-    build_recruiter_inactive_email,
-    build_recruiter_unmatched_email,
-)
+with sqlalchemy_stubbed():                     # the service imports without a database driver; the stub does not leak
+    from services.intake_notification_service import (  # noqa: E402
+        AttachmentResult,
+        IntakeStatus,
+        _attachment_label,
+        _candidate_subject,
+        build_candidate_email,
+        build_recruiter_inactive_email,
+        build_recruiter_unmatched_email,
+    )
 
 
 # ── IntakeStatus enum ─────────────────────────────────────────────────────────

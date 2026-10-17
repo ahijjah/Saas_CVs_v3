@@ -6,23 +6,20 @@ without a real database (mocked AsyncSession).
 """
 from __future__ import annotations
 
-import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Stub out sqlalchemy so the service can be imported without it installed
-_sql_mock = MagicMock()
-_sql_mock.text = lambda q: q  # text() just returns the string
-sys.modules.setdefault("sqlalchemy", _sql_mock)
+from _sqlalchemy_stub import sqlalchemy_stubbed  # noqa: E402
 
-from services.duplicate_detection import (  # noqa: E402
-    _normalise_cv_text,
-    _normalise_email,
-    _normalise_phone,
-    detect_possible_duplicate,
-    find_content_duplicate,
-)
+with sqlalchemy_stubbed():                     # the service imports without a database driver; the stub does not leak
+    from services.duplicate_detection import (  # noqa: E402
+        _normalise_cv_text,
+        _normalise_email,
+        _normalise_phone,
+        detect_possible_duplicate,
+        find_content_duplicate,
+    )
 
 
 # ── Normalisation tests ───────────────────────────────────────────────────────
