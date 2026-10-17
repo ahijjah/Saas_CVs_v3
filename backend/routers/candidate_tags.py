@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
 from database import get_db, set_rls_context
+from services.criteria_status import CRITERIA_BLOCKING_STATUSES
 
 app_router = APIRouter(prefix="/applications", tags=["candidates"])
 tag_router = APIRouter(prefix="/tags", tags=["candidates"])
@@ -282,9 +283,7 @@ async def reuse_candidate_to_job(
     # Verify source application exists and belongs to this tenant
     source = await db.execute(
         text("""
-            SELECT a.application_id, a.candidate_name, a.candidate_email,
-                   a.candidate_phone, a.source_job_id, a.source_page_url,
-                   a.external_id, a.cv_file_path
+            SELECT a.application_id, a.candidate_name, a.candidate_email, a.candidate_phone
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
             WHERE a.application_id = CAST(:app_id AS uuid)
@@ -296,17 +295,29 @@ async def reuse_candidate_to_job(
     if not src_app:
         raise HTTPException(status_code=404, detail="Source application not found")
 
-    # Verify target job exists and belongs to this tenant
+    # Verify target job exists and belongs to this tenant, and is active
     job_check = await db.execute(
         text("""
-            SELECT job_id FROM jobs
+            SELECT job_id, status FROM jobs
             WHERE job_id = CAST(:job_id AS uuid)
               AND tenant_id = CAST(:tid AS uuid)
         """),
         {"job_id": body.target_job_id, "tid": current_user.tenant_id},
     )
-    if not job_check.scalars().first():
+    target_job = job_check.mappings().first()
+    if not target_job:
         raise HTTPException(status_code=404, detail="Target job not found")
+    if target_job["status"] != "active":
+        raise HTTPException(status_code=409, detail="Target job is not active.")
+
+    # Same criteria gate as CV intake: the target job's analysis must be complete
+    criteria_row = await db.execute(
+        text("SELECT criteria_extraction_status FROM job_criteria WHERE job_id = CAST(:job_id AS uuid)"),
+        {"job_id": body.target_job_id},
+    )
+    criteria_status = criteria_row.scalar_one_or_none() or "pending"
+    if criteria_status in CRITERIA_BLOCKING_STATUSES:
+        raise HTTPException(status_code=409, detail="The target job's criteria analysis is not complete.")
 
     # Check if candidate already applied to this job
     existing = await db.execute(
@@ -325,25 +336,20 @@ async def reuse_candidate_to_job(
     result = await db.execute(
         text("""
             INSERT INTO applications (
-              job_id, candidate_name, candidate_email, candidate_phone,
-              source_job_id, source_page_url, external_id, cv_file_path,
-              workflow_status, is_talent_pool
+              job_id, tenant_id, candidate_name, candidate_email, candidate_phone,
+              submission_source, workflow_status, is_talent_pool
             ) VALUES (
-              CAST(:job_id AS uuid), :name, :email, :phone,
-              :source_job, :source_url, :ext_id, :cv_path,
-              'awaiting_review', FALSE
+              CAST(:job_id AS uuid), CAST(:tid AS uuid), :name, :email, :phone,
+              'candidate_reuse', 'awaiting_review', FALSE
             )
             RETURNING application_id
         """),
         {
             "job_id": body.target_job_id,
+            "tid": current_user.tenant_id,
             "name": src_app["candidate_name"],
             "email": src_app["candidate_email"],
             "phone": src_app["candidate_phone"],
-            "source_job": src_app["source_job_id"],
-            "source_url": src_app["source_page_url"],
-            "ext_id": src_app["external_id"],
-            "cv_path": src_app["cv_file_path"],
         },
     )
     new_app_id = result.scalar()

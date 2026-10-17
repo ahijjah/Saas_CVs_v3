@@ -2,26 +2,33 @@
 Celery task: extract AI scoring criteria for a job asynchronously.
 
 Flow:
-  1. Mark job_criteria row as 'processing'
+  1. Claim the row: pending -> processing (compare-and-set; a row that is not pending is skipped)
   2. Call OpenAI via extract_job_criteria()
   3. Flatten nested result to flat arrays for scoring pipeline
   4. Validate criteria quality (sufficient content or explicitly open/broad role)
-  5. Write analysis_json + flat arrays + weights to DB
+  5. Write analysis_json + flat arrays + weights to DB, guarded by this claim's token
      - 'completed' if quality check passes
-     - 'failed'    if all criteria arrays are empty and role is not open/broad
-  6. On max-retry failure: mark 'failed' with error message
+     - 'failed' with the fixed insufficient message otherwise
+  6. Celery retry: release the claim to pending first. Final exhaustion: 'failed' with the fixed worker message.
+
+Only legacy rows (requirements_schema_version IS NULL) are written here.
 
 Event-loop safety
 -----------------
 Same pattern as cv_score.py — each task invocation creates its own NullPool
-engine + sessionmaker (no shared pool, no cross-loop Future references), owns
-its own event loop, and uses an isolated NullPool engine in `_mark_failed`.
+engine + sessionmaker (no shared pool, no cross-loop Future references) and
+owns its own event loop. Every write runs through that session factory.
 """
 import asyncio
 import hashlib
 import json
 import logging
 
+from services.criteria_status import (
+    INSUFFICIENT_MESSAGE,
+    LEGACY_ONLY_PREDICATE,
+    WORKER_FAILED_MESSAGE,
+)
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -110,19 +117,6 @@ def _check_criteria_quality(analysis: dict, flat: dict) -> tuple[bool, bool, str
     return False, False, _EMPTY_DESCRIPTION_ERROR
 
 
-def _run_in_fresh_loop(coro):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        try:
-            loop.close()
-        except Exception:
-            pass
-        asyncio.set_event_loop(None)
-
-
 @celery_app.task(
     bind=True,
     max_retries=2,
@@ -145,26 +139,83 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    # `claim` holds the claim token of this attempt: the job_criteria.updated_at value its own claim wrote.
+    claim: dict = {}
     try:
-        loop.run_until_complete(_extract_async(job_id, description, TaskSession))
+        loop.run_until_complete(_extract_async(job_id, description, TaskSession, claim))
     except Exception as exc:
         logger.error("extract_criteria_task failed for job %s (attempt %d/%d): %s",
                      job_id, self.request.retries + 1, self.max_retries + 1, exc)
+        # Release the row to pending before the Celery retry, so the retried attempt can claim it. A row this attempt no longer
+        # owns releases to None, and the retry then finds nothing to claim.
+        if claim.get("token") is not None:
+            try:
+                claim["token"] = loop.run_until_complete(_release_claim(job_id, claim["token"], TaskSession))
+            except Exception as release_exc:
+                logger.error("[job:%s] Could not release the claim before retry: %s", job_id, release_exc)
         try:
             self.retry(exc=exc)
         except self.MaxRetriesExceededError:
-            _run_in_fresh_loop(_mark_failed(job_id, f"Max retries exceeded: {exc}"))
+            try:
+                loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession))
+            except Exception as mark_exc:
+                logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
     finally:
         try:
             if not loop.is_closed():
+                # dispose is a coroutine: it runs on the task's loop, before that loop closes
+                loop.run_until_complete(task_engine.dispose())
                 loop.close()
         except Exception:
             pass
         asyncio.set_event_loop(None)
-        task_engine.dispose()
 
 
-async def _extract_async(job_id: str, description: str, Session) -> None:
+async def _claim_pending(db, job_id: str):
+    """pending -> processing, one row, legacy only. Returns this claim's token (the row's new updated_at), or None when the row
+    is not pending, so a duplicate delivery or a stale attempt does no work."""
+    from sqlalchemy import text
+
+    result = await db.execute(
+        text(f"""
+            UPDATE job_criteria
+            SET criteria_extraction_status = 'processing'
+            WHERE job_id = :jid
+              AND criteria_extraction_status = 'pending'
+              AND {LEGACY_ONLY_PREDICATE}
+            RETURNING updated_at
+        """),
+        {"jid": job_id},
+    )
+    return result.scalar_one_or_none()
+
+
+async def _release_claim(job_id: str, token, Session):
+    """processing -> pending for the claim that holds `token`, so a Celery retry can claim the row. Returns the new token, or None
+    when this attempt no longer holds the row."""
+    from database import set_rls_context
+    from sqlalchemy import text
+
+    async with Session() as db:
+        await set_rls_context(db, "", "super_admin")
+        result = await db.execute(
+            text(f"""
+                UPDATE job_criteria
+                SET criteria_extraction_status = 'pending'
+                WHERE job_id = :jid
+                  AND criteria_extraction_status = 'processing'
+                  AND updated_at = :token
+                  AND {LEGACY_ONLY_PREDICATE}
+                RETURNING updated_at
+            """),
+            {"jid": job_id, "token": token},
+        )
+        released = result.scalar_one_or_none()
+        await db.commit()
+        return released
+
+
+async def _extract_async(job_id: str, description: str, Session, claim: dict) -> None:
     from database import set_rls_context
     from services.ai_service import extract_job_criteria, flatten_criteria_for_scoring, load_active_prompt
     from config import get_settings
@@ -175,15 +226,12 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
 
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
-        await db.execute(
-            text("""
-                UPDATE job_criteria
-                SET criteria_extraction_status = 'processing'
-                WHERE job_id = :jid
-            """),
-            {"jid": job_id},
-        )
+        token = await _claim_pending(db, job_id)
         await db.commit()
+        if token is None:
+            logger.info("[job:%s] Criteria extraction not started: the row is not pending for a legacy job.", job_id)
+            return
+        claim["token"] = token
 
         criteria_prompt = await load_active_prompt(db, "criteria_extraction")
 
@@ -223,7 +271,8 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
     )
     flat = flatten_criteria_for_scoring(analysis)
 
-    is_sufficient, is_open_broad, quality_error = _check_criteria_quality(analysis, flat)
+    is_sufficient, is_open_broad, _quality_reason = _check_criteria_quality(analysis, flat)
+    # The AI-supplied reason is never stored: the field gets one of the fixed messages only.
 
     if is_sufficient:
         final_status = "completed"
@@ -234,8 +283,8 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         log_suffix = "open/broad role — no specific criteria" if is_open_broad else "OK"
         logger.info("[job:%s] Criteria quality check passed (%s).", job_id, log_suffix)
     else:
-        final_status = "insufficient"
-        final_error = quality_error
+        final_status = "failed"
+        final_error = INSUFFICIENT_MESSAGE
         extracted_at_value = None
         desc_hash_value = _normalize_description_hash(description)
         failed_at_value = datetime.now(timezone.utc)
@@ -246,8 +295,8 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
 
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
-        await db.execute(
-            text("""
+        result = await db.execute(
+            text(f"""
                 UPDATE job_criteria SET
                     analysis_json              = CAST(:aj AS jsonb),
                     original_analysis_json     = COALESCE(original_analysis_json, CAST(:aj AS jsonb)),
@@ -273,6 +322,9 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                     criteria_last_failed_description_hash   = COALESCE(:desc_hash, criteria_last_failed_description_hash),
                     criteria_last_failed_at                 = COALESCE(:failed_at, criteria_last_failed_at)
                 WHERE job_id = :jid
+                  AND criteria_extraction_status = 'processing'
+                  AND updated_at = :token
+                  AND {LEGACY_ONLY_PREDICATE}
             """),
             {
                 "aj":                 json.dumps(analysis, ensure_ascii=False),
@@ -297,8 +349,14 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
                 "desc_hash":          desc_hash_value,
                 "failed_at":          failed_at_value,
                 "jid":                job_id,
+                "token":              claim["token"],
             },
         )
+        if result.rowcount != 1:
+            # The claim was lost (another attempt or a stale-row recovery changed the row): the result is discarded.
+            await db.rollback()
+            logger.warning("[job:%s] Criteria result discarded: this attempt no longer holds the claim.", job_id)
+            return
         await db.commit()
 
     if is_sufficient:
@@ -307,37 +365,28 @@ async def _extract_async(job_id: str, description: str, Session) -> None:
         logger.warning("[job:%s] Criteria extraction marked insufficient.", job_id)
 
 
-async def _mark_failed(job_id: str, error: str) -> None:
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-    from sqlalchemy.pool import NullPool
+async def _mark_failed(job_id: str, token, Session) -> None:
+    """Final worker failure: pending or processing -> failed with the fixed worker message, only for the claim that holds `token`.
+    A None token means this attempt holds no row, so nothing is written. The exception text is logged by the caller, never stored."""
+    from database import set_rls_context
     from sqlalchemy import text
-    from config import get_settings
 
-    cfg = get_settings()
-    fail_engine = create_async_engine(
-        cfg.database_url,
-        poolclass=NullPool,
-        connect_args={"server_settings": {"search_path": cfg.db_schema}},
-    )
-    Session = async_sessionmaker(fail_engine, class_=AsyncSession, expire_on_commit=False)
-    try:
-        async with Session() as db:
-            await db.execute(text(
-                "SELECT set_config('app.current_tenant_id', '', true), "
-                "set_config('app.current_role', 'super_admin', true)"
-            ))
-            await db.execute(
-                text("""
-                    UPDATE job_criteria SET
-                        criteria_extraction_status = 'failed',
-                        criteria_extraction_error  = :err
-                    WHERE job_id = :jid
-                """),
-                {"err": error[:2000], "jid": job_id},
-            )
-            await db.commit()
-        logger.error("[job:%s] Criteria extraction permanently failed: %s", job_id, error)
-    except Exception as mark_exc:
-        logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
-    finally:
-        await fail_engine.dispose()
+    if token is None:
+        return
+    async with Session() as db:
+        await set_rls_context(db, "", "super_admin")
+        result = await db.execute(
+            text(f"""
+                UPDATE job_criteria SET
+                    criteria_extraction_status = 'failed',
+                    criteria_extraction_error  = :err
+                WHERE job_id = :jid
+                  AND criteria_extraction_status IN ('pending', 'processing')
+                  AND updated_at = :token
+                  AND {LEGACY_ONLY_PREDICATE}
+            """),
+            {"err": WORKER_FAILED_MESSAGE, "jid": job_id, "token": token},
+        )
+        await db.commit()
+    if result.rowcount == 1:
+        logger.error("[job:%s] Criteria extraction permanently failed.", job_id)

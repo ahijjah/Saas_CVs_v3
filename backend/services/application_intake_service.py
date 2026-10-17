@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import set_rls_context
 from services.subscription_service import can_process_cv, increment_monthly_usage
+from services.criteria_status import CRITERIA_BLOCKING_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -534,7 +535,7 @@ async def process_cv_intake(
         )
 
     # ── Step 4b: criteria analysis gate ──────────────────────────────────────
-    _INTAKE_BLOCKING_STATUSES = frozenset({"pending", "processing", "insufficient", "blocked"})
+    _INTAKE_BLOCKING_STATUSES = CRITERIA_BLOCKING_STATUSES
     criteria_status_row = await db.execute(
         text("SELECT criteria_extraction_status FROM job_criteria WHERE job_id = CAST(:jid AS uuid)"),
         {"jid": job_id},
