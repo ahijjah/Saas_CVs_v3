@@ -364,9 +364,12 @@ def test_unsorted_stored_ids_normalise_the_same_way_through_planning():
 
 # ---- reachability: the service is imported by nothing but its own tests ----
 
-def test_no_module_outside_the_tests_imports_the_editing_service():
-    """Routers, workers, auth, startup, configuration and every other service module must not import the editing service.
-    It has no route yet, and the first route is a separate, reviewed change."""
+APPROVED_EDIT_SERVICE_IMPORTERS = {"services/requirements_edit.py", "routers/job_requirements.py"}
+
+
+def test_only_the_approved_modules_import_the_editing_service():
+    """Routers, workers, auth, startup, configuration and every other module must not import the editing service. The only
+    approved importers are the service itself and the requirements router, which is the sole route to it."""
     import pathlib
     import re
 
@@ -377,8 +380,7 @@ def test_no_module_outside_the_tests_imports_the_editing_service():
         rel = path.relative_to(backend).as_posix()
         if rel.startswith(("tests/", ".", "node_modules")) or "__pycache__" in rel:
             continue
-        if rel == "services/requirements_edit.py":
-            continue
-        if pattern.search(path.read_text(encoding="utf-8", errors="ignore")):
+        if pattern.search(path.read_text(encoding="utf-8", errors="ignore")) and rel not in APPROVED_EDIT_SERVICE_IMPORTERS:
             offenders.append(rel)
     assert offenders == [], offenders
+    assert pattern.search((backend / "routers/job_requirements.py").read_text(encoding="utf-8")), "the router is the approved route"
