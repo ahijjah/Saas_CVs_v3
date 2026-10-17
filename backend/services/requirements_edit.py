@@ -26,10 +26,11 @@ from __future__ import annotations
 import copy
 import json
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Union
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from services.requirements_v2.contract import (
     CATEGORIES, IMPORTANCES, ITEM_ID_RE, ORIGIN_RECRUITER_ADDED, Issue, collect_item_ids, is_int,
@@ -37,9 +38,14 @@ from services.requirements_v2.contract import (
 from services.requirements_v2.editing import (
     add_item, remove_item, set_category_weight, set_importance, set_item_weight, set_structure, set_text,
 )
-from services.requirements_v2.readiness import carry_server_owned
-from services.requirements_v2.structure import record_structure_edits
-from services.requirements_v2.structural_review import READINESS_INVALID, structural_status
+from services.requirements_v2.acknowledgment import classification_status, get_review
+from services.requirements_v2.readiness import (
+    basis_hash, carry_server_owned, compute_readiness, is_preferred_only,
+)
+from services.requirements_v2.structural_review import (
+    READINESS_INVALID, STATUS_OPEN, STRUCTURAL_KEY, structural_status,
+)
+from services.requirements_v2.structure import record_structure_edits, structure_status
 from services.requirements_v2.validation import validate_final, validate_structure
 
 if TYPE_CHECKING:
@@ -99,6 +105,15 @@ class StoredDocumentInvalid(RequirementsEditError):
 class RevisionConflict(RequirementsEditError):
     code, status = "revision_conflict", 409
 
+    def __init__(self, message: str, *, current_revision: int):
+        super().__init__(message)
+        self.current_revision = current_revision
+
+
+class AuditWriteError(RequirementsEditError):
+    """The audit event could not be recorded, so the save must not be committed. Raised from the database error."""
+    code, status = "audit_failed", 500
+
 
 class InvalidRequirements(RequirementsEditError):
     code, status = "invalid_requirements", 422
@@ -116,6 +131,21 @@ class EditingUser:
     user_id: str
     tenant_id: str
     role: str
+    email: str | None = None
+
+
+@dataclass(frozen=True)
+class SaveAudit:
+    """Safe metadata for one accepted save: ids, counts, kinds and states only. No text of any kind."""
+    operation_counts: dict[str, int]
+    touched_item_ids: tuple[str, ...]              # existing items whose wording, importance, weight or structure changed
+    generated_item_ids: tuple[str, ...]            # ids created by add_item
+    newly_retired_item_ids: tuple[str, ...]        # ids removed by this save
+    structure_edits: tuple[tuple[str, str], ...]   # (item id, "corrected" | "entered")
+    readiness_before: str
+    readiness_after: str
+    revision_before: int | None = None
+    revision_after: int | None = None
 
 
 @dataclass(frozen=True)
@@ -123,6 +153,7 @@ class SaveResult:
     revision: int
     open_structural_finding_ids: tuple[str, ...]
     recorded_structure_edits: tuple[tuple[str, str], ...]
+    audit: SaveAudit
 
 
 @dataclass(frozen=True)
@@ -132,6 +163,7 @@ class PlannedSave:
     retired_item_ids: list[str]
     open_structural_finding_ids: tuple[str, ...]
     recorded_structure_edits: tuple[tuple[str, str], ...]
+    audit: SaveAudit
 
 
 # ---- operations ----
@@ -202,6 +234,11 @@ OPERATION_FIELDS: dict[str, frozenset[str]] = {
     "remove_item": frozenset({"item_id"}),
 }
 EXPERIENCE_FIELDS = frozenset({"subject", "min_years"})
+OPERATION_NAMES: dict[type, str] = {
+    SetText: "set_text", SetImportance: "set_importance", SetItemWeight: "set_item_weight",
+    SetAlternatives: "set_alternatives", SetExperience: "set_experience", SetCategoryWeight: "set_category_weight",
+    AddItem: "add_item", RemoveItem: "remove_item",
+}
 
 
 # ---- who may edit ----
@@ -346,6 +383,7 @@ def plan_operations(stored: dict, original: dict | None, retired_before: object,
     if issues:
         raise StoredDocumentInvalid("The stored requirements document is malformed.", issues=issues)
     retired = validated_retired_ids(retired_before)
+    original = _baseline(original)
 
     edited = copy.deepcopy(stored)
     for pos, op in enumerate(ops):
@@ -370,6 +408,41 @@ def plan_operations(stored: dict, original: dict | None, retired_before: object,
         retired_item_ids=plan_retired_ids(stored, document, retired),
         open_structural_finding_ids=structural.open_ids,
         recorded_structure_edits=recorded,
+        audit=_save_audit(stored, document, ops, recorded, original, jd_text),
+    )
+
+
+def _baseline(original: object) -> dict | None:
+    """The original AI analysis, or None when it is absent or malformed. None means fail closed for the structure review."""
+    if isinstance(original, dict) and "categories" in original and not validate_structure(original):
+        return original
+    return None
+
+
+def _items_by_id(doc: dict) -> dict[str, dict]:
+    return {i["id"]: i for c in CATEGORIES for i in doc["categories"][c]["items"]}
+
+
+def _item_content(item: dict) -> tuple:
+    """What counts as a change to an existing item. Provenance and source wording never change through an operation."""
+    return (item["text"], item["importance"], item["weight"], item["alternatives"], item["experience"])
+
+
+def _save_audit(stored: dict, document: dict, ops: tuple[Operation, ...], recorded: tuple[tuple[str, str], ...],
+                original: dict | None, jd_text: str | None) -> SaveAudit:
+    before, after = _items_by_id(stored), _items_by_id(document)
+    counts = {name: 0 for name in OPERATION_NAMES.values()}
+    for op in ops:
+        counts[OPERATION_NAMES[type(op)]] += 1
+    touched = sorted(i for i in before.keys() & after.keys() if _item_content(before[i]) != _item_content(after[i]))
+    return SaveAudit(
+        operation_counts=counts,
+        touched_item_ids=tuple(touched),
+        generated_item_ids=tuple(sorted(after.keys() - before.keys())),
+        newly_retired_item_ids=tuple(sorted(before.keys() - after.keys())),
+        structure_edits=tuple(sorted(recorded)),
+        readiness_before=compute_readiness(stored, original=original, jd_text=jd_text).state,
+        readiness_after=compute_readiness(document, original=original, jd_text=jd_text).state,
     )
 
 
@@ -470,7 +543,8 @@ async def save_operations(db: AsyncSession, user: EditingUser, job_id: str, *, c
     if stored is None:
         raise NoRequirementsDocument("This job has no requirements document.")
     if revision != client_revision:
-        raise RevisionConflict("The requirements changed since you loaded them. Reload and apply your edits again.")
+        raise RevisionConflict("The requirements changed since you loaded them. Reload and apply your edits again.",
+                               current_revision=revision)
 
     original_analysis = original_json if isinstance(original_json, dict) else {}
     planned = plan_operations(stored, original_analysis.get(REQUIREMENTS_KEY), retired, ops,
@@ -487,5 +561,295 @@ async def save_operations(db: AsyncSession, user: EditingUser, job_id: str, *, c
     })).first()
     if written is None:
         raise RequirementsEditError("The save could not be written.", code="write_failed")
-    return SaveResult(revision=written[0], open_structural_finding_ids=planned.open_structural_finding_ids,
-                      recorded_structure_edits=planned.recorded_structure_edits)
+    new_revision = written[0]
+    return SaveResult(
+        revision=new_revision,
+        open_structural_finding_ids=planned.open_structural_finding_ids,
+        recorded_structure_edits=planned.recorded_structure_edits,
+        audit=replace(planned.audit, revision_before=client_revision, revision_after=new_revision),
+    )
+
+
+# ---- read-only edit view (PR A: unexposed) ----
+# The only data an editor may read back. Every value is either a whitelisted stored field, a derived status, a safe id or
+# a fixed server message. Stored free-form messages, evidence, reviewer identities, hashes, retired ids and unknown keys are
+# never returned.
+
+NEUTRAL_MESSAGE = "This requirements document needs review before it can be used."
+ACKNOWLEDGMENT_REQUIRED = True            # the admin policy is not wired on main yet; the fail-closed default applies
+
+READINESS_MESSAGES: dict[str, str] = {
+    "no_items": "There are no requirements. Add at least one before proceeding.",
+    "classification_warning_unresolved": "A Preferred classification needs acknowledgment.",
+    "structure_review_pending": "This item's wording changed, or its structure was never confirmed.",
+    "structural_review_open": "A structural finding needs a reviewer decision.",
+    "structural_review_invalid": "The structural review is invalid and must be corrected.",
+    "preferred_only_unconfirmed": "Only preferred items exist, so explicit confirmation is required before proceeding.",
+    "confirmation_stale": "The items changed after the scoring confirmation was given.",
+    "confirmation_not_applicable": "A scoring confirmation exists but the document is not preferred-only.",
+    "category_weights_total": "Category weights must total 100% when there are required items.",
+    "required_weights_total": "Required item weights in a category must total 100%.",
+    "required_weight_invalid": "A required item needs a whole-percent weight from 1 to 100.",
+    "category_weight_not_positive": "A category with required items needs a weight of at least 1%.",
+    "category_weight_without_required_items": "A category without required items must have weight 0.",
+    "too_many_required_items": "A category has more required items than the maximum allowed.",
+    "preferred_item_has_weight": "Preferred items carry no weight.",
+}
+
+STRUCTURAL_MESSAGES: dict[str, str] = {
+    "alternatives_split_across_items": "These items may be one requirement with alternatives.",
+    "independent_items_merged": "This item may combine independent requirements.",
+    "importance_conflict_unresolved": "The importance of this requirement is unclear in the job description.",
+}
+
+CONFIRMATION_NOT_REQUIRED = "not_required"
+CONFIRMATION_REQUIRED = "required"
+CONFIRMATION_CONFIRMED = "confirmed"
+CONFIRMATION_STALE = "stale"
+STRUCTURAL_NONE = "none"
+STRUCTURAL_VALID = "valid"
+STRUCTURAL_INVALID = "invalid"
+ITEM_FIELDS = ("id", "text", "importance", "weight", "origin", "source_text", "alternatives")
+
+
+def readiness_message(code: str) -> str:
+    """The fixed server message for a readiness reason. An unknown code gets the neutral fallback, never stored text."""
+    return READINESS_MESSAGES.get(code, NEUTRAL_MESSAGE)
+
+
+@dataclass(frozen=True)
+class ReasonView:
+    code: str
+    message: str
+    category: str | None
+    item_id: str | None
+
+
+@dataclass(frozen=True)
+class ReadinessView:
+    state: str
+    can_proceed: bool
+    scoring_mode: str | None
+    reasons: tuple[ReasonView, ...]
+
+
+@dataclass(frozen=True)
+class ConfirmationView:
+    status: str
+    confirmed_at: str | None
+
+
+@dataclass(frozen=True)
+class WarningView:
+    id: str
+    code: str
+    item_id: str
+    category: str
+    acknowledged: bool
+
+
+@dataclass(frozen=True)
+class ClassificationView:
+    acknowledgment_required: bool
+    open_warnings: tuple[WarningView, ...]
+
+
+@dataclass(frozen=True)
+class StructureView:
+    pending_item_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FindingView:
+    id: str
+    code: str
+    item_ids: tuple[str, ...]
+    source_text: str
+    message: str
+
+
+@dataclass(frozen=True)
+class StructuralView:
+    status: str
+    open_findings: tuple[FindingView, ...]
+
+
+@dataclass(frozen=True)
+class EditView:
+    job_id: str
+    requirements_revision: int
+    schema_version: int
+    document: dict
+    readiness: ReadinessView
+    confirmation: ConfirmationView
+    classification: ClassificationView
+    structure: StructureView
+    structural: StructuralView
+
+
+def _project_document(doc: dict) -> dict:
+    """Only schema_version, categories, and per item the whitelisted fields. Experience keeps subject and min_years only."""
+    categories = {}
+    for c in CATEGORIES:
+        items = []
+        for item in doc["categories"][c]["items"]:
+            projected = {k: copy.deepcopy(item[k]) for k in ITEM_FIELDS}
+            exp = item.get("experience")
+            projected["experience"] = None if exp is None else {"subject": exp["subject"], "min_years": exp["min_years"]}
+            items.append(projected)
+        categories[c] = {"weight": doc["categories"][c]["weight"], "items": items}
+    return {"schema_version": doc["schema_version"], "categories": categories}
+
+
+def _readiness_view(doc: dict, original: dict | None, jd_text: str | None) -> ReadinessView:
+    readiness = compute_readiness(doc, require_classification_acknowledgment=ACKNOWLEDGMENT_REQUIRED,
+                                  original=original, jd_text=jd_text)
+    return ReadinessView(
+        state=readiness.state,
+        can_proceed=readiness.can_proceed,
+        scoring_mode=readiness.scoring_mode,
+        reasons=tuple(ReasonView(code=i.code, message=readiness_message(i.code), category=i.category, item_id=i.item_id)
+                      for i in readiness.reasons),
+    )
+
+
+def _confirmation_view(doc: dict) -> ConfirmationView:
+    if not is_preferred_only(doc):                           # an empty document is not preferred-only
+        return ConfirmationView(CONFIRMATION_NOT_REQUIRED, None)
+    stored = doc.get("scoring_confirmation")
+    if stored is None:
+        return ConfirmationView(CONFIRMATION_REQUIRED, None)
+    if stored.get("basis_hash") == basis_hash(doc):
+        return ConfirmationView(CONFIRMATION_CONFIRMED, stored["confirmed_at"])
+    return ConfirmationView(CONFIRMATION_STALE, None)
+
+
+def _classification_view(doc: dict) -> ClassificationView:
+    status = classification_status(doc)
+    by_id = {w["id"]: w for w in (get_review(doc) or {}).get("warnings", [])}
+    warnings = tuple(
+        WarningView(id=w["id"], code=w["code"], item_id=w["item_id"], category=w["category"],
+                    acknowledged=w["id"] in status.acknowledged)
+        for w in (by_id[wid] for wid in status.open)
+    )
+    return ClassificationView(acknowledgment_required=ACKNOWLEDGMENT_REQUIRED, open_warnings=warnings)
+
+
+def _structure_view(doc: dict, original: dict | None) -> StructureView:
+    return StructureView(pending_item_ids=tuple(structure_status(doc, original).needs_review))
+
+
+def _structural_view(doc: dict, jd_text: str | None) -> StructuralView:
+    if STRUCTURAL_KEY not in doc:
+        return StructuralView(STRUCTURAL_NONE, ())
+    status = structural_status(doc, jd_text)
+    if any(i.code == READINESS_INVALID for i in status.issues):
+        return StructuralView(STRUCTURAL_INVALID, ())
+    findings = tuple(
+        FindingView(id=f["id"], code=f["code"], item_ids=tuple(f["item_ids"]), source_text=f["source_text"],
+                    message=STRUCTURAL_MESSAGES.get(f["code"], NEUTRAL_MESSAGE))
+        for f in doc[STRUCTURAL_KEY]["findings"] if f["status"] == STATUS_OPEN
+    )
+    return StructuralView(STRUCTURAL_VALID, findings)
+
+
+def build_edit_view(stored: dict, *, job_id: str, revision: int, schema_version: int, original: dict | None,
+                    jd_text: str | None) -> EditView:
+    """Pure projection of a stored document that has already passed validate_structure. Reads only; mutates nothing.
+    `original` is the baseline for the structure review (None means fail closed)."""
+    return EditView(
+        job_id=job_id,
+        requirements_revision=revision,
+        schema_version=schema_version,
+        document=_project_document(stored),
+        readiness=_readiness_view(stored, original, jd_text),
+        confirmation=_confirmation_view(stored),
+        classification=_classification_view(stored),
+        structure=_structure_view(stored, original),
+        structural=_structural_view(stored, jd_text),
+    )
+
+
+_LOAD_FOR_EDIT = text(
+    "SELECT j.description, c.job_id AS criteria_job_id, c.analysis_json, c.original_analysis_json,"
+    " c.requirements_schema_version, c.requirements_revision"
+    " FROM jobs j LEFT JOIN job_criteria c ON c.job_id = j.job_id"
+    " WHERE j.job_id = :jid AND j.tenant_id = :tid")
+
+
+def _check_ids(job_id: str, tenant_id: str) -> None:
+    try:
+        uuid.UUID(str(job_id))
+        uuid.UUID(str(tenant_id))
+    except (TypeError, ValueError) as exc:
+        raise JobNotFound("Job not found.") from exc
+
+
+async def load_for_edit(db: AsyncSession, user: EditingUser, job_id: str) -> EditView:
+    """Read a v2 document for editing. Caller-owned transaction; one statement, no row lock. A missing job and another
+    tenant's job are indistinguishable (both return no row)."""
+    check_editor(user.role)
+    _check_ids(job_id, user.tenant_id)
+    await db.execute(_SET_CONTEXT, {"tid": user.tenant_id, "role": user.role})
+    row = (await db.execute(_LOAD_FOR_EDIT, {"jid": job_id, "tid": user.tenant_id})).first()
+    if row is None:
+        raise JobNotFound("Job not found.")
+    description, criteria_job_id, analysis_json, original_json, schema_version, revision = row
+    if criteria_job_id is None:
+        raise NoRequirementsDocument("This job has no criteria record.")
+    if schema_version != REQUIREMENTS_SCHEMA_VERSION:
+        raise NotRequirementsV2("This job does not use the requirements-v2 document.")
+    analysis = analysis_json if isinstance(analysis_json, dict) else {}
+    stored = analysis.get(REQUIREMENTS_KEY)
+    if stored is None:
+        raise NoRequirementsDocument("This job has no requirements document.")
+    issues = validate_structure(stored)
+    if issues:
+        raise StoredDocumentInvalid("The stored requirements document is malformed.", issues=issues)
+    original_analysis = original_json if isinstance(original_json, dict) else {}
+    return build_edit_view(stored, job_id=job_id, revision=revision, schema_version=schema_version,
+                           original=_baseline(original_analysis.get(REQUIREMENTS_KEY)), jd_text=description)
+
+
+# ---- strict audit writer ----
+
+AUDIT_ACTION_SAVE = "requirements_v2_saved"
+ALLOWED_AUDIT_ACTIONS = frozenset({AUDIT_ACTION_SAVE})
+_AUDIT_INSERT = text(
+    "INSERT INTO audit_logs (tenant_id, user_id, user_email, action, resource_type, resource_id, details)"
+    " VALUES (:tid, :uid, :email, :action, 'job', :jid, CAST(:details AS jsonb))")
+
+
+def audit_details(audit: SaveAudit) -> dict:
+    """The audit payload, built field by field from the typed metadata. No free text can reach it."""
+    return {
+        "operation_counts": dict(audit.operation_counts),
+        "touched_item_ids": list(audit.touched_item_ids),
+        "generated_item_ids": list(audit.generated_item_ids),
+        "newly_retired_item_ids": list(audit.newly_retired_item_ids),
+        "structure_edits": [{"item_id": item_id, "kind": kind} for item_id, kind in audit.structure_edits],
+        "revision_before": audit.revision_before,
+        "revision_after": audit.revision_after,
+        "readiness": {"before": audit.readiness_before, "after": audit.readiness_after},
+    }
+
+
+async def write_audit_event(db: AsyncSession, user: EditingUser, job_id: str, *, action: str, details: SaveAudit) -> None:
+    """Insert one audit row in the caller's transaction. Never commits. A database failure is raised as AuditWriteError,
+    chained to the original exception, and nothing is swallowed. The caller must roll back on any exception."""
+    if action not in ALLOWED_AUDIT_ACTIONS:
+        raise ValueError(f"unknown audit action {action!r}")
+    if not isinstance(details, SaveAudit):
+        raise TypeError("details must be SaveAudit")
+    params = {
+        "tid": user.tenant_id,
+        "uid": user.user_id,
+        "email": user.email,
+        "action": action,
+        "jid": job_id,
+        "details": json.dumps(audit_details(details), ensure_ascii=False),
+    }
+    try:
+        await db.execute(_AUDIT_INSERT, params)
+    except SQLAlchemyError as exc:
+        raise AuditWriteError("The audit event could not be recorded.") from exc
