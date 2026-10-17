@@ -54,7 +54,7 @@ from services.requirements_v2.contract import (
     NEEDS_STRUCTURAL_REVIEW, NEEDS_STRUCTURE_REVIEW, READY, SCORING_NONE, SCORING_WEIGHTED, Issue, count_items,
 )
 from services.requirements_v2.structure import carry_structure_review, find_text_item, structure_status
-from services.requirements_v2.structural_review import structural_status
+from services.requirements_v2.structural_review import carry_structural_review, structural_status
 from services.requirements_v2.validation import validate_final
 
 
@@ -178,6 +178,8 @@ def carry_confirmation(stored: dict | None, incoming: dict) -> dict:
 
 
 def carry_server_owned(stored: dict | None, incoming: dict) -> dict:
-    """carry_confirmation + carry_classification_review + carry_structure_review: the single call an API save should make to rebuild all
-    server-owned state from the TRUSTED stored document. Everything the client sent for these keys is discarded."""
-    return carry_structure_review(stored, carry_classification_review(stored, carry_confirmation(stored, incoming)))
+    """carry_confirmation + carry_classification_review + carry_structure_review + carry_structural_review: the single call an API
+    save should make to rebuild all server-owned state from the TRUSTED stored document. Everything the client sent for these keys
+    is discarded. The structural block is carried last, on its own key, so the order of the earlier carries is unchanged."""
+    out = carry_structure_review(stored, carry_classification_review(stored, carry_confirmation(stored, incoming)))
+    return carry_structural_review(stored, out)
