@@ -1,0 +1,17 @@
+{
+ "schema_version": 1,
+ "jd_sha256": "945b2154c3f26ae216d53eb9dfdd25fce6f6e7f57fd0bc4778404c474d8323c2",
+ "expectations": [
+  {
+   "id": "B12_ar_injection:L6",
+   "kind": "independent_items",
+   "source_text": "معرفة بـ CSS وHTML",
+   "tokens": [
+    "CSS",
+    "HTML"
+   ],
+   "source_start": 103,
+   "source_end": 121
+  }
+ ]
+}

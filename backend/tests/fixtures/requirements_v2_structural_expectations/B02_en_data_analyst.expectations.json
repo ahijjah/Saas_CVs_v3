@@ -1,0 +1,17 @@
+{
+ "schema_version": 1,
+ "jd_sha256": "964ec821ef2c5e5c2abd76014934e31bc69b1d6391ceebb15e3986944a1a9df8",
+ "expectations": [
+  {
+   "id": "B02_en_data_analyst:L6",
+   "kind": "alternatives_together",
+   "source_text": "Proficiency in Python or R",
+   "tokens": [
+    "Python",
+    "R"
+   ],
+   "source_start": 142,
+   "source_end": 168
+  }
+ ]
+}
