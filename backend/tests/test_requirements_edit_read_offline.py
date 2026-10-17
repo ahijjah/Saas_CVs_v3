@@ -6,6 +6,8 @@ import copy
 import dataclasses
 import json
 
+import pytest
+
 from services import requirements_edit as E
 from services.requirements_v2 import contract as C
 from services.requirements_v2.acknowledgment import (
@@ -180,12 +182,54 @@ def test_a_confirmation_that_no_longer_matches_is_stale():
     assert _view(changed).confirmation == E.ConfirmationView(E.CONFIRMATION_STALE, None)
 
 
-def test_a_stored_confirmation_on_a_document_that_is_not_preferred_only_is_not_required():
+def test_a_stored_confirmation_on_a_document_that_is_not_preferred_only_is_stale_and_readiness_agrees():
     doc = _preferred_only()
     confirmed = confirm_no_numeric_score(doc, user_id="u", confirmed_at=STAMP, original=copy.deepcopy(doc), jd_text=JD)
     confirmed["categories"]["skills"]["items"].append(_item("req_py", "Python", C.IMPORTANCE_REQUIRED, 100))
     confirmed["categories"]["skills"]["weight"] = 100
-    assert _view(confirmed).confirmation.status == E.CONFIRMATION_NOT_REQUIRED
+    view = _view(confirmed)
+    assert view.confirmation == E.ConfirmationView(E.CONFIRMATION_STALE, None)
+    assert view.readiness.state == C.NEEDS_REVIEW
+    assert "confirmation_not_applicable" in [r.code for r in view.readiness.reasons]
+
+
+@pytest.mark.parametrize("build, expected_status, expected_at", [
+    ("empty", E.CONFIRMATION_NOT_REQUIRED, None),
+    ("required", E.CONFIRMATION_NOT_REQUIRED, None),
+    ("preferred", E.CONFIRMATION_REQUIRED, None),
+    ("preferred_confirmed", E.CONFIRMATION_CONFIRMED, STAMP),
+    ("preferred_confirmed_then_changed", E.CONFIRMATION_STALE, None),
+    ("required_with_stored_confirmation", E.CONFIRMATION_STALE, None),
+    ("empty_with_stored_confirmation", E.CONFIRMATION_STALE, None),
+])
+def test_the_confirmation_status_matrix(build, expected_status, expected_at):
+    """No stored confirmation: preferred-only needs one, everything else does not. With a stored confirmation: confirmed only
+    while preferred-only and the basis still matches; any other stored confirmation is stale, and confirmed_at is null."""
+    preferred = _preferred_only()
+    if build == "empty":
+        doc = C.empty_requirements()
+    elif build == "required":
+        doc = _doc()
+    elif build == "preferred":
+        doc = preferred
+    elif build == "preferred_confirmed":
+        doc = confirm_no_numeric_score(preferred, user_id="u", confirmed_at=STAMP,
+                                       original=copy.deepcopy(preferred), jd_text=JD)
+    elif build == "preferred_confirmed_then_changed":
+        doc = confirm_no_numeric_score(preferred, user_id="u", confirmed_at=STAMP,
+                                       original=copy.deepcopy(preferred), jd_text=JD)
+        doc["categories"]["skills"]["items"][0]["text"] = "SQL and PostgreSQL"
+    elif build == "required_with_stored_confirmation":
+        doc = copy.deepcopy(_doc())
+        doc["scoring_confirmation"] = copy.deepcopy(confirm_no_numeric_score(
+            preferred, user_id="u", confirmed_at=STAMP, original=copy.deepcopy(preferred), jd_text=JD)["scoring_confirmation"])
+    else:  # empty_with_stored_confirmation
+        doc = C.empty_requirements()
+        doc["scoring_confirmation"] = copy.deepcopy(confirm_no_numeric_score(
+            preferred, user_id="u", confirmed_at=STAMP, original=copy.deepcopy(preferred), jd_text=JD)["scoring_confirmation"])
+    view = _view(doc)
+    assert view.confirmation == E.ConfirmationView(expected_status, expected_at)
+    assert "user_id" not in _serialized(view) and "basis_hash" not in _serialized(view)
 
 
 # ---- structural review ----

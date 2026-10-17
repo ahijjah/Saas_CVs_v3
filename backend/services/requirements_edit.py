@@ -714,14 +714,17 @@ def _readiness_view(doc: dict, original: dict | None, jd_text: str | None) -> Re
 
 
 def _confirmation_view(doc: dict) -> ConfirmationView:
-    if not is_preferred_only(doc):                           # an empty document is not preferred-only
-        return ConfirmationView(CONFIRMATION_NOT_REQUIRED, None)
+    """A stored confirmation is read first. It is confirmed only while the document is preferred-only and its basis hash
+    still matches; any other stored confirmation is stale, which agrees with readiness (confirmation_not_applicable or
+    confirmation_stale). Without a stored confirmation: preferred-only needs one, and every other document needs none."""
     stored = doc.get("scoring_confirmation")
-    if stored is None:
+    if stored is not None:
+        if is_preferred_only(doc) and stored.get("basis_hash") == basis_hash(doc):
+            return ConfirmationView(CONFIRMATION_CONFIRMED, stored["confirmed_at"])
+        return ConfirmationView(CONFIRMATION_STALE, None)
+    if is_preferred_only(doc):
         return ConfirmationView(CONFIRMATION_REQUIRED, None)
-    if stored.get("basis_hash") == basis_hash(doc):
-        return ConfirmationView(CONFIRMATION_CONFIRMED, stored["confirmed_at"])
-    return ConfirmationView(CONFIRMATION_STALE, None)
+    return ConfirmationView(CONFIRMATION_NOT_REQUIRED, None)
 
 
 def _classification_view(doc: dict) -> ClassificationView:
