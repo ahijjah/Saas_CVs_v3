@@ -622,7 +622,8 @@ async def get_job_details(
                    weight_skills, weight_experience, weight_education,
                    weight_certifications, weight_soft_skills,
                    weight_domain_knowledge, weight_other,
-                   ai_model, ai_generated_at, last_edited_at, last_edited_by
+                   ai_model, ai_generated_at, last_edited_at, last_edited_by,
+                   requirements_schema_version
             FROM job_criteria WHERE job_id = :jid
         """),
         {"jid": job_id},
@@ -724,6 +725,7 @@ async def get_job_details(
             "max_applications":               job["max_applications"],
             "auto_close_when_limit_reached":  job["auto_close_when_limit_reached"],
             "criteria_extraction_status":     extraction_status,
+            "requirements_schema_version":    criteria["requirements_schema_version"] if criteria else None,
             "criteria_extraction_error":      extraction_error,
             "criteria_extraction_retry_count": retry_count,
             "criteria_extraction_max_retries": max_retries,
