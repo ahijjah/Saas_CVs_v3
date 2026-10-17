@@ -33,7 +33,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from services.requirements_v2.contract import (
-    CATEGORIES, IMPORTANCES, ITEM_ID_RE, ORIGIN_RECRUITER_ADDED, Issue, collect_item_ids, is_int,
+    CATEGORIES, IMPORTANCES, ITEM_ID_RE, ORIGIN_RECRUITER_ADDED, WEIGHT_COLUMN, Issue, collect_item_ids, is_int,
 )
 from services.requirements_v2.editing import (
     add_item, remove_item, set_category_weight, set_importance, set_item_weight, set_structure, set_text,
@@ -57,17 +57,6 @@ REQUIREMENTS_KEY = "requirements"
 MAX_OPERATIONS = 100
 REUSED_RETIRED_ID = "retired_item_id_reused"
 UNKNOWN_ITEM_ID = "unknown_item_id"
-
-WEIGHT_COLUMN = {
-    "skills": "weight_skills",
-    "experience": "weight_experience",
-    "education": "weight_education",
-    "certifications": "weight_certifications",
-    "soft_skills": "weight_soft_skills",
-    "domain_knowledge": "weight_domain_knowledge",
-    "other_requirements": "weight_other",
-}
-
 
 # ---- errors ----
 

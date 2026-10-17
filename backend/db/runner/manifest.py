@@ -116,4 +116,5 @@ MANIFEST: tuple[Entry, ...] = (
     Entry("092_repair_legacy_new_workflow_status.sql"),
     Entry("093_requirements_v2_storage_schema.sql"),
     Entry("094_candidate_reuse_submission_source.sql"),
+    Entry("098_application_scores_requirements_revision.sql"),
 )

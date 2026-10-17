@@ -176,6 +176,7 @@ export interface Job {
   job_client: string;
   job_status: 'Active' | 'Closed' | 'Draft';
   criteria_extraction_status?: string;
+  requirements_schema_version?: number | null;
   tenant_name?: string;
   job_type?: string;
   location?: string;

@@ -35,8 +35,8 @@ package treats its inputs as read-only and returns new objects.
       "experience": {"subject": str | None, "min_years": int | None} | None   # experience category only
     }
 
-NOT WIRED into any production path (extraction, API, UI, scoring, intake). Importing this package has no side
-effects and never touches the database or a model.
+Used by the extraction worker (workers/requirements_v2_worker.py), the editing service and its router, and the scoring path.
+The package itself has no side effects and never touches the database or a model.
 """
 from __future__ import annotations
 
@@ -52,6 +52,17 @@ CATEGORIES: tuple[str, ...] = (
     "skills", "experience", "education", "certifications",
     "soft_skills", "domain_knowledge", "other_requirements",
 )
+
+# The stored weight column of each category (the flat columns on job_criteria mirror the document's category weights).
+WEIGHT_COLUMN = {
+    "skills": "weight_skills",
+    "experience": "weight_experience",
+    "education": "weight_education",
+    "certifications": "weight_certifications",
+    "soft_skills": "weight_soft_skills",
+    "domain_knowledge": "weight_domain_knowledge",
+    "other_requirements": "weight_other",
+}
 
 IMPORTANCE_REQUIRED = "required"
 IMPORTANCE_PREFERRED = "preferred"
