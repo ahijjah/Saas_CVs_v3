@@ -1,0 +1,26 @@
+-- ops/0003_ledger_baseline.sql.template
+--
+-- OPERATOR TEMPLATE. Not a migration, not run by the runner, and not executed against staging or production by this change.
+--
+-- Purpose: give an existing database a ledger that describes what it already contains, so the runner can continue from it.
+-- A baseline is a claim about the database. Record a file as 'applied' only when its effects are proven from the database.
+-- Record a superseded original only when its replacement has not yet run, so the replacement can run at its position.
+--
+-- Procedure, for each file in manifest order:
+--   1. Establish the state from the catalog (read-only queries), not from memory or from deployment notes alone.
+--   2. If the state is proven, insert 'applied' with the SHA-256 of the committed file.
+--   3. If the file is one of 010, 070 or 087 and its effects are missing, insert 'superseded' with replaced_by set to its
+--      replacement. The replacement then runs at its position.
+--   4. If a file's state cannot be proven, stop. Do not baseline past it. The runner refuses a ledger gap by design.
+--
+-- The SHA-256 values come from the committed files, for example:
+--   sha256sum backend/db/migrations/<file>
+--
+-- The runner's dry run shows the result of the baseline, and it must list only the replacements and later files as pending:
+--   MIGRATION_DATABASE_URL=... python -m scripts.migrate --dry-run
+--
+-- Example shape only. Do not run it as written.
+--
+--   INSERT INTO cv_analyzer.schema_migrations (filename, sha256, status, replaced_by)
+--   VALUES ('010_platform_control.sql', '<sha256 of the committed file>', 'superseded',
+--           '095_repair_010_platform_control.sql');

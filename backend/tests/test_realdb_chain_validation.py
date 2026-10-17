@@ -21,8 +21,10 @@ def test_a_simulated_unexpected_migration_failure_fails_the_chain_validation():
 
 
 def test_a_known_failure_that_now_succeeds_fails_the_chain_validation():
+    # The chain currently has no expected failures, so this case is built from an explicit set rather than the constant.
+    expected = frozenset({"010_platform_control.sql", "087_autosave_deterministic_answers.sql"})
     with pytest.raises(ChainValidationError, match="no longer fail"):
-        check_chain(KNOWN[1:])
+        check_chain([StepFailure("010_platform_control.sql", "trigger already exists")], expected=expected)
 
 
 def test_a_failure_of_schema_sql_fails_the_chain_validation():
