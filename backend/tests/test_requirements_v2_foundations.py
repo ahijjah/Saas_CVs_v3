@@ -20,6 +20,8 @@ PRODUCTION_PATHS = ["routers", "workers", "auth", "main.py", "database.py", "con
 # The one service module approved to import the package. It is reachable from no route, worker, auth, startup or config path,
 # which PRODUCTION_PATHS checks for every module.
 APPROVED_SERVICE_IMPORTERS = {"services/requirements_edit.py"}
+# The one worker approved to import the package: the requirements-v2 extraction worker (see workers/requirements_v2_worker.py).
+APPROVED_WORKER_IMPORTERS = {"workers/requirements_v2_worker.py"}
 
 
 def _case(name: str) -> dict:
@@ -86,6 +88,8 @@ def test_no_production_module_imports_the_new_package():
         p = BACKEND / rel
         files = [p] if p.is_file() else list(p.rglob("*.py")) if p.exists() else []
         for f in files:
+            if f.relative_to(BACKEND).as_posix() in APPROVED_WORKER_IMPORTERS:
+                continue
             if pattern.search(f.read_text(encoding="utf-8", errors="ignore")):
                 offenders.append(str(f.relative_to(BACKEND)))
     for f in (BACKEND / "services").rglob("*.py"):

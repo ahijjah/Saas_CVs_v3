@@ -53,6 +53,17 @@ CATEGORIES: tuple[str, ...] = (
     "soft_skills", "domain_knowledge", "other_requirements",
 )
 
+# The stored weight column of each category (the flat columns on job_criteria mirror the document's category weights).
+WEIGHT_COLUMN = {
+    "skills": "weight_skills",
+    "experience": "weight_experience",
+    "education": "weight_education",
+    "certifications": "weight_certifications",
+    "soft_skills": "weight_soft_skills",
+    "domain_knowledge": "weight_domain_knowledge",
+    "other_requirements": "weight_other",
+}
+
 IMPORTANCE_REQUIRED = "required"
 IMPORTANCE_PREFERRED = "preferred"
 IMPORTANCES = (IMPORTANCE_REQUIRED, IMPORTANCE_PREFERRED)

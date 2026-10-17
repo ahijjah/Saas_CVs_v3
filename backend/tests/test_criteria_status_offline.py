@@ -92,6 +92,10 @@ def test_every_update_of_job_criteria_carries_the_legacy_predicate_or_is_the_v2_
         for match in re.finditer(r"UPDATE\s+job_criteria\b", source):
             seen += 1
             window = _sql_window(source, match.start())
+            if rel == "workers/requirements_v2_worker.py":
+                # The requirements-v2 worker writes only its own rows: every statement carries the v2 marker, never the legacy one.
+                assert "requirements_schema_version = 2" in window, rel
+                continue
             if rel == "services/requirements_edit.py":
                 # The requirements-v2 writer guards on its own version (the other direction). It is not a legacy writer.
                 assert "requirements_schema_version = :schema_version" in window, rel
