@@ -309,6 +309,59 @@ def test_planning_never_mutates_its_inputs():
     assert (stored, original, body) == before
 
 
+# ---- stored retired ids are validated, never converted ----
+
+@pytest.mark.parametrize("value", [
+    None,                       # NULL: not read as an empty list
+    "req_py",                   # a string: refused, and never iterated character by character
+    "",
+    {"req_1": True},            # an object
+    7,                          # a number
+    0,
+    True,
+    [1],                        # a non-string entry
+    ["req_py", 2],
+    [None],
+    ["bad id"],                 # not the requirement-id format
+    ["req_a\n"],               # a trailing newline is not part of an id ($ alone would accept it)
+    ["req_py", "req_py "],
+    ["req_1", "req_1"],         # a duplicate
+])
+def test_malformed_stored_retired_ids_are_refused(value):
+    with pytest.raises(E.StoredDocumentInvalid):
+        E.validated_retired_ids(value)
+
+
+@pytest.mark.parametrize("value", [None, "req_old", {}, 7, [1], ["req_1", "req_1"]])
+def test_a_malformed_retired_list_refuses_planning_before_anything_is_applied(value):
+    body = [{"op": "set_text", "item_id": "req_py", "text": "x"}]
+    with pytest.raises(E.StoredDocumentInvalid):
+        E.plan_operations(_base(), _base(), value, E.parse_operations(body), user_id=USER, now=NOW, jd_text=JD)
+    with pytest.raises(E.StoredDocumentInvalid):
+        E.plan_retired_ids(_base(), _base(), value)
+
+
+def test_an_empty_stored_list_is_valid():
+    assert E.validated_retired_ids([]) == []
+
+
+def test_valid_unsorted_ids_are_normalised_to_sorted_order():
+    assert E.validated_retired_ids(["req_z", "req_a", "req_m"]) == ["req_a", "req_m", "req_z"]
+
+
+def test_validation_does_not_mutate_the_stored_list():
+    stored = ["req_z", "req_a"]
+    E.validated_retired_ids(stored)
+    assert stored == ["req_z", "req_a"]
+
+
+def test_unsorted_stored_ids_normalise_the_same_way_through_planning():
+    body = [{"op": "remove_item", "item_id": "req_sql"}, {"op": "set_item_weight", "item_id": "req_py", "weight": 100}]
+    unsorted = _plan(body, retired=["req_z", "req_old"]).retired_item_ids
+    sorted_store = _plan(body, retired=["req_old", "req_z"]).retired_item_ids
+    assert unsorted == sorted_store == ["req_old", "req_sql", "req_z"]
+
+
 # ---- reachability: the service is imported by nothing but its own tests ----
 
 def test_no_module_outside_the_tests_imports_the_editing_service():

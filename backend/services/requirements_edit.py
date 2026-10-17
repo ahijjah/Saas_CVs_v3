@@ -311,10 +311,31 @@ _BUILDERS = {
 
 # ---- planning (pure) ----
 
+def validated_retired_ids(value: object) -> list[str]:
+    """The stored requirements_retired_item_ids, checked before anything reads it. It must be a JSON list whose entries are
+    unique requirement ids. Anything else is refused: a NULL, a string, an object, a number, a non-text entry, a malformed id or a
+    duplicate. None of these is read as an empty list, and a string is never iterated as characters. A valid list is returned
+    sorted, so an unsorted store is normalised consistently."""
+    if not isinstance(value, list):
+        raise StoredDocumentInvalid("The stored retired item ids must be a list.",
+                                    issues=(Issue("retired_ids_not_a_list", "requirements_retired_item_ids must be a JSON list."),))
+    seen: set[str] = set()
+    for entry in value:
+        if not isinstance(entry, str) or not ITEM_ID_RE.fullmatch(entry):
+            raise StoredDocumentInvalid("A stored retired item id is malformed.",
+                                        issues=(Issue("retired_id_invalid", "Every retired item id must be a requirement id."),))
+        if entry in seen:
+            raise StoredDocumentInvalid("A stored retired item id appears twice.",
+                                        issues=(Issue("retired_id_duplicate", "Retired item ids must be unique."),))
+        seen.add(entry)
+    return sorted(value)
+
+
 def plan_retired_ids(stored: dict, after: dict, retired_before: object) -> list[str]:
-    """Append-only: every id ever retired stays retired, and every item the save removed is added. Sorted for a stable store."""
+    """Append-only: every id ever retired stays retired, and every item the save removed is added. Sorted for a stable store.
+    `retired_before` is validated first."""
     removed = collect_item_ids(stored) - collect_item_ids(after)
-    return sorted(set(retired_before) | removed)
+    return sorted(set(validated_retired_ids(retired_before)) | removed)
 
 
 def plan_operations(stored: dict, original: dict | None, retired_before: object, ops: tuple[Operation, ...], *,
@@ -324,7 +345,7 @@ def plan_operations(stored: dict, original: dict | None, retired_before: object,
     issues = validate_structure(stored)
     if issues:
         raise StoredDocumentInvalid("The stored requirements document is malformed.", issues=issues)
-    retired = sorted(set(retired_before))
+    retired = validated_retired_ids(retired_before)
 
     edited = copy.deepcopy(stored)
     for pos, op in enumerate(ops):
@@ -452,7 +473,7 @@ async def save_operations(db: AsyncSession, user: EditingUser, job_id: str, *, c
         raise RevisionConflict("The requirements changed since you loaded them. Reload and apply your edits again.")
 
     original_analysis = original_json if isinstance(original_json, dict) else {}
-    planned = plan_operations(stored, original_analysis.get(REQUIREMENTS_KEY), retired or [], ops,
+    planned = plan_operations(stored, original_analysis.get(REQUIREMENTS_KEY), retired, ops,
                               user_id=user.user_id, now=now, jd_text=job[0])
 
     written = (await db.execute(_UPDATE_CRITERIA, {

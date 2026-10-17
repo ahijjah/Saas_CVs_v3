@@ -373,3 +373,62 @@ async def test_a_client_cannot_supply_a_structural_review_block(built, engines, 
         await _save(engines(), _user(seeded, "b"), job, [{"op": "set_text", "item_id": "req_sql", "text": "SQL",
                                                           "structural_review": {"schema_version": 1, "findings": []}}], 0)
     assert _row(built, job) == before
+
+
+# ---- stored retired ids: malformed values refuse the save; valid values keep working ----
+
+def _set_retired(built, job, raw_json):
+    cur = built.conn.cursor()
+    cur.execute("UPDATE job_criteria SET requirements_retired_item_ids = %s::jsonb WHERE job_id = %s", (raw_json, job))
+
+
+def _audit(built, job):
+    cur = built.conn.cursor()
+    cur.execute("SELECT last_edited_by, last_edited_at, updated_at FROM job_criteria WHERE job_id = %s", (job,))
+    return cur.fetchone()
+
+
+@pytest.mark.parametrize("raw_json", [
+    '[1]',                      # a non-string entry
+    '[null]',
+    '["bad id"]',               # not the requirement-id format
+    '["req_a\\n"]',             # a trailing newline is not part of an id
+    '["req_a", "req_a"]',       # a duplicate
+    '["req_a", 2]',
+])
+async def test_malformed_stored_retired_ids_refuse_the_save_and_change_nothing(built, engines, seeded, raw_json):
+    job = _job(built, seeded["b"], _doc())
+    _set_retired(built, job, raw_json)
+    before, audit_before = _row(built, job), _audit(built, job)
+    with pytest.raises(E.StoredDocumentInvalid):
+        await _save(engines(), _user(seeded, "b"), job, _set_text("req_sql", "x"), 0)
+    assert _row(built, job) == before, "document, revision, weights and retired ids must be unchanged"
+    assert _audit(built, job) == audit_before, "the audit columns must be unchanged"
+
+
+@pytest.mark.parametrize("raw_json", ['"req_1"', '{"req_1": true}', '7', 'null', None])
+async def test_the_column_itself_refuses_values_that_are_not_a_list(built, seeded, raw_json):
+    """Non-list values cannot be stored at all (NOT NULL and the array CHECK). The service refuses them too, for any other path."""
+    job = seeded["a"]["job"]
+    cur = built.conn.cursor()
+    with pytest.raises(psycopg2.Error):
+        cur.execute("UPDATE job_criteria SET requirements_retired_item_ids = %s::jsonb WHERE job_id = %s", (raw_json, job))
+    assert _row(built, job)[4] == []
+
+
+async def test_a_valid_stored_retired_list_keeps_working(built, engines, seeded):
+    job = seeded["a"]["job"]
+    _set_retired(built, job, '["req_old"]')
+    await _save(engines(), _user(seeded, "a"), job, [{"op": "remove_item", "item_id": "req_sql"},
+                                                    {"op": "set_item_weight", "item_id": "req_py", "weight": 100}], 0)
+    assert _row(built, job)[4] == ["req_old", "req_sql"]
+    await _save(engines(), _user(seeded, "a"), job, _set_text("req_py", "Python 3 only"), 1)
+    assert _row(built, job)[4] == ["req_old", "req_sql"]
+
+
+async def test_an_unsorted_valid_stored_list_is_normalised_when_saved(built, engines, seeded):
+    job = seeded["a"]["job"]
+    _set_retired(built, job, '["req_z", "req_a"]')
+    result = await _save(engines(), _user(seeded, "a"), job, _set_text("req_py", "Python 3"), 0)
+    assert result.revision == 1
+    assert _row(built, job)[4] == ["req_a", "req_z"]
