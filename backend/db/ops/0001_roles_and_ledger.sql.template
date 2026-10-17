@@ -1,0 +1,40 @@
+-- ops/0001_roles_and_ledger.sql.template
+--
+-- OPERATOR TEMPLATE. This is not a migration. The runner never reads this directory, and this change does not execute it
+-- against any database except disposable test databases.
+--
+-- Run once per environment, as the bootstrap superuser, before the first non-fresh runner invocation.
+-- Passwords are supplied as psql variables from the deployment secret store. None is written in this file.
+--
+--   psql -X -v ON_ERROR_STOP=1 \
+--        -v migration_operator_password="$MIGRATION_OPERATOR_PASSWORD" \
+--        -d "$DATABASE" -f 0001_roles_and_ledger.sql.template
+--
+-- What it creates: the owner role (NOLOGIN, no memberships), the migration operator login (LOGIN, may SET ROLE to the owner,
+-- inherits nothing), and the migration ledger owned by the owner role. It grants nothing to any runtime role.
+-- Runtime roles (cv_app, cv_worker, cv_admin, cv_secrets) are created by a later PR, not here.
+--
+-- The ledger DDL below must stay identical to LEDGER_DDL in backend/db/runner/ledger.py. A test enforces this.
+
+\set ON_ERROR_STOP on
+
+CREATE ROLE cv_migrator NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
+CREATE ROLE cv_migration_operator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
+    PASSWORD :'migration_operator_password';
+
+-- SET ROLE is permitted through this membership. INHERIT FALSE means no privilege flows to the operator automatically.
+GRANT cv_migrator TO cv_migration_operator WITH INHERIT FALSE, SET TRUE;
+
+-- The ledger is created by the bootstrap superuser, then handed to the owner role.
+CREATE TABLE cv_analyzer.schema_migrations (
+    filename    text PRIMARY KEY,
+    sha256      text NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    status      text NOT NULL CHECK (status IN ('applied', 'superseded')),
+    replaced_by text,
+    applied_at  timestamptz NOT NULL DEFAULT now(),
+    applied_by  text NOT NULL DEFAULT session_user,
+    CONSTRAINT schema_migrations_replacement CHECK ((status = 'superseded') = (replaced_by IS NOT NULL))
+);
+
+ALTER TABLE cv_analyzer.schema_migrations OWNER TO cv_migrator;

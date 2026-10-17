@@ -11,6 +11,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import uuid
 from collections.abc import Iterator, Sequence
@@ -20,17 +21,16 @@ from dataclasses import dataclass
 import psycopg2
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
+if str(BACKEND) not in sys.path:
+    sys.path.insert(0, str(BACKEND))
+from db.runner import runner  # noqa: E402
+
 DB_DIR = BACKEND / "db"
 PG_BIN = pathlib.Path(os.environ.get("PG16_BIN", "/usr/lib/postgresql/16/bin"))
 
-# The steps that already fail on the current chain. The chain is valid only if exactly these fail: a new failure, a missing
-# failure, or a failure of schema.sql or of a required migration all fail the validation.
-EXPECTED_PRE_EXISTING_FAILURES: frozenset[str] = frozenset({
-    "010_platform_control.sql",
-    "024_plan_features_seed.sql",
-    "070_sla_thresholds_config.sql",
-    "087_autosave_deterministic_answers.sql",
-})
+# The chain builds with zero failures. Migrations 010, 070 and 087 are superseded by replacements 095, 096 and 097 through
+# db/runner/manifest.py, so they are never executed. Any failure now fails the validation.
+EXPECTED_PRE_EXISTING_FAILURES: frozenset[str] = frozenset()
 REQUIRED_MIGRATIONS: frozenset[str] = frozenset({"093_requirements_v2_storage_schema.sql"})
 
 
@@ -134,6 +134,8 @@ class Database:
 
 
 def build(cluster: Cluster) -> Database:
+    """schema.sql, then the migration runner over an empty database. The runner stops at the first failing file, which is
+    recorded here so the validation can report it."""
     name = "t_" + uuid.uuid4().hex[:10]
     admin = psycopg2.connect(cluster.dsn())
     admin.autocommit = True
@@ -143,14 +145,16 @@ def build(cluster: Cluster) -> Database:
     conn.set_client_encoding("UTF8")
     cur = conn.cursor()
     failures: list[StepFailure] = []
-    steps = [("schema.sql", schema_sql())] + [(p.name, p.read_text(encoding="utf-8")) for p in migration_files()]
-    for label, sql in steps:
+    try:
+        cur.execute(schema_sql())
+    except psycopg2.Error as exc:
+        failures.append(StepFailure("schema.sql", str(exc).splitlines()[0]))
+    if not failures:
         try:
-            cur.execute(sql)
-        except psycopg2.Error as exc:
-            failures.append(StepFailure(label, str(exc).splitlines()[0]))
-            cur.execute("ROLLBACK")
-        cur.execute("SET search_path = cv_analyzer")
+            runner.run(conn, allow_fresh=True)
+        except runner.MigrationError as exc:
+            failures.append(StepFailure(exc.file or "migrations", str(exc).splitlines()[0]))
+    cur.execute("SET search_path = cv_analyzer")
     return Database(cluster, name, admin, conn, failures)
 
 

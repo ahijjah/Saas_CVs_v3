@@ -1,0 +1,26 @@
+-- ops/0002_ownership_transfer.sql.template
+--
+-- OPERATOR TEMPLATE. Not a migration, not run by the runner, and not executed against staging or production by this change.
+--
+-- The statements are generated, not written by hand:
+--
+--   MIGRATION_DATABASE_URL=<bootstrap superuser URL, from the secret store> \
+--       python -m scripts.generate_ownership_transfer --target-owner cv_migrator > ownership.sql
+--
+-- The generator reads the catalog only. It emits an explicit ALTER ... OWNER TO statement for each verified object in the
+-- cv_analyzer schema, and nothing else. It never emits REASSIGN OWNED, because that statement can move objects outside
+-- cv_analyzer. It stops if the schema contains an object kind it does not handle.
+--
+-- Review ownership.sql, then run it as the bootstrap superuser in one transaction:
+--
+--   psql -X -v ON_ERROR_STOP=1 -1 -d "$DATABASE" -f ownership.sql
+--
+-- After it runs, the postcondition query below must return zero rows.
+--
+--   SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+--   WHERE n.nspname = 'cv_analyzer' AND c.relkind IN ('r','p','S','v','m')
+--     AND pg_get_userbyid(c.relowner) <> 'cv_migrator';
+--
+-- Generated statements follow. Do not edit them by hand.
+-- BEGIN-GENERATED
+-- END-GENERATED
