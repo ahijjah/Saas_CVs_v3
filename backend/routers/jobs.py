@@ -825,6 +825,12 @@ async def update_criteria(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    # Exact match, not lower(): a stored role is always lower case (users.role CHECK), so anything else is refused.
+    if current_user.role not in ("admin", "recruiter"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tenant admins and recruiters can edit evaluation criteria",
+        )
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     job_row = await db.execute(
