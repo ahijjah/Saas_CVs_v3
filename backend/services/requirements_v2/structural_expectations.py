@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from dataclasses import dataclass
 
 EXPECTATION_SCHEMA_VERSION = 1
@@ -43,9 +44,23 @@ def jd_sha256(jd_text: str) -> str:
     return hashlib.sha256(jd_text.encode("utf-8")).hexdigest()
 
 
+def normalize_token(text: str) -> str:
+    """Canonical form used for matching and for duplicate checks: Unicode NFKC, then casefold."""
+    return unicodedata.normalize("NFKC", text).casefold()
+
+
 def has_token(text: str, token: str) -> bool:
-    """Whole-token, case-insensitive. Only ASCII letters and digits extend a token, so 'وHTML' still matches 'HTML'."""
-    return re.search(rf"(?<![A-Za-z0-9]){re.escape(token)}(?![A-Za-z0-9])", text, re.IGNORECASE) is not None
+    """Whole-token match on the normalized text. An ASCII token is bounded by ASCII letters and digits, so 'HTML' matches 'وHTML'
+    but not 'HTML5'. A non-ASCII token is bounded by Unicode word characters, so 'عمل' does not match inside 'العمل'."""
+    needle = normalize_token(token)
+    if not needle:
+        return False
+    haystack = normalize_token(text)
+    if needle.isascii():
+        pattern = rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])"
+    else:
+        pattern = rf"(?<!\w){re.escape(needle)}(?!\w)"
+    return re.search(pattern, haystack) is not None
 
 
 def _is_int(value: object) -> bool:
@@ -71,7 +86,7 @@ def validate_expectations(block: object, jd_text: str) -> tuple[Expectation, ...
 
     out: list[Expectation] = []
     ids: set[str] = set()
-    spans: set[tuple[int, int]] = set()
+    signatures: set[tuple] = set()
     for pos, e in enumerate(raw):
         where = f"expectation {pos}"
         if not isinstance(e, dict) or set(e) != EXPECTATION_KEYS:
@@ -89,16 +104,18 @@ def validate_expectations(block: object, jd_text: str) -> tuple[Expectation, ...
             raise ExpectationError(f"{where} offsets must be integers with 0 <= start < end <= the description length")
         if jd_text[start:end] != text:
             raise ExpectationError(f"{where} source_text is not the description text at its offsets")
-        if (start, end) in spans:
-            raise ExpectationError(f"{where} repeats the source span of another expectation")
-        spans.add((start, end))
         tokens = e["tokens"]
         if not isinstance(tokens, list) or len(tokens) < 2 or not all(isinstance(t, str) and t.strip() for t in tokens):
             raise ExpectationError(f"{where} needs two or more non-empty tokens")
-        if len(set(tokens)) != len(tokens):
-            raise ExpectationError(f"{where} repeats a token")
+        normalized = [normalize_token(t) for t in tokens]
+        if len(set(normalized)) != len(normalized):
+            raise ExpectationError(f"{where} repeats a token after normalization (case or Unicode form)")
         absent = [t for t in tokens if not has_token(text, t)]
         if absent:
             raise ExpectationError(f"{where} tokens {absent} do not occur as words in its source_text")
+        signature = (e["kind"], start, end, tuple(sorted(set(normalized))))
+        if signature in signatures:
+            raise ExpectationError(f"{where} is an exact duplicate of another expectation (same kind, span and tokens)")
+        signatures.add(signature)
         out.append(Expectation(eid, e["kind"], text, start, end, tuple(tokens)))
     return tuple(out)

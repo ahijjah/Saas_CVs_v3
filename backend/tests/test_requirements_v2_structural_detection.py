@@ -193,11 +193,45 @@ def test_an_unknown_kind_fails_closed():
         validate_expectations(_block(ENGLISH_JD, "omission", ENGLISH_SOURCE, ["Scala", "Julia"]), ENGLISH_JD)
 
 
-def test_a_duplicate_span_fails_closed():
+def test_an_exact_duplicate_signature_fails_closed_even_with_another_id():
     block = _block(ENGLISH_JD, "alternatives_together", ENGLISH_SOURCE, ["Scala", "Julia"])
-    block["expectations"].append({**block["expectations"][0], "id": "exp-2", "kind": "independent_items"})
+    block["expectations"].append({**block["expectations"][0], "id": "exp-2", "tokens": ["Julia", "Scala"]})   # same kind, span, tokens
     with pytest.raises(ExpectationError):
         validate_expectations(block, ENGLISH_JD)
+
+
+def test_distinct_expectations_may_share_one_sentence_span():
+    block = _block(ENGLISH_JD, "alternatives_together", ENGLISH_SOURCE, ["Scala", "Julia"], eid="exp-alt")
+    block["expectations"].append({**block["expectations"][0], "id": "exp-ind", "kind": "independent_items"})
+    assert [e.kind for e in validate_expectations(block, ENGLISH_JD)] == ["alternatives_together", "independent_items"]
+    doc = _draft(ENGLISH_JD, SPLIT_ENGLISH)
+    kinds = [f["id"] for f in detect(doc, ENGLISH_JD, block)["findings"]]
+    assert len(kinds) == 1                                           # only the alternatives expectation applies to these items
+
+
+def test_case_variants_of_one_token_are_duplicates_and_fail_closed():
+    with pytest.raises(ExpectationError):
+        validate_expectations(_block(B12, "independent_items", CSS_HTML, ["CSS", "css"]), B12)
+    with pytest.raises(ExpectationError):
+        validate_expectations(_block(ENGLISH_JD, "alternatives_together", ENGLISH_SOURCE, ["Scala", "SCALA"]), ENGLISH_JD)
+
+
+def test_html_matches_inside_an_arabic_prefixed_token():
+    from services.requirements_v2.structural_expectations import has_token
+    assert has_token("معرفة بـ CSS وHTML", "HTML")
+
+
+def test_an_arabic_token_does_not_match_inside_a_longer_arabic_word():
+    from services.requirements_v2.structural_expectations import has_token
+    assert not has_token("العمل الجماعي", "عمل")
+    assert has_token("عمل جماعي", "عمل")
+
+
+def test_a_complete_arabic_token_or_phrase_matches():
+    from services.requirements_v2.structural_expectations import has_token
+    assert has_token("مطور واجهات", "واجهات")
+    assert has_token("معرفة بـ CSS وHTML", "معرفة بـ CSS")
+    assert has_token("معرفة بـ CSS وHTML", "CSS وHTML")
 
 
 def test_malformed_blocks_fail_closed():
