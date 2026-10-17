@@ -1,0 +1,171 @@
+"""Disposable PostgreSQL 16 for database tests, built from db/schema.sql and then every db/migrations/*.sql in order.
+
+Test use only. A throw-away cluster is started from the system PostgreSQL 16 binaries in a temporary directory, and every test
+database is created inside it. Nothing here touches a shared or production database. Steps that fail on the current chain are
+recorded in `failed` and rolled back, not hidden, so a test can tell its own migration apart from pre-existing failures."""
+from __future__ import annotations
+
+import os
+import pathlib
+import re
+import shutil
+import socket
+import subprocess
+import tempfile
+import uuid
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+
+import psycopg2
+
+BACKEND = pathlib.Path(__file__).resolve().parent.parent
+DB_DIR = BACKEND / "db"
+PG_BIN = pathlib.Path(os.environ.get("PG16_BIN", "/usr/lib/postgresql/16/bin"))
+
+# The steps that already fail on the current chain. The chain is valid only if exactly these fail: a new failure, a missing
+# failure, or a failure of schema.sql or of a required migration all fail the validation.
+EXPECTED_PRE_EXISTING_FAILURES: frozenset[str] = frozenset({
+    "010_platform_control.sql",
+    "024_plan_features_seed.sql",
+    "070_sla_thresholds_config.sql",
+    "087_autosave_deterministic_answers.sql",
+})
+REQUIRED_MIGRATIONS: frozenset[str] = frozenset({"093_requirements_v2_storage_schema.sql"})
+
+
+@dataclass(frozen=True)
+class StepFailure:
+    file: str          # "schema.sql" or the migration file name
+    error: str         # the first line of the database error
+
+
+class ChainValidationError(AssertionError):
+    """The migration chain does not match the expected outcome."""
+
+
+def check_chain(failures: Sequence[StepFailure], *, expected: frozenset[str] = EXPECTED_PRE_EXISTING_FAILURES,
+                required: frozenset[str] = REQUIRED_MIGRATIONS) -> None:
+    """Raise ChainValidationError unless the failing steps are exactly `expected`, schema.sql succeeded, and no required migration failed."""
+    problems: list[str] = []
+    names = [f.file for f in failures]
+    if "schema.sql" in names:
+        problems.append(f"schema.sql failed: {[f.error for f in failures if f.file == 'schema.sql']}")
+    for name in sorted(required & set(names)):
+        problems.append(f"required migration {name} failed: {[f.error for f in failures if f.file == name]}")
+    unexpected = sorted(set(names) - expected)
+    if unexpected:
+        problems.append(f"unexpected failures: {[(f.file, f.error) for f in failures if f.file in unexpected]}")
+    missing = sorted(expected - set(names))
+    if missing:
+        problems.append(f"expected failures no longer fail: {missing}")
+    if problems:
+        raise ChainValidationError("migration chain does not match the expected outcome: " + "; ".join(problems))
+
+
+def unavailable_reason() -> str | None:
+    """None when a PostgreSQL 16 server can be started here, otherwise the reason."""
+    if not (PG_BIN / "initdb").exists():
+        return "PostgreSQL 16 binaries not found (set PG16_BIN)"
+    if os.geteuid() == 0 and shutil.which("runuser") is None:
+        return "runuser is needed to run the test cluster as the postgres user"
+    return None
+
+
+def schema_sql() -> str:
+    lines = (DB_DIR / "schema.sql").read_text(encoding="utf-8").split("\n")
+    for n in range(0, 96):      # pre-existing forward references to users in the first tables of schema.sql
+        lines[n] = re.sub(r"\s+REFERENCES users \(user_id\) ON DELETE SET NULL", "", lines[n])
+    return "\n".join(lines)
+
+
+def migration_files() -> list[pathlib.Path]:
+    return sorted((DB_DIR / "migrations").glob("*.sql"))
+
+
+class Cluster:
+    """One PostgreSQL 16 server, owned by the test session."""
+
+    def __init__(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp(prefix="req_pg_"))
+        try:
+            subprocess.run(["chown", "postgres", str(self.dir)], check=True)
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                self.port = s.getsockname()[1]
+            self._as_pg([str(PG_BIN / "initdb"), "-D", str(self.dir / "data"), "-A", "trust", "-E", "UTF8"])
+            self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-o",
+                         f"-p {self.port} -k {self.dir} -c listen_addresses=127.0.0.1", "-l", str(self.dir / "log"), "-w", "start"])
+        except BaseException:
+            self.stop()                 # a half-started cluster is stopped and removed before the error propagates
+            raise
+
+    def _as_pg(self, cmd: list[str]) -> None:
+        if os.geteuid() == 0:
+            cmd = ["runuser", "-u", "postgres", "--", *cmd]
+        subprocess.run(cmd, check=True, capture_output=True)
+
+    def dsn(self, db: str = "postgres") -> str:
+        return f"host=127.0.0.1 port={self.port} user=postgres dbname={db}"
+
+    def stop(self) -> None:
+        """Safe to call on a cluster that never started: the server may not be running, so the stop error is ignored."""
+        try:
+            if (self.dir / "data" / "postmaster.pid").exists():
+                self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-m", "immediate", "stop"])
+        except subprocess.CalledProcessError:
+            pass
+        finally:
+            shutil.rmtree(self.dir, ignore_errors=True)
+
+
+class Database:
+    """A database built from the real chain. `failures` records every step that did not apply, with its error."""
+
+    def __init__(self, cluster: Cluster, name: str, admin, conn, failures: list[StepFailure]):
+        self.cluster, self.name, self.admin, self.conn, self.failures = cluster, name, admin, conn, failures
+
+    def close(self) -> None:
+        try:
+            self.conn.close()
+        finally:
+            self.admin.cursor().execute(f"DROP DATABASE IF EXISTS {self.name} WITH (FORCE)")
+            self.admin.close()
+
+
+def build(cluster: Cluster) -> Database:
+    name = "t_" + uuid.uuid4().hex[:10]
+    admin = psycopg2.connect(cluster.dsn())
+    admin.autocommit = True
+    admin.cursor().execute(f"CREATE DATABASE {name} ENCODING 'UTF8' TEMPLATE template0")
+    conn = psycopg2.connect(cluster.dsn(name))
+    conn.autocommit = True
+    conn.set_client_encoding("UTF8")
+    cur = conn.cursor()
+    failures: list[StepFailure] = []
+    steps = [("schema.sql", schema_sql())] + [(p.name, p.read_text(encoding="utf-8")) for p in migration_files()]
+    for label, sql in steps:
+        try:
+            cur.execute(sql)
+        except psycopg2.Error as exc:
+            failures.append(StepFailure(label, str(exc).splitlines()[0]))
+            cur.execute("ROLLBACK")
+        cur.execute("SET search_path = cv_analyzer")
+    return Database(cluster, name, admin, conn, failures)
+
+
+@contextmanager
+def built_chain() -> Iterator[Database]:
+    """The chain built on a disposable cluster. The cluster is stopped even when construction or the caller's body fails."""
+    reason = unavailable_reason()
+    if reason:
+        raise RuntimeError(reason)
+    cluster = Cluster()
+    try:
+        db = build(cluster)
+        try:
+            yield db
+        finally:
+            db.close()
+    finally:
+        cluster.stop()
