@@ -1224,6 +1224,8 @@ async def update_criteria_content(
 
 # Legacy criteria retry. Every statement below is tenant-scoped and carries LEGACY_ONLY_PREDICATE: a requirements-v2 job is never
 # retried or rewritten by this route.
+CRITERIA_RETRY_ROLES = ("admin", "recruiter")
+
 _RECOVER_STALE_SQL = f"""
     UPDATE job_criteria
     SET criteria_extraction_status = 'failed',
@@ -1302,6 +1304,11 @@ async def retry_criteria_extraction(
     and the request returns 503. Two concurrent requests cannot both claim the row: the second finds it pending.
     """
     from workers.criteria_worker import _normalize_description_hash, extract_criteria_task
+
+    # Only these roles may re-run AI extraction (it costs money). Exact match, before any SQL.
+    if current_user.role not in CRITERIA_RETRY_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only tenant admins and recruiters can retry criteria extraction.")
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 

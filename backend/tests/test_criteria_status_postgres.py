@@ -12,14 +12,14 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from datetime import timedelta
 from types import SimpleNamespace
 
 import httpx
 import pytest
 import pytest_asyncio
-from celery.exceptions import MaxRetriesExceededError
 from fastapi import FastAPI
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -54,13 +54,13 @@ def built():
 
 
 @pytest.fixture(scope="module", autouse=True)
-def runtime_grants(built):
-    """schema.sql grants the runtime role every table that exists at that point. Tables created by later migrations have no grant
-    in the chain, so the runtime role is granted the schema as schema.sql intends."""
+def chain_read_grants(built):
+    """TEST SETUP ONLY, not production evidence. The migrated chain grants cv_app no privilege on these tables (a separately
+    recorded grant defect), and the job list and details routes read them. Only SELECT is granted, only on these tables, only for
+    this module. Every other table keeps the grant the chain actually gives cv_app."""
     cur = built.conn.cursor()
-    cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {RUNTIME_ROLE}")
-    cur.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA cv_analyzer TO {RUNTIME_ROLE}")
-    cur.execute(f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA cv_analyzer TO {RUNTIME_ROLE}")
+    cur.execute(f"GRANT SELECT ON cv_analyzer.client_organizations, cv_analyzer.job_campaigns,"
+                f" cv_analyzer.job_knockout_questions TO {RUNTIME_ROLE}")
 
 
 def _cur(built):
@@ -265,47 +265,111 @@ async def test_a_duplicate_delivery_does_no_work_while_the_row_is_processing(bui
 
 # ---- the Celery task: retry release and exhaustion ----
 
-# The Celery task starts its own event loop, so these tests are synchronous.
+# The Celery task runs its own event loop, so these tests are synchronous. They run the task through Celery's apply(), which
+# follows the real bound-task retry path: self.retry raises Retry, the task is re-run, and an exhausted task ends as FAILURE.
 
-def test_a_failed_attempt_releases_the_row_before_the_celery_retry(built, worker_settings, monkeypatch):
+def _spy_retries(monkeypatch, built, job):
+    """Record the row's status at each moment a retry is requested (the retry itself is still Celery's)."""
+    task = worker.extract_criteria_task
+    original_retry = task.retry
+    seen = []
+
+    def spy(*args, **kwargs):
+        seen.append(_row(built, job)[0])
+        return original_retry(*args, **kwargs)
+
+    monkeypatch.setattr(task, "retry", spy)
+    return seen
+
+
+def _failing_ai(monkeypatch, calls):
+    async def fake(description, prompt_override=None, openai_client=None):
+        calls.append(1)
+        raise RuntimeError("provider secret detail")
+
+    monkeypatch.setattr(ai_service, "extract_job_criteria", fake)
+
+
+def test_intermediate_failures_release_to_pending_and_the_final_failure_ends_failed(built, worker_settings, monkeypatch):
     tenant = _tenant(built)
     job = _job(built, tenant)
-    _patch_ai(monkeypatch, exc=RuntimeError("provider secret detail"))
+    seen = _spy_retries(monkeypatch, built, job)
     calls = []
-
-    def retry_once(exc=None, **kwargs):
-        calls.append(exc)   # records the retry; the attempt returns normally
-
-    monkeypatch.setattr(worker.extract_criteria_task, "retry", retry_once)
-    worker.extract_criteria_task(job, JD)
-    assert len(calls) == 1
-    assert _row(built, job)[0] == "pending"        # released, so the retried attempt can claim it
-
-
-def test_the_retried_attempt_claims_the_released_row_and_completes(built, worker_settings, monkeypatch):
-    tenant = _tenant(built)
-    job = _job(built, tenant)
-    _patch_ai(monkeypatch, exc=RuntimeError("transient"))
-    monkeypatch.setattr(worker.extract_criteria_task, "retry", lambda exc=None, **kw: None)
-    worker.extract_criteria_task(job, JD)
-    _patch_ai(monkeypatch, analysis=SUFFICIENT)
-    worker.extract_criteria_task(job, JD)          # the retry
-    assert _row(built, job)[0] == "completed"
-
-
-def test_exhaustion_marks_failed_with_the_worker_message_and_no_exception_text(built, worker_settings, monkeypatch):
-    tenant = _tenant(built)
-    job = _job(built, tenant)
-    _patch_ai(monkeypatch, exc=RuntimeError("provider secret detail"))
-
-    def exhausted(exc=None, **kwargs):
-        raise MaxRetriesExceededError()
-
-    monkeypatch.setattr(worker.extract_criteria_task, "retry", exhausted)
-    worker.extract_criteria_task(job, JD)
+    _failing_ai(monkeypatch, calls)
+    result = worker.extract_criteria_task.apply(args=(job, JD))
+    assert seen == ["pending", "pending"]         # each intermediate attempt released its row before the retry was requested
+    assert len(calls) == 3                        # max_retries = 2: three attempts in all
+    assert result.state == "FAILURE"              # the task is reported as failed, not successful
     status, error, *_ = _row(built, job)
     assert status == "failed" and error == CS.WORKER_FAILED_MESSAGE
     assert "provider secret" not in error
+    assert "provider secret" not in str(result.result)
+
+
+def test_a_retried_attempt_claims_the_released_row_and_can_complete(built, worker_settings, monkeypatch):
+    tenant = _tenant(built)
+    job = _job(built, tenant)
+    seen = _spy_retries(monkeypatch, built, job)
+    attempts = []
+
+    async def flaky(description, prompt_override=None, openai_client=None):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("transient")
+        return SUFFICIENT
+
+    monkeypatch.setattr(ai_service, "extract_job_criteria", flaky)
+    result = worker.extract_criteria_task.apply(args=(job, JD))
+    assert seen == ["pending"]
+    assert len(attempts) == 2
+    assert result.state == "SUCCESS"
+    assert _row(built, job)[0] == "completed"
+
+
+async def _with_runtime_session(dsn, action):
+    engine = create_async_engine(dsn, poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    try:
+        return await action(async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False))
+    finally:
+        await engine.dispose()
+
+
+def _mark_failed_as_runtime(runtime_dsn, job, token):
+    async def action(Session):
+        return await worker._mark_failed(job, token, Session)
+
+    return asyncio.run(_with_runtime_session(runtime_dsn, action))
+
+
+@pytest.fixture()
+def runtime_dsn(built):
+    return f"postgresql+asyncpg://{RUNTIME_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}"
+
+
+def test_a_stale_claim_cannot_mark_the_row_failed(built, runtime_dsn):
+    tenant = _tenant(built)
+    job = _job(built, tenant, status="processing")
+    current = _row(built, job)[14]
+    marked = _mark_failed_as_runtime(runtime_dsn, job, current - timedelta(microseconds=1))
+    assert marked is False
+    assert _row(built, job)[0] == "processing"
+
+
+def test_a_pending_row_is_never_marked_failed_even_with_a_matching_token(built, runtime_dsn):
+    tenant = _tenant(built)
+    job = _job(built, tenant, status="pending")
+    token = _row(built, job)[14]
+    assert _mark_failed_as_runtime(runtime_dsn, job, token) is False
+    assert _row(built, job)[0] == "pending"
+
+
+def test_the_matching_claim_marks_the_row_failed_with_the_fixed_message(built, runtime_dsn):
+    tenant = _tenant(built)
+    job = _job(built, tenant, status="processing")
+    token = _row(built, job)[14]
+    assert _mark_failed_as_runtime(runtime_dsn, job, token) is True
+    status, error, *_ = _row(built, job)
+    assert (status, error) == ("failed", CS.WORKER_FAILED_MESSAGE)
 
 
 # ---- the retry route ----
@@ -527,3 +591,41 @@ async def test_the_job_list_and_details_report_the_derived_status(built, engine,
     listed = [j for j in listing.json() if j["job_id"] == job]
     assert [j["criteria_extraction_status"] for j in listed] == [expected]
     assert details.json()["details"]["criteria_extraction_status"] == expected
+
+
+# ---- authorization: only admin and recruiter (exact match), before any SQL ----
+
+def _count_sql(engine):
+    """Every statement the engine runs is recorded. A refused request must record none."""
+    statements = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    return statements
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["admin", "recruiter"])
+async def test_the_retry_route_allows_admin_and_recruiter(built, engine, enqueued, role):
+    tenant = _tenant(built)
+    job = _job(built, tenant, status="failed", error=CS.WORKER_FAILED_MESSAGE, retry=0)
+    async with _client(_app(_user(tenant, role), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 202
+    assert enqueued == [job]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", [None, "", "owner", "Admin", "ADMIN", "Recruiter", "viewer", "super_admin", "hr_manager"])
+async def test_the_retry_route_refuses_every_other_role_before_any_sql(built, engine, enqueued, role):
+    tenant = _tenant(built)
+    job = _job(built, tenant, status="failed", error=CS.WORKER_FAILED_MESSAGE, retry=0)
+    before = _row(built, job)[:3]
+    statements = _count_sql(engine)
+    async with _client(_app(_user(tenant, role), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 403
+    assert statements == []
+    assert _row(built, job)[:3] == before and enqueued == []

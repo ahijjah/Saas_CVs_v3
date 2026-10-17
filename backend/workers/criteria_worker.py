@@ -146,20 +146,23 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
     except Exception as exc:
         logger.error("extract_criteria_task failed for job %s (attempt %d/%d): %s",
                      job_id, self.request.retries + 1, self.max_retries + 1, exc)
-        # Release the row to pending before the Celery retry, so the retried attempt can claim it. A row this attempt no longer
-        # owns releases to None, and the retry then finds nothing to claim.
-        if claim.get("token") is not None:
-            try:
-                claim["token"] = loop.run_until_complete(_release_claim(job_id, claim["token"], TaskSession))
-            except Exception as release_exc:
-                logger.error("[job:%s] Could not release the claim before retry: %s", job_id, release_exc)
+        if self.request.retries < self.max_retries:
+            # An intermediate attempt. Release this claim to pending, so the retried attempt can claim the row. A row this attempt
+            # no longer owns releases to None, and the retry then finds nothing to claim. self.retry raises Retry, and the task
+            # is re-run by Celery.
+            if claim.get("token") is not None:
+                try:
+                    claim["token"] = loop.run_until_complete(_release_claim(job_id, claim["token"], TaskSession))
+                except Exception as release_exc:
+                    logger.error("[job:%s] Could not release the claim before retry: %s", job_id, release_exc)
+            raise self.retry(exc=exc)
+        # The final attempt. Do not release: this claim fails. The fixed message is stored; the exception text is only logged.
         try:
-            self.retry(exc=exc)
-        except self.MaxRetriesExceededError:
-            try:
-                loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession))
-            except Exception as mark_exc:
-                logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
+            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession))
+        except Exception as mark_exc:
+            logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
+        # Raised so that Celery records this task as failed. The original exception is not chained into the result.
+        raise CriteriaExtractionFailed(WORKER_FAILED_MESSAGE) from None
     finally:
         try:
             if not loop.is_closed():
@@ -365,14 +368,18 @@ async def _extract_async(job_id: str, description: str, Session, claim: dict) ->
         logger.warning("[job:%s] Criteria extraction marked insufficient.", job_id)
 
 
-async def _mark_failed(job_id: str, token, Session) -> None:
-    """Final worker failure: pending or processing -> failed with the fixed worker message, only for the claim that holds `token`.
-    A None token means this attempt holds no row, so nothing is written. The exception text is logged by the caller, never stored."""
+async def _mark_failed(job_id: str, token, Session) -> bool:
+    """Final worker failure: processing -> failed with the fixed worker message, only for the claim that holds `token`.
+
+    Only a processing row is marked, and only when its updated_at is the claim's token. A pending row (released for a retry) is
+    never marked, and neither is a row that a later claim or a stale-row recovery has changed. Returns True when the row was marked.
+    The exception text is logged by the caller and never stored.
+    """
     from database import set_rls_context
     from sqlalchemy import text
 
     if token is None:
-        return
+        return False
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         result = await db.execute(
@@ -381,12 +388,18 @@ async def _mark_failed(job_id: str, token, Session) -> None:
                     criteria_extraction_status = 'failed',
                     criteria_extraction_error  = :err
                 WHERE job_id = :jid
-                  AND criteria_extraction_status IN ('pending', 'processing')
+                  AND criteria_extraction_status = 'processing'
                   AND updated_at = :token
                   AND {LEGACY_ONLY_PREDICATE}
             """),
             {"err": WORKER_FAILED_MESSAGE, "jid": job_id, "token": token},
         )
         await db.commit()
-    if result.rowcount == 1:
+    marked = result.rowcount == 1
+    if marked:
         logger.error("[job:%s] Criteria extraction permanently failed.", job_id)
+    return marked
+
+
+class CriteriaExtractionFailed(Exception):
+    """Raised by the task after its final attempt failed. The message is the fixed server message, never the AI or driver text."""

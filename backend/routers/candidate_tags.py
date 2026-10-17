@@ -1,13 +1,21 @@
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from config import get_settings
 from database import get_db, set_rls_context
+from services.application_reuse_service import (
+    ReuseSourceFileMissing,
+    ReuseSourceHasNoFiles,
+    ReuseSourceNotFound,
+    reuse_cv_for_job,
+)
 from services.criteria_status import CRITERIA_BLOCKING_STATUSES
 
 app_router = APIRouter(prefix="/applications", tags=["candidates"])
@@ -270,6 +278,10 @@ async def list_talent_pool(
     }
 
 
+# Only these roles may copy a candidate's CV to another job. The stored role is lower case, so an exact match is used.
+REUSE_ROLES = ("admin", "recruiter")
+
+
 @app_router.post("/{application_id}/reuse-to-job")
 async def reuse_candidate_to_job(
     application_id: str,
@@ -277,7 +289,13 @@ async def reuse_candidate_to_job(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Create a new application for another job using an existing candidate."""
+    """Create a new candidate_reuse application on another job, with its own copies of the source CV files.
+
+    The role check runs before any SQL. Nothing is created unless the source has its CV files on storage.
+    """
+    if current_user.role not in REUSE_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only tenant admins and recruiters can reuse candidates.")
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     # Verify source application exists and belongs to this tenant
@@ -332,31 +350,27 @@ async def reuse_candidate_to_job(
     if existing.scalars().first():
         raise HTTPException(status_code=409, detail="Candidate already applied to this job")
 
-    # Create new application
-    result = await db.execute(
-        text("""
-            INSERT INTO applications (
-              job_id, tenant_id, candidate_name, candidate_email, candidate_phone,
-              submission_source, workflow_status, is_talent_pool
-            ) VALUES (
-              CAST(:job_id AS uuid), CAST(:tid AS uuid), :name, :email, :phone,
-              'candidate_reuse', 'awaiting_review', FALSE
-            )
-            RETURNING application_id
-        """),
-        {
-            "job_id": body.target_job_id,
-            "tid": current_user.tenant_id,
-            "name": src_app["candidate_name"],
-            "email": src_app["candidate_email"],
-            "phone": src_app["candidate_phone"],
-        },
-    )
-    new_app_id = result.scalar()
-    await db.commit()
+    # The copy: files first, then one committed transaction (see services/application_reuse_service)
+    try:
+        new_application_id = await reuse_cv_for_job(
+            db,
+            source_application_id=application_id,
+            target_job_id=body.target_job_id,
+            tenant_id=current_user.tenant_id,
+            files_base_path=get_settings().files_base_path,
+        )
+    except ReuseSourceNotFound as exc:
+        raise HTTPException(status_code=404, detail="Source application not found") from exc
+    except ReuseSourceHasNoFiles as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ReuseSourceFileMissing as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, SQLAlchemyError) as exc:
+        raise HTTPException(status_code=500,
+                            detail="The CV could not be copied. Nothing was created.") from exc
 
     return {
-        "new_application_id": str(new_app_id),
+        "new_application_id": new_application_id,
         "candidate_name": src_app["candidate_name"],
         "message": "Candidate added to new job",
     }

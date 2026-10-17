@@ -132,10 +132,23 @@ def test_score_pending_claims_only_manual_uploads():
 
 
 def test_the_copy_route_names_candidate_reuse_and_the_criteria_gate():
-    source = (BACKEND / "routers" / "candidate_tags.py").read_text(encoding="utf-8")
-    assert "'candidate_reuse', 'awaiting_review', FALSE" in source
-    assert "CRITERIA_BLOCKING_STATUSES" in source
-    assert 'target_job["status"] != "active"' in source
+    route = (BACKEND / "routers" / "candidate_tags.py").read_text(encoding="utf-8")
+    service = (BACKEND / "services" / "application_reuse_service.py").read_text(encoding="utf-8")
+    assert "'candidate_reuse', 'awaiting_review', FALSE" in service
+    assert "reuse_cv_for_job(" in route
+    assert "CRITERIA_BLOCKING_STATUSES" in route
+    assert 'target_job["status"] != "active"' in route
+    assert 'current_user.role not in REUSE_ROLES' in route
+    assert 'REUSE_ROLES = ("admin", "recruiter")' in route
+
+
+def test_the_retry_route_checks_the_exact_role_before_any_sql():
+    source = (BACKEND / "routers" / "jobs.py").read_text(encoding="utf-8")
+    body = source[source.index("async def retry_criteria_extraction"):]
+    guard = body.index("current_user.role not in CRITERIA_RETRY_ROLES")
+    assert guard < body.index("set_rls_context")
+    assert guard < body.index("text(f\"\"\"")
+    assert 'CRITERIA_RETRY_ROLES = ("admin", "recruiter")' in source
 
 
 # ---- the migration text ----
