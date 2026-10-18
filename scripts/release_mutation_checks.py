@@ -7,7 +7,8 @@ The repository itself is never modified.
     python3 scripts/release_mutation_checks.py            # all mutants
     python3 scripts/release_mutation_checks.py --only ts-config
 
-Requires: python3, pytest (backend), node/npx with node_modules installed (frontend mutants).
+Requires: python3, pytest (backend), node/npx with node_modules installed (frontend mutants),
+Chromium for the E2E mutant (the E2E mutant runs e2e/mutation_cleanup_check.sh in the copy).
 """
 from __future__ import annotations
 
@@ -20,7 +21,6 @@ import tempfile
 from dataclasses import dataclass
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-E2E_CLEANUP_CHECK = ROOT / "e2e" / "mutation_cleanup_check.sh"
 
 
 @dataclass(frozen=True)
@@ -116,6 +116,15 @@ MUTANTS: tuple[Mutant, ...] = (
         surface="backend",
     ),
     Mutant(
+        key="e2e-cleanup-leak",
+        description="E2E teardown stops no processes (backend, frontend, PostgreSQL left running)",
+        file="e2e/support/stack.py",
+        old="    for service in reversed(services):\n        _stop_group(service)",
+        new="    for service in reversed(services):\n        pass",
+        command=["bash", "e2e/mutation_cleanup_check.sh"],
+        surface="e2e",
+    ),
+    Mutant(
         key="model-downloads-in-production",
         description="Loader ignores EMBEDDING_MODEL_LOCAL_ONLY and falls back to the model name",
         file="backend/services/local_processor.py",
@@ -173,16 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{verdict:9} {mutant.key:<36} {mutant.description}")
         print(f"          {detail}")
 
-    if E2E_CLEANUP_CHECK.exists():
-        proc = subprocess.run(["bash", str(E2E_CLEANUP_CHECK)], cwd=ROOT, capture_output=True, text=True, timeout=900)
-        verdict = "caught" if proc.returncode != 0 else "SURVIVED"
-        failures += 0 if proc.returncode != 0 else 1
-        print(f"{verdict:9} {'e2e-cleanup-leak':<36} E2E cleanup leaves backend/frontend/postgres running")
-    else:
-        print("MISSING   e2e-cleanup-leak                     e2e/mutation_cleanup_check.sh not present")
-        failures += 1
-
-    print(f"\n{len(selected) - failures}/{len(selected)} selected backend/frontend mutants caught")
+    print(f"\n{len(selected) - failures}/{len(selected)} selected mutants caught")
     return 1 if failures else 0
 
 
