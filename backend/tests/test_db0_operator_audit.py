@@ -15,9 +15,12 @@ OPS = pathlib.Path(__file__).resolve().parents[1] / "db" / "ops"
 
 
 def _bootstrap_script() -> str:
-    template = (OPS / "0001_roles_and_ledger.sql.template").read_text(encoding="utf-8")
-    script = "\n".join(line for line in template.splitlines() if not line.startswith("\\set"))
-    return script.replace(":'migration_operator_password'", "'disposable-test-only'")
+    """The operator bootstrap in its order: 0000 creates the migration roles, then 0001 creates the ledger."""
+    parts = []
+    for name in ("0000_migration_roles.sql.template", "0001_roles_and_ledger.sql.template"):
+        template = (OPS / name).read_text(encoding="utf-8")
+        parts.append("\n".join(line for line in template.splitlines() if not line.startswith("\\set")))
+    return "\n".join(parts).replace(":'migration_operator_password'", "'disposable-test-only'")
 
 
 @pytest.mark.parametrize("ddl, expected", [
@@ -33,7 +36,10 @@ def test_generator_stops_on_objects_it_does_not_handle(ddl, expected):
 
 def test_generator_quotes_the_owner_identifier_and_never_emits_reassign():
     with H.built_chain() as db:
-        db.conn.cursor().execute("CREATE ROLE cv_migrator NOLOGIN")
+        cur = db.conn.cursor()
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = 'cv_migrator'")
+        if cur.fetchone() is None:
+            cur.execute("CREATE ROLE cv_migrator NOLOGIN")
         lines = generate(db.conn, "cv_migrator")
         assert any(line.startswith('ALTER SCHEMA cv_analyzer OWNER TO "cv_migrator";') for line in lines)
         assert not any("REASSIGN" in line.upper() for line in lines)
