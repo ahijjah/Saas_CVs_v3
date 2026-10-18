@@ -17,14 +17,16 @@ ENV PYTHONPATH=/app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ── Pre-download embedding model ──────────────────────────────────────────────
-# Downloads paraphrase-multilingual-MiniLM-L12-v2 (~120MB) into the image
-# so workers start instantly without a network download on first use.
-# Model is cached at /root/.cache/huggingface/hub/
+# ── Embedding model (baked into the image, loaded from disk at runtime) ─────
+# The build downloads paraphrase-multilingual-MiniLM-L12-v2 once and saves a local copy.
+# At runtime the app reads only that directory and never reaches the network for it.
+ENV EMBEDDING_MODEL_PATH=/opt/models/paraphrase-multilingual-MiniLM-L12-v2 \
+    EMBEDDING_MODEL_LOCAL_ONLY=true \
+    HF_HUB_OFFLINE=1
 RUN python -c "\
 from sentence_transformers import SentenceTransformer; \
-SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2'); \
-print('Embedding model downloaded successfully.')"
+SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2').save('/opt/models/paraphrase-multilingual-MiniLM-L12-v2'); \
+print('Embedding model saved to /opt/models.')"
 
 # ── Application code ──────────────────────────────────────────────────────────
 COPY . .

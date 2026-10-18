@@ -25,6 +25,7 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService, APIService } from '../services/api';
+import type { ToastType } from '../components/Toast';
 import { WEBHOOK_CONFIG } from '../config';
 import {
   AuthState, WorkflowStatus, CandidateComment, AssignableUser,
@@ -46,7 +47,7 @@ import { TagChip } from '../components/TagChip';
 
 interface CandidatesWorkspaceProps {
   auth: AuthState;
-  addToast: (msg: string, type: 'success' | 'error') => void;
+  addToast: (msg: string, type: ToastType) => void;
 }
 
 interface Candidate {
@@ -1088,6 +1089,7 @@ interface AppDetail {
   communications?: CandidateCommunication[];
   knockout_answers?: import('../types').KnockoutAnswerRecord[];
   knockout_suggestions?: import('../types').KnockoutSuggestionRecord[];
+  knockout_validations?: import('../types').KnockoutValidationRecord[];
   job_id?: string;
 }
 
@@ -1116,7 +1118,7 @@ interface CandidateDetailDrawerProps {
   onWorkflowUpdate: (applicationId: string, toStatus: WorkflowStatus, note?: string, isAdvancedMove?: boolean) => void;
   onNotesUpdate: (applicationId: string, notes: string) => Promise<void>;
   onAssign: (applicationId: string, userId: string | null) => Promise<void>;
-  addToast: (msg: string, type: 'success' | 'error') => void;
+  addToast: (msg: string, type: ToastType) => void;
 }
 
 const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
@@ -1463,8 +1465,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
     setWsKoAnalyzing(true);
     setWsKoError(null);
     try {
-      const api = new APIService(token);
-      const result = await api.triggerScreeningValidation(candidate.application_id);
+      const result = await apiService.triggerScreeningValidation(candidate.application_id, token);
       if (result?.validations && Array.isArray(result.validations)) {
         setWsValidations(result.validations);
       }
@@ -1488,8 +1489,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const handleWsAcceptSuggestion = async (suggestionId: string, questionId: string, overrideAnswer?: string) => {
     if (!candidate?.application_id || !token) return;
     try {
-      const api = new APIService(token);
-      await api.acceptKnockoutSuggestion(candidate.application_id, questionId, overrideAnswer);
+      await apiService.acceptKnockoutSuggestion(candidate.application_id, questionId, overrideAnswer ?? null, token);
       setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
       setWsEditingSuggQid(null);
       setWsEditingSuggValue('');
@@ -1515,8 +1515,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
   const handleWsIgnoreSuggestion = async (suggestionId: string, questionId: string) => {
     if (!candidate?.application_id || !token) return;
     try {
-      const api = new APIService(token);
-      await api.ignoreKnockoutSuggestion(candidate.application_id, questionId);
+      await apiService.ignoreKnockoutSuggestion(candidate.application_id, questionId, token);
       setWsSuggestions(prev => prev.filter(s => s.suggestion_id !== suggestionId));
       setWsValidationLocalStale(true);
     } catch (err: any) {
@@ -4175,7 +4174,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   const [clientLoading, setClientLoading] = useState(false);
 
   // Debounce search input
-  const searchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
 
   // Workflow update: tracks the application_id currently being updated

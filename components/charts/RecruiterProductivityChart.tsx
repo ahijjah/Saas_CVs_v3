@@ -18,6 +18,19 @@ interface RecruiterProductivityChartProps {
 const TOP_PERFORMER_FILL = '#10b981';
 const BAR_FILL = '#3b82f6';
 
+export const ProductivityLegend: React.FC = () => (
+  <ul className="flex flex-wrap gap-4 justify-center text-xs text-slate-600 list-none p-0">
+    <li className="flex items-center gap-1.5">
+      <span aria-hidden="true" style={{ display: 'inline-block', width: 10, height: 10, background: BAR_FILL }} />
+      Applications assigned
+    </li>
+    <li className="flex items-center gap-1.5">
+      <span aria-hidden="true" style={{ display: 'inline-block', width: 10, height: 10, background: TOP_PERFORMER_FILL }} />
+      Top performer
+    </li>
+  </ul>
+);
+
 const ProductivityTooltip: React.FC<any> = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
   const item = payload[0]?.payload as RecruiterProductivityMetric & { isTopPerformer: boolean };
@@ -60,12 +73,7 @@ const RecruiterProductivityChart: React.FC<RecruiterProductivityChartProps> = ({
           tick={{ fontSize: 13, fill: '#1f2937' }}
         />
         <Tooltip content={<ProductivityTooltip />} cursor={{ fill: 'rgba(59, 130, 246, 0.06)' }} />
-        <Legend
-          payload={[
-            { value: 'Applications assigned', type: 'square', color: BAR_FILL },
-            { value: 'Top performer', type: 'square', color: TOP_PERFORMER_FILL },
-          ]}
-        />
+        <Legend content={<ProductivityLegend />} />
         <Bar dataKey="total_applications_assigned" name="Applications assigned" radius={[0, 4, 4, 0]} barSize={22}>
           {data.map((entry, index) => (
             <Cell key={`cell-${index}`} fill={entry.isTopPerformer ? TOP_PERFORMER_FILL : BAR_FILL} />

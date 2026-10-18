@@ -379,7 +379,7 @@ export const AIUsagePage: React.FC<AIUsageProps> = ({ auth }) => {
   const handleExportCsv = () => {
     if (!logs.length) return;
     const cols = ['usage_id','stage','provider','model','prompt_tokens','completion_tokens','total_tokens','estimated_cost_usd','request_status','latency_ms','created_at'];
-    const rows = [cols.join(','), ...logs.map(r => cols.map(c => JSON.stringify((r as Record<string,unknown>)[c] ?? '')).join(','))];
+    const rows = [cols.join(','), ...logs.map(r => cols.map(c => JSON.stringify(r[c as keyof LogRow] ?? '')).join(','))];
     const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -405,10 +405,10 @@ export const AIUsagePage: React.FC<AIUsageProps> = ({ auth }) => {
   };
 
   // ── Bar chart helper ──────────────────────────────────────────────────────
-  function BarChart({ data, labelKey, valueKey, colorClass = 'bg-indigo-500', fmtValue = String }: {
-    data: Record<string, unknown>[];
-    labelKey: string;
-    valueKey: string;
+  function BarChart<T extends object>({ data, labelKey, valueKey, colorClass = 'bg-indigo-500', fmtValue = String }: {
+    data: T[];
+    labelKey: keyof T & string;
+    valueKey: keyof T & string;
     colorClass?: string;
     fmtValue?: (v: number) => string;
   }) {

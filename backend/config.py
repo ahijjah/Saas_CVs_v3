@@ -74,8 +74,13 @@ class Settings(BaseSettings):
     gatekeeper_semantic_threshold: float = 0.40
     # rapidfuzz partial_ratio threshold for skill matching (0-100)
     gatekeeper_skill_fuzzy_threshold: float = 80.0
-    # Sentence-transformer model name (must be available on HuggingFace)
+    # Sentence-transformer model. Production loads it from a local directory prepared at
+    # deploy time (docs/RELEASE_RUNBOOK.md, "Sentence-transformer model"). Requests never
+    # download it: with embedding_model_local_only=True a missing or unprepared directory
+    # fails the API and worker startup, and the readiness endpoint reports it.
     embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+    embedding_model_path: str = ""
+    embedding_model_local_only: bool = True
 
     # ── Bilingual output ──────────────────────────────────────────────────────
     # Language for AI-generated human-readable fields in scoring output

@@ -15,6 +15,7 @@ in module scope — no re-loading between requests.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -26,26 +27,69 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # ── Model singleton ───────────────────────────────────────────────────────────
-# Loaded lazily on first use so the FastAPI process starts fast.
-# Celery workers call ensure_model_loaded() at startup.
+# The API lifespan and each Celery worker process call ensure_model_loaded() at startup, so a
+# missing model stops the process before it serves anything. A request never triggers a
+# download: with embedding_model_local_only=True the loader only reads a local directory.
 _MODEL = None
-_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
+
+
+class EmbeddingModelUnavailable(RuntimeError):
+    """The sentence-transformer model cannot be used on this host."""
+
+
+def _load_model():
+    from config import get_settings
+
+    settings = get_settings()
+    path = settings.embedding_model_path.strip()
+    if settings.embedding_model_local_only:
+        if not path:
+            raise EmbeddingModelUnavailable(
+                "EMBEDDING_MODEL_PATH is not set. Production needs a local copy of "
+                f"'{settings.embedding_model}'; see docs/RELEASE_RUNBOOK.md."
+            )
+        if not os.path.isdir(path):
+            raise EmbeddingModelUnavailable(
+                f"EMBEDDING_MODEL_PATH '{path}' is not a directory. The model has not been "
+                "prepared on this host; see docs/RELEASE_RUNBOOK.md."
+            )
+        source = path
+    else:
+        # Development only: lets sentence-transformers fetch the model by name.
+        source = path or settings.embedding_model
+
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise EmbeddingModelUnavailable("sentence-transformers is not installed in this environment.") from exc
+
+    try:
+        return SentenceTransformer(source)
+    except Exception as exc:
+        raise EmbeddingModelUnavailable(f"Embedding model could not be loaded from '{source}': {exc}") from exc
 
 
 def ensure_model_loaded() -> None:
-    """Pre-load the embedding model (call at worker/app startup)."""
+    """Load the embedding model once per process. Raises EmbeddingModelUnavailable."""
     global _MODEL
     if _MODEL is None:
-        logger.info("Loading sentence-transformer model: %s", _MODEL_NAME)
-        from sentence_transformers import SentenceTransformer
-        _MODEL = SentenceTransformer(_MODEL_NAME)
-        logger.info("Model loaded successfully.")
+        logger.info("Loading sentence-transformer model")
+        _MODEL = _load_model()
+        logger.info("Sentence-transformer model loaded.")
+
+
+def embedding_readiness() -> dict:
+    """Readiness for /health/ready. The reason stays in the log, not in the response."""
+    try:
+        ensure_model_loaded()
+    except EmbeddingModelUnavailable as exc:
+        logger.error("Embedding model unavailable: %s", exc)
+        return {"component": "embedding_model", "ready": False}
+    return {"component": "embedding_model", "ready": True}
 
 
 def _get_model():
-    global _MODEL
-    if _MODEL is None:
-        ensure_model_loaded()
+    ensure_model_loaded()
     return _MODEL
 
 

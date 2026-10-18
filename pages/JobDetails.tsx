@@ -4,7 +4,7 @@ import { apiService } from '../services/api';
 import RequirementsPanel from '../components/RequirementsPanel';
 import { scoringBlockedByRequirements } from '../services/requirementsEdits';
 import { WEBHOOK_CONFIG } from '../config';
-import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria } from '../types';
+import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria, AnalysisJson } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
@@ -609,8 +609,6 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           posted_date: '2023-10-15',
           closing_date: '2023-11-30',
           ingestion_note: '',
-          ingestion_mode: 'forwarding',
-          ingestion_email: null,
           applications_total: 142,
           applications_qualified: 24,
           applications_partial: 45,
@@ -1134,7 +1132,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
 
   const handleCriteriaEdit = useCallback(() => {
     if (!details) return;
-    const a = details.analysis_json ?? {};
+    const a: Partial<AnalysisJson> = details.analysis_json ?? {};
     setDraftCriteria({
       required_skills:    (a.skills?.required    || []).join('\n'),
       preferred_skills:   (a.skills?.preferred   || []).join('\n'),
@@ -2990,7 +2988,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                       <div>
                         <p className="text-[9px] font-black text-textMuted uppercase tracking-widest mb-2">{t.evalLogic}</p>
                         <div className="flex flex-wrap gap-2">
-                          {Object.entries(scoringWeights).map(([k, v]) => (
+                          {Object.entries<number>(scoringWeights).map(([k, v]) => (
                             <span key={k} className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 rounded-lg text-[10px] font-bold text-indigo-700">
                               {k.replace(/_/g, ' ')}: {v}%
                             </span>

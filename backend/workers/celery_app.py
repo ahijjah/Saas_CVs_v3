@@ -1,5 +1,6 @@
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import worker_process_init
 
 from config import get_settings
 
@@ -41,3 +42,12 @@ celery_app.conf.beat_schedule = {
         "schedule": 300,  # every 5 minutes
     },
 }
+
+
+@worker_process_init.connect
+def _load_embedding_model(**_kwargs):
+    # Each prefork child loads the model before taking tasks, so a missing model stops the
+    # worker at startup instead of failing the first scoring task.
+    from services import local_processor
+
+    local_processor.ensure_model_loaded()

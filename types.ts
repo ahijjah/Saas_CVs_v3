@@ -378,7 +378,7 @@ export interface ApplicationDetailedAnalysis {
   original_filename?: string | null;
   decision: ApplicationDecision;
   overall_score: number;
-  submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email';
+  submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email' | 'public_apply';
   processing_status?: string;
   stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
   evaluation_stage?: 1 | 2 | 3 | null;
@@ -477,11 +477,13 @@ export interface UploadQueueStatus {
 
 // ─── Platform Control ─────────────────────────────────────────────────────────
 
+export type PassingOperator = '>=' | '>' | '=' | '<=' | '<';
+
 export interface PassingCriteria {
   // yes_no and single_choice
   passing_answers?: string[];
   // number
-  operator?: '>=' | '>' | '=' | '<=' | '<';
+  operator?: PassingOperator;
   value?: number;
 }
 
