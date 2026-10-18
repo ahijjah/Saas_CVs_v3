@@ -667,3 +667,25 @@ async def test_a_cancelled_row_is_retried_through_the_pending_cancellation_claim
     await _run(engine, job, EN_JD)
     assert _row(built, job)[0] == "completed"
 
+
+
+@pytest.mark.asyncio
+async def test_the_cancellation_release_never_changes_a_completed_document_even_with_its_current_token(built, engine, monkeypatch):
+    """The release statement itself is guarded: a completed document is never returned to pending, even by a caller that presents the
+    row's own current updated_at as its token."""
+    _fake_model(monkeypatch, EN_OUTPUT)
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    await _run(engine, job, EN_JD)
+    before = _row(built, job)
+    current_token = (await _current_updated_at(engine, job))
+    await worker._release_cancelled(job, current_token, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False))
+    after = _row(built, job)
+    assert after[0] == "completed" and after[4] == before[4] and after[3] == before[3]
+
+
+async def _current_updated_at(engine, job):
+    async with AsyncSession(engine) as db:
+        async with db.begin():
+            await db.execute(text("SELECT set_config('app.current_tenant_id', '', true), set_config('app.current_role', 'super_admin', true)"))
+            return (await db.execute(text("SELECT updated_at FROM job_criteria WHERE job_id = :j"), {"j": job})).scalar_one()
