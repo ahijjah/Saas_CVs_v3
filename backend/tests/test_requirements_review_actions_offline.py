@@ -223,3 +223,13 @@ def test_a_review_action_leaves_the_stored_document_untouched():
     before = copy.deepcopy(doc)
     _plan(doc, original, [{"op": "reorder_items", "category": "skills", "item_ids": list(reversed(_ids(doc)))}])
     assert doc == before
+
+
+def test_a_confirmation_goes_stale_when_the_document_changes_and_no_longer_allows_scoring():
+    doc, original = _document_preferred_only()
+    confirmed = _plan(doc, original, [{"op": "confirm_no_numeric_score"}]).document
+    assert compute_readiness(confirmed, original=original, jd_text=JD).can_proceed
+    item_id = confirmed["categories"]["experience"]["items"][0]["id"]
+    changed = _plan(confirmed, original, [{"op": "set_text", "item_id": item_id, "text": "Backend engineering experience"}]).document
+    assert not compute_readiness(changed, original=original, jd_text=JD).can_proceed
+    assert compute_readiness(changed, original=original, jd_text=JD).state == "needs_confirmation"
