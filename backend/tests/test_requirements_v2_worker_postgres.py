@@ -15,6 +15,9 @@ import json
 import uuid
 from types import SimpleNamespace
 
+import hashlib
+from datetime import datetime, timezone
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -429,7 +432,7 @@ async def test_a_failure_while_building_the_write_leaves_the_row_unfinished(buil
 # ---- the task wrapper: retry release and final failure ----
 
 @pytest.mark.asyncio
-async def test_the_task_retries_then_marks_the_row_failed_with_the_fixed_message(built, engine, monkeypatch):
+async def test_the_task_retries_then_marks_the_row_failed_with_the_rejected_message(built, engine, monkeypatch):
     _fake_model(monkeypatch, "{not json")
     monkeypatch.setattr(worker, "_task_engine_and_session", lambda: (engine, _sessions(engine)))
     tenant = _tenant(built)
@@ -446,7 +449,7 @@ async def test_the_task_retries_then_marks_the_row_failed_with_the_fixed_message
     assert retries == ["pending", "pending"]        # each intermediate attempt released the claim before the retry
     assert result.state == "FAILURE"
     status, error, _, revision, analysis, *_ = _row(built, job)
-    assert (status, error, revision, analysis) == ("failed", CS.WORKER_FAILED_MESSAGE, 0, None)
+    assert (status, error, revision, analysis) == ("failed", CS.REQUIREMENTS_REJECTED_MESSAGE, 0, None)
 
 
 # ---- tenant isolation and legacy rows ----
@@ -689,3 +692,101 @@ async def _current_updated_at(engine, job):
         async with db.begin():
             await db.execute(text("SELECT set_config('app.current_tenant_id', '', true), set_config('app.current_role', 'super_admin', true)"))
             return (await db.execute(text("SELECT updated_at FROM job_criteria WHERE job_id = :j"), {"j": job})).scalar_one()
+
+
+# ---- failed-description hash: written with the failed status, normalized, and guarded by the claim ----
+
+def _failure(built, job):
+    cur = built.conn.cursor()
+    cur.execute("SELECT criteria_last_failed_description_hash, criteria_last_failed_at FROM job_criteria WHERE job_id = %s", (job,))
+    return cur.fetchone()
+
+
+def _hash(description):
+    return worker._normalize_description_hash(description)
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_extraction_stores_the_normalized_hash_with_the_failed_status(built, engine, monkeypatch):
+    _fake_model(monkeypatch, "{not json")
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    await _apply_task(monkeypatch, engine, job, EN_JD)
+    status, error, *_ = _row(built, job)
+    stored_hash, failed_at = _failure(built, job)
+    assert (status, error) == ("failed", CS.REQUIREMENTS_REJECTED_MESSAGE)
+    assert stored_hash == _hash(EN_JD)
+    assert failed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_the_stored_hash_is_the_normalized_description_not_the_raw_text(built, engine, monkeypatch):
+    _fake_model(monkeypatch, "{not json")
+    tenant = _tenant(built)
+    raw = "  Senior   PYTHON developer.\n\nPython and SQL are required.  "
+    job = _job(built, tenant, raw)
+    await _apply_task(monkeypatch, engine, job, raw)
+    stored_hash, _ = _failure(built, job)
+    assert stored_hash == _hash(raw)
+    assert stored_hash == _hash("senior python developer. python and sql are required.")
+    assert stored_hash != hashlib.sha256(raw.encode()).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_a_transient_failure_stores_the_hash_and_keeps_the_fixed_transient_message(built, engine, monkeypatch):
+    _fake_model(monkeypatch, RuntimeError("provider unavailable"))
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    await _apply_task(monkeypatch, engine, job, EN_JD)
+    status, error, *_ = _row(built, job)
+    assert (status, error) == ("failed", CS.WORKER_FAILED_MESSAGE)
+    assert _failure(built, job)[0] == _hash(EN_JD)
+
+
+@pytest.mark.asyncio
+async def test_an_unconfigured_stage_stores_the_hash_and_the_configuration_message(built, engine, monkeypatch):
+    async def unconfigured(Session):
+        return None
+
+    monkeypatch.setattr(worker, "_resolve_model", unconfigured)
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    monkeypatch.setattr(worker, "_task_engine_and_session", lambda: (engine, _sessions(engine)))
+    await asyncio.to_thread(worker.extract_requirements_v2_task.apply, args=(job, EN_JD))
+    status, error, *_ = _row(built, job)
+    assert (status, error) == ("failed", CS.MODEL_NOT_CONFIGURED_MESSAGE)
+    assert _failure(built, job)[0] == _hash(EN_JD)
+
+
+@pytest.mark.asyncio
+async def test_a_stale_claim_cannot_overwrite_the_status_or_the_hash(built, engine, monkeypatch):
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    _set_row(built, job, criteria_extraction_status="processing", criteria_last_failed_description_hash="previous-hash")
+    stale_token = datetime(2000, 1, 1, tzinfo=timezone.utc)   # not the row's current claim
+    marked = await worker._mark_failed(job, stale_token, _sessions(engine), CS.REQUIREMENTS_REJECTED_MESSAGE, EN_JD)
+    assert marked is False
+    status, error, *_ = _row(built, job)
+    assert status == "processing"
+    assert _failure(built, job)[0] == "previous-hash"
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_attempt_is_not_recorded_as_a_failed_attempt(built, engine, monkeypatch):
+    async def cancel_before_model(Session):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(worker, "_resolve_model", cancel_before_model)
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    with pytest.raises(asyncio.CancelledError):
+        await _run(engine, job, EN_JD)
+    status, error, *_ = _row(built, job)
+    assert (status, error) == ("pending", CS.EXTRACTION_CANCELLED_MESSAGE)
+    assert _failure(built, job) == (None, None)
+
+
+async def _apply_task(monkeypatch, engine, job, description):
+    """Run the whole Celery task (with its retries) eagerly, as the broker would, against the test database."""
+    monkeypatch.setattr(worker, "_task_engine_and_session", lambda: (engine, _sessions(engine)))
+    return await asyncio.to_thread(worker.extract_requirements_v2_task.apply, args=(job, description))

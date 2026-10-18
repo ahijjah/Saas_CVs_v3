@@ -16,7 +16,7 @@ from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.criteria_status import (
     ENQUEUE_FAILED_MESSAGE, INSUFFICIENT_MESSAGE, LEGACY_ONLY_PREDICATE, LEGACY_REFUSAL_DETAIL,
-    EXTRACTION_CANCELLED_MESSAGE, REQUIREMENTS_V2_PREDICATE, REQUIREMENTS_V2_SCHEMA_VERSION, STALE_PROCESSING_MINUTES,
+    EXTRACTION_CANCELLED_MESSAGE, REQUIREMENTS_REJECTED_MESSAGE, REQUIREMENTS_V2_PREDICATE, REQUIREMENTS_V2_SCHEMA_VERSION, STALE_PROCESSING_MINUTES,
     WORKER_FAILED_MESSAGE, display_status,
 )
 from services.subscription_service import can_create_campaign
@@ -1298,6 +1298,8 @@ _CLAIM_RETRY_V2_SQL = f"""
       AND analysis_json IS NULL
       AND criteria_extraction_retry_count < :max_retries
       AND {REQUIREMENTS_V2_PREDICATE}
+      AND (criteria_extraction_error IS DISTINCT FROM :rejected_message
+           OR criteria_last_failed_description_hash IS DISTINCT FROM :description_hash)
       AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
     RETURNING criteria_extraction_retry_count
 """
@@ -1324,7 +1326,7 @@ def _retry_refusal(state, max_retries: int, description_hash: str) -> HTTPExcept
     if int(state["criteria_extraction_retry_count"] or 0) >= max_retries:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Maximum analysis retries reached for this campaign.")
-    if (state["criteria_extraction_error"] == INSUFFICIENT_MESSAGE
+    if (state["criteria_extraction_error"] in (INSUFFICIENT_MESSAGE, REQUIREMENTS_REJECTED_MESSAGE)
             and state["criteria_last_failed_description_hash"] == description_hash):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Please update the job description with more meaningful details before retrying analysis.")
@@ -1348,12 +1350,15 @@ async def _retry_requirements_v2(job_id: str, description: str, current_user, db
     tenant_params = {"jid": job_id, "tid": current_user.tenant_id}
     await db.execute(text(_RECOVER_STALE_V2_SQL),
                      {**tenant_params, "failed_message": WORKER_FAILED_MESSAGE, "minutes": STALE_PROCESSING_MINUTES})
+    description_hash = _normalize_description_hash(description)
     claimed = (await db.execute(text(_CLAIM_RETRY_V2_SQL), {**tenant_params, "max_retries": max_retries,
-                                                              "cancelled_message": EXTRACTION_CANCELLED_MESSAGE})).scalar_one_or_none()
+                                                              "cancelled_message": EXTRACTION_CANCELLED_MESSAGE,
+                                                              "rejected_message": REQUIREMENTS_REJECTED_MESSAGE,
+                                                              "description_hash": description_hash})).scalar_one_or_none()
     if claimed is None:
         state = (await db.execute(text(_RETRY_STATE_SQL), tenant_params)).mappings().first()
         await db.commit()
-        raise _retry_refusal(state, max_retries, _normalize_description_hash(description))
+        raise _retry_refusal(state, max_retries, description_hash)
     await db.commit()
 
     try:

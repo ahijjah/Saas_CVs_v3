@@ -197,3 +197,102 @@ async def test_a_new_job_gets_a_v2_criteria_row_and_the_v2_worker_is_enqueued(bu
     status, error, retry, marker, analysis = _row(built, job)
     assert (status, marker, analysis) == ("pending", 2, None)
     assert enqueued == {"v2": [job], "legacy": []}
+
+
+# ---- failed-description hash: retry policy for requirements-v2 rows ----
+
+from services.criteria_status import REQUIREMENTS_REJECTED_MESSAGE as _REJECTED  # noqa: E402
+from workers.criteria_worker import _normalize_description_hash as _hash  # noqa: E402
+
+JD_CHANGED = JD + " The role also owns incident response and on-call rotation planning for the platform team."
+
+
+def _fail(built, job, *, error, description_hash):
+    cur = built.conn.cursor()
+    cur.execute("UPDATE job_criteria SET criteria_extraction_status = 'failed', criteria_extraction_error = %s,"
+                " criteria_last_failed_description_hash = %s, criteria_last_failed_at = now() WHERE job_id = %s",
+                (error, description_hash, job))
+
+
+def _set_description(built, job, description):
+    cur = built.conn.cursor()
+    cur.execute("UPDATE jobs SET description = %s WHERE job_id = %s", (description, job))
+
+
+def _failed_state(built, job):
+    cur = built.conn.cursor()
+    cur.execute("SELECT criteria_extraction_status, criteria_extraction_error, criteria_extraction_retry_count,"
+                " criteria_last_failed_description_hash FROM job_criteria WHERE job_id = %s", (job,))
+    return cur.fetchone()
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_v2_row_is_refused_for_an_unchanged_description_and_nothing_is_enqueued(built, engine, enqueued):
+    tenant = _tenant(built)
+    job = _job(built, tenant, marker=2)
+    _fail(built, job, error=_REJECTED, description_hash=_hash(JD))
+    before = _failed_state(built, job)
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 400
+    assert "update the job description" in response.json()["detail"].lower()
+    assert enqueued == {"v2": [], "legacy": []}
+    assert _failed_state(built, job) == before
+
+
+@pytest.mark.asyncio
+async def test_a_cosmetic_change_to_a_rejected_description_is_still_refused(built, engine, enqueued):
+    tenant = _tenant(built)
+    job = _job(built, tenant, marker=2)
+    _fail(built, job, error=_REJECTED, description_hash=_hash(JD))
+    _set_description(built, job, "  " + JD.upper().replace("\n", "   ") + "  ")
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 400
+    assert enqueued == {"v2": [], "legacy": []}
+
+
+@pytest.mark.asyncio
+async def test_a_substantive_change_permits_the_retry_through_the_v2_worker(built, engine, enqueued):
+    tenant = _tenant(built)
+    job = _job(built, tenant, marker=2)
+    _fail(built, job, error=_REJECTED, description_hash=_hash(JD))
+    _set_description(built, job, JD_CHANGED)
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 202
+    assert enqueued == {"v2": [job], "legacy": []}
+    assert _failed_state(built, job)[:3] == ("pending", None, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_transient_failure_with_an_unchanged_description_remains_retryable(built, engine, enqueued):
+    tenant = _tenant(built)
+    job = _job(built, tenant, marker=2)
+    _fail(built, job, error=CS.WORKER_FAILED_MESSAGE, description_hash=_hash(JD))
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 202
+    assert enqueued["v2"] == [job]
+
+
+@pytest.mark.asyncio
+async def test_a_missing_model_failure_remains_retryable_after_the_model_is_configured(built, engine, enqueued):
+    tenant = _tenant(built)
+    job = _job(built, tenant, marker=2)
+    _fail(built, job, error=CS.MODEL_NOT_CONFIGURED_MESSAGE, description_hash=_hash(JD))
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 202
+    assert enqueued["v2"] == [job]
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_insufficient_row_keeps_its_refusal(built, engine, enqueued):
+    tenant = _tenant(built)
+    job = _job(built, tenant, marker=None)
+    _fail(built, job, error=CS.INSUFFICIENT_MESSAGE, description_hash=_hash(JD))
+    async with _client(_app(_user(tenant), engine)) as client:
+        response = await client.post(f"/jobs/{job}/criteria/retry")
+    assert response.status_code == 400
+    assert enqueued == {"v2": [], "legacy": []}
