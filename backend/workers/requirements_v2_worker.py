@@ -32,7 +32,7 @@ from services.requirements_v2.acknowledgment import REVIEW_KEY, empty_review
 from services.requirements_v2.contract import CATEGORIES, ITEM_ID_RE, SCHEMA_VERSION, WEIGHT_COLUMN, collect_item_ids
 from services.requirements_v2.extraction import build_request, parse_response
 from services.requirements_v2.structural_detection import attach
-from services.requirements_v2.structural_expectations import ALTERNATIVES_TOGETHER, jd_sha256, has_token
+from services.requirements_v2.structural_expectations import ALTERNATIVES_TOGETHER, has_token, jd_sha256, validate_expectations
 from services.requirements_v2.structural_review import READINESS_INVALID, structural_status
 from services.requirements_v2.structure import STRUCTURE_KEY, empty_block
 from services.requirements_v2.validation import validate_draft, validate_structure
@@ -41,6 +41,7 @@ from workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 _ITEM_ID_PREFIX = "req_"
+STRUCTURAL_EXPECTATIONS_KEY = "structural_expectations"
 STAGE = "cv_analyzer"
 
 
@@ -92,39 +93,52 @@ def checked_document(result, *, retired=()) -> dict:
     return doc
 
 
-def derive_expectations(doc: dict, description: str) -> dict:
-    """The structural expectation block for this document: one alternatives_together expectation per item whose OR alternatives
-    are two or more words of its own source wording. Nothing else is inferred. The block is bound to the description by its hash."""
-    expectations = []
+def expectations_from_extraction(doc: dict, description: str) -> dict:
+    """The structural expectation baseline for one extraction, built on the server from the document the model returned.
+
+    For each source wording that two or more items quote, the expectation's tokens are the alternatives the items declared that occur
+    as words in that wording. A wording is expected to hold one item with all of its alternatives, so a split across items is what the
+    detector reports. Nothing else is inferred, and the block is validated against the description before it is returned. No client
+    input reaches this function."""
+    groups: dict[str, list[dict]] = {}
     for category in CATEGORIES:
         for item in doc["categories"][category]["items"]:
-            source = item.get("source_text")
-            alternatives = item.get("alternatives") or []
-            if not source or description.count(source) != 1:
-                continue
-            tokens = []
-            for alternative in alternatives:
-                if has_token(source, alternative) and alternative not in tokens:
-                    tokens.append(alternative)
-            if len(tokens) < 2:
-                continue
-            start = description.index(source)
-            expectations.append({"id": f"exp_{item['id']}", "kind": ALTERNATIVES_TOGETHER, "source_text": source,
-                                 "source_start": start, "source_end": start + len(source), "tokens": tokens})
-    return {"schema_version": 1, "jd_sha256": jd_sha256(description), "expectations": expectations}
+            if item.get("source_text"):
+                groups.setdefault(item["source_text"], []).append(item)
+    expectations = []
+    for source, items in groups.items():
+        if len(items) < 2 or description.count(source) != 1:
+            continue
+        declared: list[str] = []
+        for item in items:
+            for alternative in item.get("alternatives") or []:
+                if alternative not in declared:
+                    declared.append(alternative)
+        tokens = [t for t in declared if has_token(source, t)]
+        if len(tokens) < 2:
+            continue
+        start = description.index(source)
+        digest = hashlib.sha256(f"{source}\n{'|'.join(tokens)}".encode("utf-8")).hexdigest()[:12]
+        expectations.append({"id": f"exp_{digest}", "kind": ALTERNATIVES_TOGETHER, "source_text": source,
+                             "source_start": start, "source_end": start + len(source), "tokens": tokens})
+    block = {"schema_version": 1, "jd_sha256": jd_sha256(description), "expectations": expectations}
+    validate_expectations(block, description)              # the canonical contract; a builder bug fails loudly here
+    return block
 
 
-def finalise_document(doc: dict, description: str) -> dict:
-    """The document to store: the structural review from the canonical detector, the server-owned blocks always present, and a final
-    structural check. Raises InvalidModelOutput when the final structure is not usable."""
-    doc = attach(doc, description, derive_expectations(doc, description))
+def finalise_document(doc: dict, description: str) -> tuple[dict, dict]:
+    """The document to store and the expectation baseline it was checked against. The structural review comes from the canonical
+    detector, the server-owned blocks are always present, and the final structure is checked again. Raises InvalidModelOutput when
+    the final structure is not usable."""
+    expectations = expectations_from_extraction(doc, description)
+    doc = attach(doc, description, expectations)
     doc.setdefault(REVIEW_KEY, empty_review())
     doc.setdefault(STRUCTURE_KEY, empty_block())
     if validate_structure(doc):
         raise InvalidModelOutput("structure_after_blocks")
     if any(issue.code == READINESS_INVALID for issue in structural_status(doc, description).issues):
         raise InvalidModelOutput("structural_review_invalid")
-    return doc
+    return doc, expectations
 
 
 async def _resolve_model(Session):
@@ -185,12 +199,13 @@ _PERSIST = """
 """
 
 
-def _persist_params(analysis: dict, original: dict, doc: dict, *, job_id: str, token, model: str) -> dict:
+def _persist_params(analysis: dict, original: dict, expectations: dict, doc: dict, *, job_id: str, token, model: str) -> dict:
     return {
         "jid": job_id,
         "token": token,
         "analysis": json.dumps(analysis, ensure_ascii=False),
-        "original": json.dumps({"requirements": original}, ensure_ascii=False),
+        # The baseline holds the approved expectations next to the original analysis: the structural review is checked against it.
+        "original": json.dumps({"requirements": original, STRUCTURAL_EXPECTATIONS_KEY: expectations}, ensure_ascii=False),
         **{WEIGHT_COLUMN[c]: doc["categories"][c]["weight"] for c in CATEGORIES},
         "model": model,
     }
@@ -290,11 +305,11 @@ async def _extract_async(job_id: str, description: str, Session, claim: dict) ->
     content, finish_reason = await _request_extraction(description, resolved)
     result = parse_response(content, description, finish_reason,
                             id_factory=stable_id_factory(description, reserved=retired))
-    doc = finalise_document(checked_document(result, retired=retired), description)
+    doc, expectations = finalise_document(checked_document(result, retired=retired), description)
     analysis = result.analysis
     analysis["requirements"] = doc
 
-    params = _persist_params(analysis, result.original, doc, job_id=job_id, token=token, model=resolved.model_name)
+    params = _persist_params(analysis, result.original, expectations, doc, job_id=job_id, token=token, model=resolved.model_name)
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
         written = (await db.execute(text(_PERSIST), params)).first()

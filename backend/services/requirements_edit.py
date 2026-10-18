@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import uuid
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Union
@@ -36,16 +37,18 @@ from services.requirements_v2.contract import (
     CATEGORIES, IMPORTANCES, ITEM_ID_RE, ORIGIN_RECRUITER_ADDED, WEIGHT_COLUMN, Issue, collect_item_ids, is_int,
 )
 from services.requirements_v2.editing import (
-    add_item, remove_item, set_category_weight, set_importance, set_item_weight, set_structure, set_text,
+    add_item, remove_item, reorder_items, set_category_weight, set_importance, set_item_weight, set_structure, set_text,
 )
-from services.requirements_v2.acknowledgment import classification_status, get_review
+from services.requirements_v2.acknowledgment import (
+    AcknowledgmentError, acknowledge_classification_warning, classification_status, get_review,
+)
 from services.requirements_v2.readiness import (
-    basis_hash, carry_server_owned, compute_readiness, is_preferred_only,
+    ConfirmationError, basis_hash, carry_server_owned, compute_readiness, confirm_no_numeric_score, is_preferred_only,
 )
 from services.requirements_v2.structural_review import (
-    READINESS_INVALID, STATUS_OPEN, STRUCTURAL_KEY, structural_status,
+    DECISIONS, READINESS_INVALID, STATUS_OPEN, STRUCTURAL_KEY, StructuralResolutionError, resolve_finding, structural_status,
 )
-from services.requirements_v2.structure import record_structure_edits, structure_status
+from services.requirements_v2.structure import StructureError, confirm_structure, record_structure_edits, structure_status
 from services.requirements_v2.validation import validate_final, validate_structure
 
 if TYPE_CHECKING:
@@ -135,6 +138,7 @@ class SaveAudit:
     readiness_after: str
     revision_before: int | None = None
     revision_after: int | None = None
+    review_actions: tuple[tuple[str, str, str | None], ...] = ()   # (action kind, id, decision or None): no text
 
 
 @dataclass(frozen=True)
@@ -208,8 +212,43 @@ class RemoveItem:
     item_id: str
 
 
+# Review actions. Each one is a statement by the signed-in user. The user id and the time are taken on the server, and the
+# server computes every hash and stored block, so none of them can come from the request.
+@dataclass(frozen=True)
+class ConfirmNoNumericScore:
+    pass
+
+
+@dataclass(frozen=True)
+class AcknowledgeClassificationWarning:
+    warning_id: str
+
+
+@dataclass(frozen=True)
+class ConfirmStructure:
+    item_id: str
+
+
+@dataclass(frozen=True)
+class ResolveStructuralFinding:
+    finding_id: str
+    decision: str
+    note: str | None
+    evidence_item_ids: tuple[str, ...] | None
+
+
+@dataclass(frozen=True)
+class ReorderItems:
+    category: str
+    item_ids: tuple[str, ...]
+
+
+REVIEW_OPERATIONS = (ConfirmNoNumericScore, AcknowledgeClassificationWarning, ConfirmStructure, ResolveStructuralFinding,
+                     ReorderItems)
+
 Operation = Union[SetText, SetImportance, SetItemWeight, SetAlternatives, SetExperience, SetCategoryWeight,
-                  AddItem, RemoveItem]
+                  AddItem, RemoveItem, ConfirmNoNumericScore, AcknowledgeClassificationWarning, ConfirmStructure,
+                  ResolveStructuralFinding, ReorderItems]
 
 # The exact field set of each operation. Anything else is refused, so a protected field can never be sent.
 OPERATION_FIELDS: dict[str, frozenset[str]] = {
@@ -221,12 +260,20 @@ OPERATION_FIELDS: dict[str, frozenset[str]] = {
     "set_category_weight": frozenset({"category", "weight"}),
     "add_item": frozenset({"category", "text", "importance", "weight", "alternatives", "experience"}),
     "remove_item": frozenset({"item_id"}),
+    "confirm_no_numeric_score": frozenset(),
+    "acknowledge_classification_warning": frozenset({"warning_id"}),
+    "confirm_structure": frozenset({"item_id"}),
+    "resolve_structural_finding": frozenset({"finding_id", "decision", "note", "evidence_item_ids"}),
+    "reorder_items": frozenset({"category", "item_ids"}),
 }
 EXPERIENCE_FIELDS = frozenset({"subject", "min_years"})
 OPERATION_NAMES: dict[type, str] = {
     SetText: "set_text", SetImportance: "set_importance", SetItemWeight: "set_item_weight",
     SetAlternatives: "set_alternatives", SetExperience: "set_experience", SetCategoryWeight: "set_category_weight",
     AddItem: "add_item", RemoveItem: "remove_item",
+    ConfirmNoNumericScore: "confirm_no_numeric_score", AcknowledgeClassificationWarning: "acknowledge_classification_warning",
+    ConfirmStructure: "confirm_structure", ResolveStructuralFinding: "resolve_structural_finding",
+    ReorderItems: "reorder_items",
 }
 
 
@@ -283,6 +330,44 @@ def _category(value: object, pos: int) -> str:
     return value
 
 
+_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+NOTE_LIMIT = 2000
+
+
+def _token(value: object, field: str, pos: int) -> str:
+    if not isinstance(value, str) or not _TOKEN.match(value):
+        raise InvalidOperation(f"Operation {pos}: {field} is not a valid identifier.")
+    return value
+
+
+def _decision(value: object, pos: int) -> str:
+    if value not in DECISIONS:
+        raise InvalidOperation(f"Operation {pos}: decision must be one of {', '.join(DECISIONS)}.")
+    return value
+
+
+def _note(value: object, pos: int) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > NOTE_LIMIT:
+        raise InvalidOperation(f"Operation {pos}: note must be text of at most {NOTE_LIMIT} characters, or null.")
+    return value
+
+
+def _evidence(value: object, pos: int) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise InvalidOperation(f"Operation {pos}: evidence_item_ids must be a list of item ids, or null.")
+    return tuple(_item_id(v, pos) for v in value)
+
+
+def _item_id_list(value: object, pos: int) -> tuple[str, ...]:
+    if not isinstance(value, list) or not value:
+        raise InvalidOperation(f"Operation {pos}: item_ids must be a non-empty list of item ids.")
+    return tuple(_item_id(v, pos) for v in value)
+
+
 def _importance(value: object, pos: int) -> str:
     if value not in IMPORTANCES:
         raise InvalidOperation(f"Operation {pos}: importance must be 'required' or 'preferred'.")
@@ -332,6 +417,13 @@ _BUILDERS = {
                                      _importance(r["importance"], p), _whole_or_none(r["weight"], "weight", p),
                                      _alternatives(r["alternatives"], p), _experience(r["experience"], p)),
     "remove_item": lambda r, p: RemoveItem(_item_id(r["item_id"], p)),
+    "confirm_no_numeric_score": lambda r, p: ConfirmNoNumericScore(),
+    "acknowledge_classification_warning": lambda r, p: AcknowledgeClassificationWarning(_token(r["warning_id"], "warning_id", p)),
+    "confirm_structure": lambda r, p: ConfirmStructure(_item_id(r["item_id"], p)),
+    "resolve_structural_finding": lambda r, p: ResolveStructuralFinding(
+        _token(r["finding_id"], "finding_id", p), _decision(r["decision"], p), _note(r["note"], p),
+        _evidence(r["evidence_item_ids"], p)),
+    "reorder_items": lambda r, p: ReorderItems(_category(r["category"], p), _item_id_list(r["item_ids"], p)),
 }
 
 
@@ -376,10 +468,15 @@ def plan_operations(stored: dict, original: dict | None, retired_before: object,
 
     edited = copy.deepcopy(stored)
     for pos, op in enumerate(ops):
-        edited = _apply(edited, op, retired, pos)
+        if not isinstance(op, REVIEW_OPERATIONS):
+            edited = _apply(edited, op, retired, pos)
 
     carried = carry_server_owned(stored, edited)
     document, recorded = record_structure_edits(stored, carried, original, user_id=user_id, recorded_at=now)
+    # Review actions are applied last, on the server-owned state that was just carried, through the canonical builders.
+    for pos, op in enumerate(ops):
+        if isinstance(op, REVIEW_OPERATIONS):
+            document = _apply_review(document, op, pos, user_id=user_id, now=now, original=original, jd_text=jd_text)
 
     final = validate_final(document)
     if not final.ok:
@@ -399,6 +496,32 @@ def plan_operations(stored: dict, original: dict | None, retired_before: object,
         recorded_structure_edits=recorded,
         audit=_save_audit(stored, document, ops, recorded, original, jd_text),
     )
+
+
+def _apply_review(doc: dict, op: Operation, pos: int, *, user_id: str, now: str, original: dict | None,
+                  jd_text: str | None) -> dict:
+    """One review action through its canonical builder. Every builder refuses an unknown or already-settled id, so a stale or
+    invented id never changes the document."""
+    try:
+        if isinstance(op, ConfirmNoNumericScore):
+            return confirm_no_numeric_score(doc, user_id=user_id, confirmed_at=now,
+                                            require_classification_acknowledgment=ACKNOWLEDGMENT_REQUIRED,
+                                            original=original, jd_text=jd_text)
+        if isinstance(op, AcknowledgeClassificationWarning):
+            return acknowledge_classification_warning(doc, op.warning_id, user_id=user_id, acknowledged_at=now)
+        if isinstance(op, ConfirmStructure):
+            return confirm_structure(doc, op.item_id, user_id=user_id, confirmed_at=now, original=original)
+        if isinstance(op, ResolveStructuralFinding):
+            return resolve_finding(doc, op.finding_id, decision=op.decision, user_id=user_id, resolved_at=now,
+                                   jd_text=jd_text or "", note=op.note,
+                                   evidence_item_ids=list(op.evidence_item_ids) if op.evidence_item_ids is not None else None)
+        return reorder_items(doc, op.category, list(op.item_ids))
+    except (AcknowledgmentError, ConfirmationError, StructureError, StructuralResolutionError) as exc:
+        raise InvalidOperation(f"Operation {pos}: {exc}", code=exc.code if hasattr(exc, "code") else "invalid_review_action") from exc
+    except ValueError as exc:
+        raise InvalidOperation(f"Operation {pos}: {exc}", code="invalid_review_action") from exc
+    except KeyError as exc:
+        raise InvalidOperation(f"Operation {pos}: no requirement has that id.", code=UNKNOWN_ITEM_ID) from exc
 
 
 def _baseline(original: object) -> dict | None:
@@ -432,7 +555,22 @@ def _save_audit(stored: dict, document: dict, ops: tuple[Operation, ...], record
         structure_edits=tuple(sorted(recorded)),
         readiness_before=compute_readiness(stored, original=original, jd_text=jd_text).state,
         readiness_after=compute_readiness(document, original=original, jd_text=jd_text).state,
+        review_actions=tuple(_review_action(op) for op in ops if isinstance(op, REVIEW_OPERATIONS)),
     )
+
+
+def _review_action(op: Operation) -> tuple[str, str, str | None]:
+    """The audit entry for one review action: its kind and the id it acted on. Never the note or any text."""
+    kind = OPERATION_NAMES[type(op)]
+    if isinstance(op, AcknowledgeClassificationWarning):
+        return kind, op.warning_id, None
+    if isinstance(op, ConfirmStructure):
+        return kind, op.item_id, None
+    if isinstance(op, ResolveStructuralFinding):
+        return kind, op.finding_id, op.decision
+    if isinstance(op, ReorderItems):
+        return kind, op.category, None
+    return kind, "", None
 
 
 def _apply(doc: dict, op: Operation, retired: list[str], pos: int) -> dict:
@@ -823,6 +961,8 @@ def audit_details(audit: SaveAudit) -> dict:
         "revision_before": audit.revision_before,
         "revision_after": audit.revision_after,
         "readiness": {"before": audit.readiness_before, "after": audit.readiness_after},
+        "review_actions": [{"kind": kind, "id": ident, **({"decision": decision} if decision else {})}
+                           for kind, ident, decision in audit.review_actions],
     }
 
 

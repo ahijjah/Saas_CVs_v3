@@ -92,25 +92,31 @@ def test_category_weights_that_do_not_total_zero_or_one_hundred_are_refused():
 
 def test_the_stored_document_always_carries_the_classification_and_structure_review_blocks():
     result = parse_response(json.dumps(OUTPUT), JD, "stop", id_factory=worker.stable_id_factory(JD))
-    doc = worker.finalise_document(worker.checked_document(result), JD)
+    doc, _ = worker.finalise_document(worker.checked_document(result), JD)
     assert doc["classification_review"] == {"warnings": [], "acknowledgments": []}
     assert doc["structure_review"] == {"records": []}
     assert "structural_review" not in doc        # present only when the detector has open findings
 
 
-def test_expectations_are_derived_only_from_items_whose_alternatives_are_words_of_their_own_wording():
+def test_one_item_holding_its_alternatives_produces_no_expectation_but_a_split_wording_does():
     jd = "Python or Java is required. Five years is preferred."
-    output = {"categories": {"skills": [
-        {"text": "Python or Java", "importance": "required", "source_text": "Python or Java is required",
+    whole = {"text": "Python or Java", "importance": "required", "source_text": "Python or Java is required",
+             "alternatives": ["Python", "Java"], "origin": "stated"}
+    split = [
+        {"text": "Python", "importance": "required", "source_text": "Python or Java is required",
          "alternatives": ["Python", "Java"], "origin": "stated"},
-        {"text": "Five years", "importance": "required", "source_text": "Five years is preferred",
-         "alternatives": ["Five", "Years"], "origin": "stated"}],
-        **{c: [] for c in C.CATEGORIES if c != "skills"}},
-        "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
-    result = parse_response(json.dumps(output), jd, "stop", id_factory=worker.stable_id_factory(jd))
-    block = worker.derive_expectations(result.requirements, jd)
-    assert [e["kind"] for e in block["expectations"]] == ["alternatives_together", "alternatives_together"]
+        {"text": "Java", "importance": "required", "source_text": "Python or Java is required",
+         "alternatives": ["Python", "Java"], "origin": "stated"}]
     from services.requirements_v2.structural_expectations import validate_expectations
-    assert len(validate_expectations(block, jd)) == 2                # the canonical validator accepts what is derived
-    skills = result.requirements["categories"]["skills"]["items"]
-    assert skills[0]["alternatives"] == ["Python", "Java"]
+
+    def doc_with(items):
+        output = {"categories": {"skills": items, **{c: [] for c in C.CATEGORIES if c != "skills"}},
+                  "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
+        result = parse_response(json.dumps(output), jd, "stop", id_factory=worker.stable_id_factory(jd))
+        return result.requirements
+
+    assert worker.expectations_from_extraction(doc_with([whole]), jd)["expectations"] == []
+    block = worker.expectations_from_extraction(doc_with(split), jd)
+    assert [e["kind"] for e in block["expectations"]] == ["alternatives_together"]
+    assert block["expectations"][0]["tokens"] == ["Python", "Java"]
+    assert len(validate_expectations(block, jd)) == 1       # the canonical validator accepts what is built

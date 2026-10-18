@@ -39,7 +39,8 @@ def _document(*, cue="preferred", extra_required=()):
                            "experience": {"subject": "backend experience", "min_years": 5}}]
     raw = {"categories": cats, "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
     result = parse_response(json.dumps(raw), JD, "stop", id_factory=worker.stable_id_factory(JD))
-    return worker.finalise_document(worker.checked_document(result), JD), result.original
+    doc, _ = worker.finalise_document(worker.checked_document(result), JD)
+    return doc, result.original
 
 
 def _ready_document():

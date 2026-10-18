@@ -169,3 +169,41 @@ def carry_structural_review(stored: Any, incoming: Any) -> dict:
     if isinstance(stored, dict) and STRUCTURAL_KEY in stored:
         out[STRUCTURAL_KEY] = copy.deepcopy(stored[STRUCTURAL_KEY])
     return out
+
+
+class StructuralResolutionError(ValueError):
+    """A finding cannot be resolved. `code` is stable and machine-readable; the message is for the editing service's caller."""
+
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
+
+
+def resolve_finding(doc: dict, finding_id: str, *, decision: str, user_id: str, resolved_at: str, jd_text: str,
+                    note: str | None = None, evidence_item_ids: list[str] | None = None) -> dict:
+    """A new document in which ONE open finding is resolved. Trusted server code only: the caller supplies the reviewer's identity
+    and the time, and the document is validated against the description before it is returned. The decision, note and evidence are the
+    reviewer's statements; nothing here checks them beyond the contract."""
+    if decision not in DECISIONS:
+        raise StructuralResolutionError(f"decision must be one of {', '.join(DECISIONS)}", "unknown_decision")
+    if not isinstance(user_id, str) or not user_id or not isinstance(resolved_at, str) or not resolved_at:
+        raise StructuralResolutionError("user_id and resolved_at are required.", "missing_stamp")
+    block = doc.get(STRUCTURAL_KEY) if isinstance(doc, dict) else None
+    if not isinstance(block, dict) or not isinstance(block.get("findings"), list):
+        raise StructuralResolutionError("This document has no structural review.", "unknown_finding")
+    out = copy.deepcopy(doc)
+    finding = next((f for f in out[STRUCTURAL_KEY]["findings"] if f.get("id") == finding_id), None)
+    if finding is None:
+        raise StructuralResolutionError(f"unknown finding {finding_id!r}", "unknown_finding")
+    if finding["status"] != STATUS_OPEN:
+        raise StructuralResolutionError("This finding is already resolved.", "already_resolved")
+    resolution: dict = {"decision": decision, "reviewer_user_id": user_id, "resolved_at": resolved_at}
+    if note is not None:
+        resolution["note"] = note
+    if evidence_item_ids is not None:
+        resolution["evidence_item_ids"] = list(evidence_item_ids)
+    finding["status"], finding["resolution"] = STATUS_RESOLVED, resolution
+    problems = block_problems(out[STRUCTURAL_KEY], out, jd_text)
+    if problems:
+        raise StructuralResolutionError(problems[0], "invalid_resolution")
+    return out
