@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import pathlib
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -124,6 +125,7 @@ class Database:
 
     def __init__(self, cluster: Cluster, name: str, admin, conn, failures: list[StepFailure]):
         self.cluster, self.name, self.admin, self.conn, self.failures = cluster, name, admin, conn, failures
+        self.runtime_passwords: dict[str, str] = {}
 
     def close(self) -> None:
         try:
@@ -155,7 +157,30 @@ def build(cluster: Cluster) -> Database:
         except runner.MigrationError as exc:
             failures.append(StepFailure(exc.file or "migrations", str(exc).splitlines()[0]))
     cur.execute("SET search_path = cv_analyzer")
-    return Database(cluster, name, admin, conn, failures)
+    database = Database(cluster, name, admin, conn, failures)
+    if not failures:
+        provision_runtime_logins(database)
+    return database
+
+
+RUNTIME_LOGIN_ROLES = ("cv_app", "cv_worker", "cv_admin", "cv_secrets")
+
+
+def provision_runtime_logins(database: "Database") -> dict[str, str]:
+    """Apply the operator scripts 0004 (logins and attributes) and 0005 (generated privileges) with per-database passwords, exactly as
+    an operator does. Tests connect as these logins. The passwords exist only in the returned dict and the test process."""
+    passwords = {role: secrets.token_urlsafe(18) for role in RUNTIME_LOGIN_ROLES}
+    variables: list[str] = []
+    for role in RUNTIME_LOGIN_ROLES:
+        variables += ["-v", f"{role}_password={passwords[role]}"]
+    base = ["psql", "-h", "127.0.0.1", "-p", str(database.cluster.port), "-U", "postgres", "-d", database.name, "-X", "-q",
+            "-v", "ON_ERROR_STOP=1"]
+    for script in ("0004_runtime_roles.sql.template", "0005_runtime_privileges.sql.template"):
+        proc = subprocess.run(base + variables + ["-f", str(DB_DIR / "ops" / script)], capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0:
+            raise RuntimeError(f"{script} failed on the test database: {proc.stderr.strip()}")
+    database.runtime_passwords = passwords
+    return passwords
 
 
 @contextmanager

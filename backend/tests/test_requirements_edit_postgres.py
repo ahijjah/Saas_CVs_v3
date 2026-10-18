@@ -75,8 +75,6 @@ def built():
         cur = db.conn.cursor()
         # A login role, not SET ROLE: a rolled-back save cannot silently fall back to a superuser connection.
         cur.execute(f"CREATE ROLE {PROBE_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {PROBE_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {PROBE_ROLE}")
         yield db
 
 

@@ -61,17 +61,8 @@ def built():
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
         cur.execute(f"CREATE ROLE {READ_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {READ_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {READ_ROLE}")
-        cur.execute(f"GRANT SELECT ON cv_analyzer.audit_logs TO {READ_ROLE}")
         cur.execute(f"CREATE ROLE {WRITER_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {WRITER_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {WRITER_ROLE}")
-        cur.execute(f"GRANT SELECT, INSERT ON cv_analyzer.audit_logs TO {WRITER_ROLE}")
         cur.execute(f"CREATE ROLE {NO_AUDIT_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {NO_AUDIT_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {NO_AUDIT_ROLE}")
-        cur.execute(f"GRANT SELECT ON cv_analyzer.audit_logs TO {NO_AUDIT_ROLE}")
         yield db
 
 

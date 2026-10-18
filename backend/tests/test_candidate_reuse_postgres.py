@@ -53,7 +53,6 @@ def built():
 def chain_quota_grant(built):
     """TEST SETUP ONLY, not production evidence: see the module docstring."""
     cur = built.conn.cursor()
-    cur.execute(f"GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenant_usage_monthly TO {RUNTIME_ROLE}")
 
 
 def _cur(built):

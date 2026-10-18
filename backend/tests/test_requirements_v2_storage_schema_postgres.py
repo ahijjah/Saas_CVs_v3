@@ -25,8 +25,6 @@ def db():
         check_chain(built.failures)                      # the failing steps are exactly the known set; 093 and schema.sql succeed
         cur = built.conn.cursor()
         cur.execute(f"CREATE ROLE {PROBE_ROLE} NOLOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {PROBE_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.job_criteria, cv_analyzer.jobs TO {PROBE_ROLE}")
         yield built
 
 

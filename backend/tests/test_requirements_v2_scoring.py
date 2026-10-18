@@ -57,9 +57,6 @@ def built():
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
         cur.execute(f"CREATE ROLE {PROBE_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {PROBE_ROLE}")
-        cur.execute(f"GRANT SELECT ON cv_analyzer.jobs TO {PROBE_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.job_criteria TO {PROBE_ROLE}")
         yield db
 
 
