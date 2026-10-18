@@ -90,11 +90,13 @@ class Cluster:
     def __init__(self):
         self.dir = pathlib.Path(tempfile.mkdtemp(prefix="req_pg_"))
         try:
-            subprocess.run(["chown", "postgres", str(self.dir)], check=True)
+            if os.geteuid() == 0:    # the server runs as postgres when the tests run as root; an unprivileged runner runs it directly
+                subprocess.run(["chown", "postgres", str(self.dir)], check=True)
             with socket.socket() as s:
                 s.bind(("127.0.0.1", 0))
                 self.port = s.getsockname()[1]
-            self._as_pg([str(PG_BIN / "initdb"), "-D", str(self.dir / "data"), "-A", "trust", "-E", "UTF8"])
+            # The superuser is named explicitly: without -U it is the OS user running initdb (root maps to postgres, a CI runner does not).
+            self._as_pg([str(PG_BIN / "initdb"), "-D", str(self.dir / "data"), "-U", "postgres", "-A", "trust", "-E", "UTF8"])
             self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-o",
                          f"-p {self.port} -k {self.dir} -c listen_addresses=127.0.0.1", "-l", str(self.dir / "log"), "-w", "start"])
         except BaseException:

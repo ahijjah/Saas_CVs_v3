@@ -192,12 +192,16 @@ jobs:
         run: npm run typecheck
       - name: Vitest (fails when no tests run)
         shell: bash
+        env:
+          # Colour codes split the summary line ("Tests" and "48 passed") and the check below reads plain text.
+          FORCE_COLOR: "0"
+          NO_COLOR: "1"
         run: |
           set -o pipefail
           npm test 2>&1 | tee vitest.log
           python3 - <<'PY'
           import re, sys
-          text = open("vitest.log").read()
+          text = re.sub(r"\x1b\[[0-9;]*m", "", open("vitest.log").read())
           match = re.search(r"Tests\s+(\d+) passed", text)
           if not match or int(match.group(1)) == 0 or re.search(r"\d+ failed", text):
               sys.exit("Vitest did not report a passing, non-empty run")
