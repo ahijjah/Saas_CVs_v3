@@ -13,6 +13,10 @@ settings = get_settings()
 # (auth.dependencies.get_platform_db) or for unauthenticated platform paths that are coded to use it (get_admin_db).
 
 
+# Same path as the role default set by db/ops/0004: a session never depends on an earlier SET.
+SEARCH_PATH = f"{settings.db_schema},public"
+
+
 def _create_engine(url: str) -> AsyncEngine:
     return create_async_engine(
         url,
@@ -20,7 +24,7 @@ def _create_engine(url: str) -> AsyncEngine:
         pool_size=10,
         max_overflow=20,
         pool_pre_ping=True,
-        connect_args={"server_settings": {"search_path": settings.db_schema}},
+        connect_args={"server_settings": {"search_path": SEARCH_PATH}},
     )
 
 

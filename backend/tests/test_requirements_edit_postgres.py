@@ -19,6 +19,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from runtime_engines import async_engine
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from services import requirements_edit as E
 from services.requirements_v2 import contract as C
@@ -26,7 +27,7 @@ from services.requirements_v2.structural_review import CODE_ALTERNATIVES_SPLIT, 
 
 pytestmark = pytest.mark.asyncio
 
-PROBE_ROLE = "cv_edit_probe"
+PROBE_ROLE = "cv_app"
 NOW = "2026-10-17T12:00:00+00:00"
 JD = "We need Python and SQL. Five years of backend work is preferred."
 
@@ -74,7 +75,6 @@ def built():
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
         # A login role, not SET ROLE: a rolled-back save cannot silently fall back to a superuser connection.
-        cur.execute(f"CREATE ROLE {PROBE_ROLE} LOGIN")
         yield db
 
 
@@ -84,10 +84,8 @@ async def engines(built):
     can be dropped cleanly."""
     made = []
 
-    def make(role: str = "postgres"):
-        engine = create_async_engine(
-            f"postgresql+asyncpg://{role}@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-            connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    def make(role: str = "cv_app"):
+        engine = async_engine(built, role)
         made.append(engine)
         return engine
 

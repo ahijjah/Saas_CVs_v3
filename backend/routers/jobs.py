@@ -162,16 +162,10 @@ async def _get_forwarding_email(db) -> str:
 
 
 async def _next_job_code(db) -> str:
-    """Generate next sequential job code: JOB-YYYY-NNNN."""
+    """Next job code: JOB-YYYY-NNNN. The number comes from a global sequence, so it is unique across tenants (jobs.job_code is a
+    global unique index). A per-tenant count is not, once row-level security scopes the session to one tenant."""
     year = datetime.now().year
-    count_row = await db.execute(
-        text("""
-            SELECT COUNT(*) FROM jobs
-            WHERE EXTRACT(YEAR FROM created_at) = :year
-        """),
-        {"year": year},
-    )
-    seq = count_row.scalar_one() + 1
+    seq = (await db.execute(text("SELECT nextval('cv_analyzer.job_code_seq')"))).scalar_one()
     return f"JOB-{year}-{seq:04d}"
 
 

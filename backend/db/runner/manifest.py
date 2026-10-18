@@ -119,4 +119,5 @@ MANIFEST: tuple[Entry, ...] = (
     Entry("098_application_scores_requirements_revision.sql"),
     Entry("099_platform_secret_accessors.sql"),
     Entry("100_runtime_rls_identity.sql"),
+    Entry("101_job_code_sequence.sql"),
 )

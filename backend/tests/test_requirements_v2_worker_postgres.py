@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from database import set_rls_context
+from runtime_engines import async_engine, async_url
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from services import criteria_status as CS
 from services import requirements_edit as E
@@ -33,7 +34,6 @@ from services.requirements_v2 import contract as C
 from services.requirements_v2.readiness import NEEDS_CLASSIFICATION_REVIEW, READY, compute_readiness
 from workers import requirements_v2_worker as worker
 
-PROBE_ROLE = "cv_v2_worker_probe"
 EN_JD = "Senior Python developer.\nPython and SQL are required.\nFive years of backend experience is preferred."
 AR_JD = "مطلوب مطور بايثون بخبرة في قواعد البيانات.\nمطلوب إتقان لغة SQL.\nخبرة سابقة في الذكاء الاصطناعي مفضلة."
 CATEGORY_KEYS = ("skills", "experience", "education", "certifications", "soft_skills", "domain_knowledge", "other_requirements")
@@ -79,14 +79,12 @@ def built():
         check_chain(db.failures)
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
-        cur.execute(f"CREATE ROLE {PROBE_ROLE} LOGIN")
         yield db
 
 
 @pytest_asyncio.fixture()
 async def engine(built):
-    eng = create_async_engine(f"postgresql+asyncpg://{PROBE_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}",
-                              poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    eng = async_engine(built, "cv_worker")
     yield eng
     await eng.dispose()
 

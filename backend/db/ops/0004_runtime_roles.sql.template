@@ -23,6 +23,13 @@ ALTER ROLE cv_admin   LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOIN
 -- cv_secrets reads secrets only through the getter. It is a login role with no table access.
 ALTER ROLE cv_secrets LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'cv_secrets_password';
 
+-- Every session of a runtime role resolves the application schema without a SET. The default is stored on the role, so it survives
+-- transaction rollback and applies to every new pooled connection. Engines also pass the same path (defence in depth).
+ALTER ROLE cv_app     SET search_path = cv_analyzer, public;
+ALTER ROLE cv_worker  SET search_path = cv_analyzer, public;
+ALTER ROLE cv_admin   SET search_path = cv_analyzer, public;
+ALTER ROLE cv_secrets SET search_path = cv_analyzer, public;
+
 -- No runtime role may be a member of another role, and no other role may be a member of a runtime role.
 DO $$
 DECLARE

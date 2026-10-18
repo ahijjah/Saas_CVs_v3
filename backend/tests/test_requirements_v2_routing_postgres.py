@@ -17,13 +17,13 @@ from sqlalchemy.pool import NullPool
 
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db
+from runtime_engines import async_engine
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import jobs as jobs_router
 from services import criteria_status as CS
 from workers import criteria_worker as legacy_worker
 from workers import requirements_v2_worker as v2_worker
 
-PROBE_ROLE = "cv_v2_route_probe"
 JD = ("Senior Python developer to build REST APIs, design PostgreSQL schemas and mentor two engineers. "
       "Five years of Python required.")
 
@@ -36,15 +36,12 @@ def built():
     with built_chain() as db:
         check_chain(db.failures)
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
-        cur = db.conn.cursor()
-        cur.execute(f"CREATE ROLE {PROBE_ROLE} LOGIN")
         yield db
 
 
 @pytest_asyncio.fixture()
 async def engine(built):
-    eng = create_async_engine(f"postgresql+asyncpg://{PROBE_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}",
-                              poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    eng = async_engine(built, "cv_app")
     yield eng
     await eng.dispose()
 

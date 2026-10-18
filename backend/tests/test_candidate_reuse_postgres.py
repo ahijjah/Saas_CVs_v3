@@ -25,6 +25,7 @@ from sqlalchemy.pool import NullPool
 
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db, set_rls_context
+from runtime_engines import async_engine
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import applications as applications_router
 from routers import candidate_tags as candidate_router
@@ -112,8 +113,7 @@ def files_root(tmp_path, monkeypatch):
 
 @pytest_asyncio.fixture()
 async def engine(built):
-    eng = create_async_engine(f"postgresql+asyncpg://{RUNTIME_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}",
-                              poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    eng = async_engine(built, RUNTIME_ROLE)
     yield eng
     await eng.dispose()
 
@@ -446,8 +446,7 @@ async def test_each_intake_method_accepts_a_job_with_completed_criteria(built, e
 
 async def _superuser_statement(built, sql, params):
     """A statement on its own connection as the cluster superuser (bypasses row-level security, so it tests the lock only)."""
-    engine = create_async_engine(f"postgresql+asyncpg://postgres@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-                                 connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    engine = async_engine(built, "cv_app")
     try:
         async with engine.begin() as conn:
             result = await conn.execute(text(sql), params)

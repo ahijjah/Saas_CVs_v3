@@ -19,12 +19,13 @@ from sqlalchemy.pool import NullPool
 
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db
+from runtime_engines import async_engine
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import jobs as jobs_router
 
 pytestmark = pytest.mark.asyncio
 
-PROBE_ROLE = "cv_criteria_probe"
+PROBE_ROLE = "cv_app"
 JD = "A job description."
 BODY = {"weight_skills": 40, "weight_experience": 20, "weight_education": 10, "weight_certifications": 10,
         "weight_soft_skills": 10, "weight_domain_knowledge": 5, "weight_other": 5}           # totals 100
@@ -41,7 +42,6 @@ def built():
         check_chain(db.failures)
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
-        cur.execute(f"CREATE ROLE {PROBE_ROLE} LOGIN")
         yield db
 
 
@@ -100,10 +100,8 @@ def _user(role, tenant, user_id) -> CurrentUser:
 async def engines(built):
     made = []
 
-    def make(role: str = "postgres"):
-        engine = create_async_engine(
-            f"postgresql+asyncpg://{role}@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-            connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    def make(role: str = "cv_app"):
+        engine = async_engine(built, role)
         made.append(engine)
         return engine
 

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from database import set_rls_context
+from runtime_engines import async_engine, async_url
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from services.requirements_v2 import contract as C
 from services.requirements_v2.scoring import (
@@ -23,7 +24,6 @@ from services.requirements_v2.extraction import parse_response
 from workers import requirements_v2_worker as worker
 
 JD = "Senior Python developer.\nPython and SQL are required.\nFive years of backend experience is preferred."
-PROBE_ROLE = "cv_v2_scoring_probe"
 
 
 def _document(*, cue="preferred", extra_required=()):
@@ -56,7 +56,6 @@ def built():
         check_chain(db.failures)
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
-        cur.execute(f"CREATE ROLE {PROBE_ROLE} LOGIN")
         yield db
 
 
@@ -143,8 +142,7 @@ def test_an_open_structural_finding_refuses_scoring():
 
 @pytest_asyncio.fixture()
 async def engine(built):
-    eng = create_async_engine(f"postgresql+asyncpg://{PROBE_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-                              connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    eng = async_engine(built, "cv_worker")
     yield eng
     await eng.dispose()
 

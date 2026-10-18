@@ -1,0 +1,26 @@
+-- ops/0000_migration_roles.sql.template
+--
+-- OPERATOR TEMPLATE. This is not a migration. The runner never reads this directory. Run once per environment, as the bootstrap
+-- superuser, before any migration runs and before 0001 or 0004. Passwords come from the deployment secret store as psql variables.
+-- No password is written in this file.
+--
+--   psql -X -v ON_ERROR_STOP=1 \
+--        -v migration_operator_password="$MIGRATION_OPERATOR_PASSWORD" \
+--        -d "$DATABASE" -f 0000_migration_roles.sql.template
+--
+-- What it creates: the owner role cv_migrator (NOLOGIN, owns every object in the application schema) and the deployment login
+-- cv_migration_operator. The operator may SET ROLE to cv_migrator and nothing else; no privilege flows to it automatically.
+-- The runtime roles are created by db/schema.sql (NOLOGIN) and given logins by 0004.
+
+\set ON_ERROR_STOP on
+
+CREATE ROLE cv_migrator NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+
+CREATE ROLE cv_migration_operator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
+    PASSWORD :'migration_operator_password';
+
+-- SET ROLE is permitted through this membership. INHERIT FALSE means no privilege flows to the operator automatically.
+GRANT cv_migrator TO cv_migration_operator WITH INHERIT FALSE, SET TRUE;
+
+-- The operator may not be a member of any runtime role, and no runtime role may become the migrator.
+ALTER ROLE cv_migration_operator SET search_path = cv_analyzer, public;

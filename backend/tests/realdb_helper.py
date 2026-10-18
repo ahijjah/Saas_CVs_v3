@@ -151,19 +151,38 @@ def build(cluster: Cluster) -> Database:
         cur.execute(schema_sql())
     except psycopg2.Error as exc:
         failures.append(StepFailure("schema.sql", str(exc).splitlines()[0]))
+    database = Database(cluster, name, admin, conn, failures)
+    if not failures:
+        # The migration roles exist before any migration runs, as an operator creates them (db/ops/0000).
+        try:
+            provision_migration_roles(database)
+        except RuntimeError as exc:
+            failures.append(StepFailure("0000_migration_roles.sql.template", str(exc).splitlines()[0]))
     if not failures:
         try:
             runner.run(conn, allow_fresh=True)
         except runner.MigrationError as exc:
             failures.append(StepFailure(exc.file or "migrations", str(exc).splitlines()[0]))
     cur.execute("SET search_path = cv_analyzer")
-    database = Database(cluster, name, admin, conn, failures)
     if not failures:
         provision_runtime_logins(database)
     return database
 
 
 RUNTIME_LOGIN_ROLES = ("cv_app", "cv_worker", "cv_admin", "cv_secrets")
+
+
+def provision_migration_roles(database: "Database") -> str:
+    """Apply db/ops/0000 with a per-database operator password. Returns the operator password for tests that use the operator login."""
+    password = secrets.token_urlsafe(18)
+    base = ["psql", "-h", "127.0.0.1", "-p", str(database.cluster.port), "-U", "postgres", "-d", database.name, "-X", "-q",
+            "-v", "ON_ERROR_STOP=1", "-v", f"migration_operator_password={password}"]
+    proc = subprocess.run(base + ["-f", str(DB_DIR / "ops" / "0000_migration_roles.sql.template")], capture_output=True, text=True,
+                          timeout=120)
+    if proc.returncode != 0:
+        raise RuntimeError(f"0000_migration_roles failed: {proc.stderr.strip()}")
+    database.runtime_passwords["cv_migration_operator"] = password
+    return password
 
 
 def provision_runtime_logins(database: "Database") -> dict[str, str]:
@@ -179,7 +198,7 @@ def provision_runtime_logins(database: "Database") -> dict[str, str]:
         proc = subprocess.run(base + variables + ["-f", str(DB_DIR / "ops" / script)], capture_output=True, text=True, timeout=180)
         if proc.returncode != 0:
             raise RuntimeError(f"{script} failed on the test database: {proc.stderr.strip()}")
-    database.runtime_passwords = passwords
+    database.runtime_passwords.update(passwords)
     return passwords
 
 

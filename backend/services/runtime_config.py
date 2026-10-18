@@ -54,7 +54,7 @@ def _get_engine():
                 db_url,
                 poolclass=pool.NullPool,  # no shared connections across fork boundary
                 pool_pre_ping=True,
-                connect_args={"options": "-csearch_path=cv_analyzer"},
+                connect_args={"options": "-csearch_path=cv_analyzer,public"},
             )
         except Exception as exc:
             logger.error("runtime_config: failed to create sync engine: %s", exc)

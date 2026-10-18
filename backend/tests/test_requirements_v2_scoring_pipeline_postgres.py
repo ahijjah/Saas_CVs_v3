@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 import config
+from runtime_engines import async_engine, async_url
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from services import ai_service
 from services import requirements_edit as E
@@ -103,7 +104,7 @@ def built():
 
 @pytest.fixture()
 def pipeline(built, monkeypatch, tmp_path):
-    dsn = f"postgresql+asyncpg://postgres@127.0.0.1:{built.cluster.port}/{built.name}"
+    dsn = async_url(built, "cv_worker")
     real = config.get_settings()
     monkeypatch.setattr(config, "get_settings", lambda: real.model_copy(update={
         "database_url": dsn, "db_schema": "cv_analyzer", "files_base_path": str(tmp_path)}))
@@ -125,7 +126,7 @@ def pipeline(built, monkeypatch, tmp_path):
                               "finish_reason": "stop"}
 
     monkeypatch.setattr(ai_service, "score_cv", fake_score)
-    engine = create_async_engine(dsn, poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    engine = async_engine(built, "cv_worker")
     yield _Pipeline(engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False), state, tmp_path, built)
 
 

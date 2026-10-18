@@ -10,21 +10,12 @@
 --        -v migration_operator_password="$MIGRATION_OPERATOR_PASSWORD" \
 --        -d "$DATABASE" -f 0001_roles_and_ledger.sql.template
 --
--- What it creates: the owner role (NOLOGIN, no memberships), the migration operator login (LOGIN, may SET ROLE to the owner,
--- inherits nothing), and the migration ledger owned by the owner role. It grants nothing to any runtime role.
--- Runtime roles (cv_app, cv_worker, cv_admin, cv_secrets) are created by a later PR, not here.
+-- Run 0000_migration_roles.sql.template first; this file creates only the migration ledger, owned by cv_migrator. It grants nothing to
+-- any runtime role.
 --
 -- The ledger DDL below must stay identical to LEDGER_DDL in backend/db/runner/ledger.py. A test enforces this.
 
 \set ON_ERROR_STOP on
-
-CREATE ROLE cv_migrator NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
-
-CREATE ROLE cv_migration_operator LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS
-    PASSWORD :'migration_operator_password';
-
--- SET ROLE is permitted through this membership. INHERIT FALSE means no privilege flows to the operator automatically.
-GRANT cv_migrator TO cv_migration_operator WITH INHERIT FALSE, SET TRUE;
 
 -- The ledger is created by the bootstrap superuser, then handed to the owner role.
 CREATE TABLE cv_analyzer.schema_migrations (
