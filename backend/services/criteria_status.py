@@ -9,6 +9,8 @@ from __future__ import annotations
 INSUFFICIENT_MESSAGE = "The job description does not contain enough specific requirements. Update it and retry."
 ENQUEUE_FAILED_MESSAGE = "Criteria extraction could not be started. Retry later."
 WORKER_FAILED_MESSAGE = "Criteria extraction failed. Retry later."
+# A cancelled requirements-v2 attempt returns its row to pending with this fixed message, so the row is never left processing.
+EXTRACTION_CANCELLED_MESSAGE = "Criteria extraction was cancelled before it finished. Retry it."
 MODEL_NOT_CONFIGURED_MESSAGE = "AI criteria extraction is not configured. Ask an administrator to set the criteria model."
 
 # A processing row older than this, with no progress, is treated as abandoned by a crashed worker.

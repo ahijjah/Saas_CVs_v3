@@ -27,7 +27,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from services.criteria_status import MODEL_NOT_CONFIGURED_MESSAGE, WORKER_FAILED_MESSAGE
+from services.criteria_status import EXTRACTION_CANCELLED_MESSAGE, MODEL_NOT_CONFIGURED_MESSAGE, WORKER_FAILED_MESSAGE
 from services.requirements_v2.acknowledgment import REVIEW_KEY, empty_review
 from services.requirements_v2.contract import CATEGORIES, ITEM_ID_RE, SCHEMA_VERSION, WEIGHT_COLUMN, collect_item_ids
 from services.requirements_v2.extraction import build_request, parse_response
@@ -174,6 +174,15 @@ _RELEASE = """
     RETURNING updated_at
 """
 
+# A cancelled or interrupted attempt that has not committed. Only the claim that holds the token, on a processing row that has no
+# document, is returned to pending. A row that another claim or a committed document owns is never matched.
+_RELEASE_CANCELLED = """
+    UPDATE job_criteria SET criteria_extraction_status = 'pending', criteria_extraction_error = :message
+    WHERE job_id = :jid AND criteria_extraction_status = 'processing' AND updated_at = :token
+      AND requirements_schema_version = 2 AND analysis_json IS NULL
+    RETURNING updated_at
+"""
+
 _MARK_FAILED = """
     UPDATE job_criteria SET criteria_extraction_status = 'failed', criteria_extraction_error = :err
     WHERE job_id = :jid AND criteria_extraction_status = 'processing' AND updated_at = :token
@@ -297,7 +306,18 @@ async def _extract_async(job_id: str, description: str, Session, claim: dict) ->
     token, retired = claimed
     claim["token"] = token
     logger.info("[job:%s] Requirements v2 extraction started.", job_id)
+    try:
+        await _attempt(job_id, description, Session, claim, token, retired, text, set_rls_context)
+    except asyncio.CancelledError:
+        # Cancelled before the document committed: this claim returns its row to pending. The release matches the claim token and a
+        # processing row with no document, so a committed document, or another claim, is never touched. Ordinary failures keep the
+        # task's own release and final-failure handling.
+        if not claim.get("persisted"):
+            await _release_cancelled(job_id, token, Session)
+        raise
 
+
+async def _attempt(job_id, description, Session, claim, token, retired, text, set_rls_context) -> None:
     resolved = await _resolve_model(Session)
     if resolved is None:
         raise ModelNotConfigured(STAGE)
@@ -318,7 +338,26 @@ async def _extract_async(job_id: str, description: str, Session, claim: dict) ->
             logger.warning("[job:%s] Requirements result discarded: this attempt no longer holds the claim.", job_id)
             return
         await db.commit()
+    claim["persisted"] = True
     logger.info("[job:%s] Requirements v2 extraction completed.", job_id)
+
+
+async def _release_cancelled(job_id: str, token, Session) -> None:
+    """Return this claim's row to pending in a clean transaction. Never raises: a cancelled attempt must still exit cleanly, and the
+    row's state is then decided by the token-guarded statement alone."""
+    from database import set_rls_context
+    from sqlalchemy import text
+
+    try:
+        async with Session() as db:
+            await set_rls_context(db, "", "super_admin")
+            released = (await db.execute(text(_RELEASE_CANCELLED), {"jid": job_id, "token": token,
+                                                                     "message": EXTRACTION_CANCELLED_MESSAGE})).first()
+            await db.commit()
+        if released is not None:
+            logger.warning("[job:%s] Requirements v2 extraction cancelled; the row is pending again.", job_id)
+    except BaseException as exc:                              # noqa: BLE001 - cleanup must not mask the cancellation
+        logger.error("[job:%s] Cancellation cleanup did not complete: %s", job_id, exc)
 
 
 async def _release_claim(job_id: str, token, Session) -> None:

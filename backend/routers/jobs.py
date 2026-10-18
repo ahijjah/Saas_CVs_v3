@@ -16,7 +16,8 @@ from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.criteria_status import (
     ENQUEUE_FAILED_MESSAGE, INSUFFICIENT_MESSAGE, LEGACY_ONLY_PREDICATE, LEGACY_REFUSAL_DETAIL,
-    REQUIREMENTS_V2_PREDICATE, REQUIREMENTS_V2_SCHEMA_VERSION, STALE_PROCESSING_MINUTES, WORKER_FAILED_MESSAGE, display_status,
+    EXTRACTION_CANCELLED_MESSAGE, REQUIREMENTS_V2_PREDICATE, REQUIREMENTS_V2_SCHEMA_VERSION, STALE_PROCESSING_MINUTES,
+    WORKER_FAILED_MESSAGE, display_status,
 )
 from services.subscription_service import can_create_campaign
 
@@ -1292,7 +1293,8 @@ _CLAIM_RETRY_V2_SQL = f"""
         criteria_extraction_retry_count = criteria_extraction_retry_count + 1,
         criteria_extraction_error = NULL
     WHERE job_id = :jid
-      AND criteria_extraction_status = 'failed'
+      AND (criteria_extraction_status = 'failed'
+           OR (criteria_extraction_status = 'pending' AND criteria_extraction_error = :cancelled_message))
       AND analysis_json IS NULL
       AND criteria_extraction_retry_count < :max_retries
       AND {REQUIREMENTS_V2_PREDICATE}
@@ -1346,7 +1348,8 @@ async def _retry_requirements_v2(job_id: str, description: str, current_user, db
     tenant_params = {"jid": job_id, "tid": current_user.tenant_id}
     await db.execute(text(_RECOVER_STALE_V2_SQL),
                      {**tenant_params, "failed_message": WORKER_FAILED_MESSAGE, "minutes": STALE_PROCESSING_MINUTES})
-    claimed = (await db.execute(text(_CLAIM_RETRY_V2_SQL), {**tenant_params, "max_retries": max_retries})).scalar_one_or_none()
+    claimed = (await db.execute(text(_CLAIM_RETRY_V2_SQL), {**tenant_params, "max_retries": max_retries,
+                                                              "cancelled_message": EXTRACTION_CANCELLED_MESSAGE})).scalar_one_or_none()
     if claimed is None:
         state = (await db.execute(text(_RETRY_STATE_SQL), tenant_params)).mappings().first()
         await db.commit()

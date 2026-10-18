@@ -371,8 +371,8 @@ async def test_a_cancelled_attempt_persists_nothing(built, engine, monkeypatch):
     job = _job(built, tenant, EN_JD)
     with pytest.raises(asyncio.CancelledError):
         await _run(engine, job, EN_JD)
-    status, _, _, revision, analysis, original, *_ = _row(built, job)
-    assert status == "processing" and revision == 0 and analysis is None and original is None
+    status, error, _, revision, analysis, original, *_ = _row(built, job)
+    assert (status, error, revision, analysis, original) == ("pending", CS.EXTRACTION_CANCELLED_MESSAGE, 0, None, None)
 
 
 @pytest.mark.asyncio
@@ -499,3 +499,171 @@ async def test_an_unconfigured_model_stage_fails_the_row_visibly_without_a_model
     assert result.state == "FAILURE" and calls == []
     status, error, _, revision, analysis, *_ = _row(built, job)
     assert (status, error, revision, analysis) == ("failed", CS.MODEL_NOT_CONFIGURED_MESSAGE, 0, None)
+
+
+# ---- cancellation: the row never stays processing, and cleanup is bound to the claim ----
+
+def _set_row(built, job, **values):
+    cur = built.conn.cursor()
+    for column, value in values.items():
+        cur.execute(f"UPDATE job_criteria SET {column} = %s WHERE job_id = %s", (value, job))
+
+
+@pytest.mark.asyncio
+async def test_cancellation_before_the_model_call_returns_the_row_to_pending(built, engine, monkeypatch):
+    async def cancel_before_model(Session):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(worker, "_resolve_model", cancel_before_model)
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    with pytest.raises(asyncio.CancelledError):
+        await _run(engine, job, EN_JD)
+    status, error, *_ = _row(built, job)
+    assert (status, error) == ("pending", CS.EXTRACTION_CANCELLED_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_during_the_model_call_returns_the_row_to_pending(built, engine, monkeypatch):
+    _fake_model(monkeypatch, asyncio.CancelledError())
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    with pytest.raises(asyncio.CancelledError):
+        await _run(engine, job, EN_JD)
+    assert _row(built, job)[0] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_cancellation_immediately_before_persistence_returns_the_row_to_pending_with_no_document(built, engine, monkeypatch):
+    _fake_model(monkeypatch, EN_OUTPUT)
+
+    def cancel_building_the_write(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(worker, "_persist_params", cancel_building_the_write)
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    with pytest.raises(asyncio.CancelledError):
+        await _run(engine, job, EN_JD)
+    status, error, _, revision, analysis, *_ = _row(built, job)
+    assert (status, revision, analysis) == ("pending", 0, None)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_after_a_successful_commit_does_not_revert_the_completed_document(built, engine, monkeypatch):
+    _fake_model(monkeypatch, EN_OUTPUT)
+
+    class _Log:
+        def info(self, message, *args):
+            if "completed" in message:
+                raise asyncio.CancelledError()
+
+        def warning(self, *args):
+            pass
+
+        def error(self, *args):
+            pass
+
+    monkeypatch.setattr(worker, "logger", _Log())
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    with pytest.raises(asyncio.CancelledError):
+        await _run(engine, job, EN_JD)
+    status, error, _, revision, analysis, *_ = _row(built, job)
+    assert (status, revision) == ("completed", 1) and analysis["requirements"]["schema_version"] == 2
+
+
+@pytest.mark.asyncio
+async def test_cancellation_during_a_failing_commit_returns_the_row_to_pending_and_stores_nothing(built, engine, monkeypatch):
+    _fake_model(monkeypatch, EN_OUTPUT)
+    real_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    persist_commits = {"n": 0}
+
+    class _FailingCommit:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        async def execute(self, *args, **kwargs):
+            return await self._inner.execute(*args, **kwargs)
+
+        async def commit(self):
+            raise asyncio.CancelledError()
+
+        async def rollback(self):
+            await self._inner.rollback()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            await self._inner.close()
+
+    class _Sessions:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self):
+            self.calls += 1
+            inner = real_session()
+            # the second session opened by the attempt is the write: its commit is the one that fails
+            return _FailingCommit(inner) if self.calls == 2 else _Passthrough(inner)
+
+    class _Passthrough:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        async def __aenter__(self):
+            return await self._inner.__aenter__()
+
+        async def __aexit__(self, *exc):
+            return await self._inner.__aexit__(*exc)
+
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    claim = {}
+    with pytest.raises(asyncio.CancelledError):
+        await worker._extract_async(job, EN_JD, _Sessions(), claim)
+    status, error, _, revision, analysis, *_ = _row(built, job)
+    assert (status, revision, analysis) == ("pending", 0, None)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_never_releases_another_workers_claim(built, engine, monkeypatch):
+    """The row is taken over by another claim while this attempt is in its model call; this attempt is then cancelled. Its cleanup
+    matches only its own token, so the other claim is left exactly as it was."""
+    other_claim_time = {}
+
+    async def take_over_then_cancel(description, resolved):
+        cur = built.conn.cursor()
+        cur.execute("UPDATE job_criteria SET updated_at = now() + interval '5 seconds' WHERE job_id = %s RETURNING updated_at", (job,))
+        other_claim_time["value"] = cur.fetchone()[0]
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(worker, "_request_extraction", take_over_then_cancel)
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    with pytest.raises(asyncio.CancelledError):
+        await _run(engine, job, EN_JD)
+    status, error, *_ = _row(built, job)
+    assert status == "processing" and error is None
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_row_is_retried_through_the_pending_cancellation_claim(built, engine, monkeypatch):
+    """The cancellation message is the only thing that lets a pending row be claimed by the retry route; the claim is single."""
+    _fake_model(monkeypatch, asyncio.CancelledError())
+    tenant = _tenant(built)
+    job = _job(built, tenant, EN_JD)
+    with pytest.raises(asyncio.CancelledError):
+        await _run(engine, job, EN_JD)
+    assert _row(built, job)[0:2] == ("pending", CS.EXTRACTION_CANCELLED_MESSAGE)
+    _fake_model(monkeypatch, EN_OUTPUT)
+    await _run(engine, job, EN_JD)
+    assert _row(built, job)[0] == "completed"
+

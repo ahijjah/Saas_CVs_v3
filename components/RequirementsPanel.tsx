@@ -36,6 +36,9 @@ const DECISION_LABELS: Record<FindingDecision, string> = {
 
 type Notice = { kind: 'ok' | 'error'; text: string } | null;
 
+// The approved API reads requirements for administrators and recruiters only. Any other role is refused, and sees this fixed text.
+const REFUSED_TEXT = 'The requirements for this job are available to administrators and recruiters only.';
+
 interface Props {
   jobId: string;
   userRole: string | null | undefined;
@@ -65,7 +68,8 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange }
       onReadinessChange?.(next.review.readiness.can_proceed);
       return next;
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'The requirements could not be loaded.');
+      setLoadError(err instanceof RequirementsApiError && err.status === 403 ? REFUSED_TEXT
+        : err instanceof Error ? err.message : 'The requirements could not be loaded.');
       onReadinessChange?.(false);
       return null;
     }
@@ -151,8 +155,8 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange }
 
   if (loadError && !view) {
     return (
-      <section className="bg-white rounded-xl border border-slate-200 p-6">
-        <p className="text-sm text-red-600" role="alert">{loadError}</p>
+      <section className="bg-white rounded-xl border border-slate-200 p-6" data-testid="requirements-unavailable">
+        <p className="text-sm text-slate-700" role="status">{loadError}</p>
       </section>
     );
   }

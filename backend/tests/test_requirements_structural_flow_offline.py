@@ -83,3 +83,37 @@ def test_the_split_alone_cannot_be_saved_without_resolving_the_finding_that_name
     with pytest.raises(E.InvalidRequirements):
         E.plan_operations(doc, original, [], E.parse_operations([{"op": "remove_item", "item_id": drop["id"]}]),
                           user_id=USER, now=NOW, jd_text=case["jd"])
+
+
+# ---- fail closed: malformed or ambiguous evidence never creates an expectation ----
+
+def _expectations_for(items, jd):
+    raw = {"categories": {"skills": items, **{c: [] for c in C.CATEGORIES if c != "skills"}},
+           "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
+    parsed = parse_response(json.dumps(raw, ensure_ascii=False), jd, "stop", id_factory=worker.stable_id_factory(jd))
+    return worker.expectations_from_extraction(parsed.requirements, jd)["expectations"]
+
+
+def test_an_alternative_that_is_not_a_word_of_the_wording_creates_no_expectation():
+    jd = "Python or Java is required."
+    items = [{"text": "Python", "importance": "required", "source_text": "Python or Java is required",
+              "alternatives": ["Python", "Rust"], "origin": "stated"},
+             {"text": "Java", "importance": "required", "source_text": "Python or Java is required",
+              "alternatives": ["Python", "Rust"], "origin": "stated"}]
+    assert _expectations_for(items, jd) == []                 # only one declared alternative is in the wording: not two tokens
+
+
+def test_a_wording_that_appears_twice_in_the_description_is_ambiguous_and_creates_no_expectation():
+    jd = "Python or Java is required.\nPython or Java is required."
+    items = [{"text": "Python", "importance": "required", "source_text": "Python or Java is required",
+              "alternatives": ["Python", "Java"], "origin": "stated"},
+             {"text": "Java", "importance": "required", "source_text": "Python or Java is required",
+              "alternatives": ["Python", "Java"], "origin": "stated"}]
+    assert _expectations_for(items, jd) == []
+
+
+def test_items_sharing_no_wording_produce_no_expectation_even_with_alternatives():
+    jd = "Python is required. Java is preferred."
+    items = [{"text": "Python", "importance": "required", "source_text": "Python is required",
+              "alternatives": ["Python", "Java"], "origin": "stated"}]
+    assert _expectations_for(items, jd) == []

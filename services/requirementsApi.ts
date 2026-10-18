@@ -2,6 +2,8 @@
 // Errors keep the HTTP status, the stable detail code and, for a revision conflict, the current revision, so the UI can react to
 // each one. Nothing here stores or logs the document.
 
+import { WEBHOOK_CONFIG } from '../config';
+
 const TOKEN_KEY = 'token';
 
 export type ImportanceLevel = 'required' | 'preferred';
@@ -107,7 +109,7 @@ async function send<T>(url: string, init: RequestInit): Promise<T> {
 }
 
 export function getRequirements(jobId: string): Promise<RequirementsView> {
-  return send<RequirementsView>(`/jobs/${encodeURIComponent(jobId)}/requirements`, { method: 'GET' });
+  return send<RequirementsView>(`${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${encodeURIComponent(jobId)}/requirements`, { method: 'GET' });
 }
 
 export function saveRequirementEdits(
@@ -115,7 +117,7 @@ export function saveRequirementEdits(
   clientRevision: number,
   operations: RequirementsOperation[],
 ): Promise<{ requirements_revision: number }> {
-  return send<{ requirements_revision: number }>(`/jobs/${encodeURIComponent(jobId)}/requirements/edits`, {
+  return send<{ requirements_revision: number }>(`${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/${encodeURIComponent(jobId)}/requirements/edits`, {
     method: 'POST',
     body: JSON.stringify({ client_revision: clientRevision, operations }),
   });

@@ -199,3 +199,14 @@ describe('language and private fields', () => {
     }
   });
 });
+
+describe('refused reads', () => {
+  it('shows a fixed refusal, and no document, when the API refuses the role', async () => {
+    getMock.mockRejectedValue(new RequirementsApiError(403, 'permission_denied', 'Only tenant admins and recruiters can edit requirements.', null));
+    render(<RequirementsPanel jobId="job-1" userRole="viewer" />);
+    const notice = await screen.findByTestId('requirements-unavailable');
+    expect(notice).toHaveTextContent('available to administrators and recruiters only');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByText('Python')).toBeNull();
+  });
+});

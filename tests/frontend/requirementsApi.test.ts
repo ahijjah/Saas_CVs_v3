@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WEBHOOK_CONFIG } from '../../config';
 import { canEditRequirements, getRequirements, RequirementsApiError, saveRequirementEdits } from '../../services/requirementsApi';
 
 function respond(status: number, body: unknown) {
@@ -19,7 +20,7 @@ describe('requirements API client', () => {
     vi.stubGlobal('fetch', fetchMock);
     await saveRequirementEdits('job-1', 3, [{ op: 'confirm_no_numeric_score' }]);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/jobs/job-1/requirements/edits');
+    expect(url).toBe(`${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/job-1/requirements/edits`);
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tok-123');
     expect(JSON.parse(init.body as string)).toEqual({ client_revision: 3, operations: [{ op: 'confirm_no_numeric_score' }] });
     vi.unstubAllGlobals();
@@ -44,7 +45,7 @@ describe('requirements API client', () => {
     const fetchMock = vi.fn(() => respond(200, { job_id: 'job-1' }));
     vi.stubGlobal('fetch', fetchMock);
     await getRequirements('job-1');
-    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/jobs/job-1/requirements');
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(`${WEBHOOK_CONFIG.JOB_INGESTION_BASE_URL}/job-1/requirements`);
     vi.unstubAllGlobals();
   });
 });
