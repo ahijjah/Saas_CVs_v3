@@ -72,7 +72,8 @@ class Stack:
     frontend_base: str         # http://127.0.0.1:<port> of the UI
     ui_api_origin: str         # the origin the UI is compiled with (config.ts); the browser's API calls are routed to backend_base
     dsn: str                   # SQLAlchemy URL for the backend
-    psycopg_dsn: str           # libpq URL for test assertions
+    psycopg_dsn: str           # libpq URL for test assertions (cv_admin)
+    worker_psycopg_dsn: str    # libpq URL for reading the scoring worker's output (cv_worker)
     users: dict[str, dict] = field(default_factory=dict)
     logs: list[Path] = field(default_factory=list)
 
@@ -197,6 +198,7 @@ def running_stack(run_dir: Path):
             secrets_dsn = _url(db, "cv_secrets", passwords["cv_secrets"], "postgresql+asyncpg")
             # Test-side inspection reads through cv_admin, not the superuser (the grants allow it the rows the checks need).
             psycopg_dsn = _url(db, "cv_admin", passwords["cv_admin"], "postgresql")
+            worker_psycopg_dsn = _url(db, "cv_worker", passwords["cv_worker"], "postgresql")
             secret = secrets.token_urlsafe(32)
             try:
                 backend_env = {**os.environ, "DATABASE_URL": dsn, "ADMIN_DATABASE_URL": admin_dsn,
@@ -218,7 +220,7 @@ def running_stack(run_dir: Path):
                     raise RuntimeError("injected failure after start (cleanup check)")
 
                 yield Stack(backend_base=f"http://127.0.0.1:{backend_port}", frontend_base=origin,
-                            ui_api_origin="http://72.62.31.221:8000", dsn=dsn, psycopg_dsn=psycopg_dsn,
+                            ui_api_origin="http://72.62.31.221:8000", dsn=dsn, psycopg_dsn=psycopg_dsn, worker_psycopg_dsn=worker_psycopg_dsn,
                             users=users,
                             logs=[s.log for s in services])
             finally:
