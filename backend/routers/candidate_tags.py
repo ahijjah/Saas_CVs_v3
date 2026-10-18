@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Annotated
 
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
 from config import get_settings
+
+logger = logging.getLogger(__name__)
 from database import get_db, set_rls_context
 from services.application_reuse_service import (
     ReuseError,
@@ -312,6 +315,8 @@ async def reuse_candidate_to_job(
     except ReuseError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (OSError, SQLAlchemyError) as exc:
+        # The client gets the fixed message; the cause is logged so an operator can see whether it is a file or a privilege problem.
+        logger.exception("CV reuse failed for application %s", application_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                             detail="The CV could not be copied. Nothing was created.") from exc
 
