@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
@@ -648,7 +649,7 @@ async def get_job_details(
     current_description_hash = _normalize_description_hash(job["description"] or "")
     if extraction_status == "blocked" or retry_count >= max_retries:
         retry_blocked_reason: str | None = "max_retries_reached"
-    elif last_failed_hash and current_description_hash == last_failed_hash:
+    elif retry_blocked_by_description(extraction_error, last_failed_hash, current_description_hash):
         retry_blocked_reason = "description_unchanged"
     else:
         retry_blocked_reason = None
@@ -1281,6 +1282,30 @@ _RECOVER_STALE_V2_SQL = f"""
       AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
 """
 
+# A stored description hash is a SHA-256 hex digest, as _normalize_description_hash writes it. Anything else is not evidence that the
+# description changed.
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def hash_proves_change(stored_hash: str | None, current_hash: str) -> bool:
+    """True only when stored_hash is a well-formed digest that differs from the current one. A NULL, empty, malformed or uppercase
+    stored value proves nothing, so it does not allow a retry."""
+    return bool(stored_hash and _SHA256_HEX.match(stored_hash) and stored_hash != current_hash)
+
+
+def retry_blocked_by_description(error: str | None, stored_hash: str | None, current_hash: str) -> bool:
+    """The description rule for a failed V2 or legacy row, shared by the claim, the refusal and the derived status.
+
+    A rejected description (REQUIREMENTS_REJECTED) is refused unless its stored hash proves the description changed. An insufficient
+    row (legacy) is refused only when the description is the same as the one stored. Other failures are never blocked by this rule:
+    transient, timeout, connectivity and missing-model failures remain retryable."""
+    if error == REQUIREMENTS_REJECTED_MESSAGE:
+        return not hash_proves_change(stored_hash, current_hash)
+    if error == INSUFFICIENT_MESSAGE:
+        return stored_hash == current_hash
+    return False
+
+
 _CLAIM_RETRY_V2_SQL = f"""
     UPDATE job_criteria
     SET criteria_extraction_status = 'pending',
@@ -1293,7 +1318,9 @@ _CLAIM_RETRY_V2_SQL = f"""
       AND criteria_extraction_retry_count < :max_retries
       AND {REQUIREMENTS_V2_PREDICATE}
       AND (criteria_extraction_error IS DISTINCT FROM :rejected_message
-           OR criteria_last_failed_description_hash IS DISTINCT FROM :description_hash)
+           OR (length(criteria_last_failed_description_hash) = 64
+               AND criteria_last_failed_description_hash ~ '^[0-9a-f]+$'
+               AND criteria_last_failed_description_hash IS DISTINCT FROM :description_hash))
       AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
     RETURNING criteria_extraction_retry_count
 """
@@ -1320,8 +1347,8 @@ def _retry_refusal(state, max_retries: int, description_hash: str) -> HTTPExcept
     if int(state["criteria_extraction_retry_count"] or 0) >= max_retries:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Maximum analysis retries reached for this campaign.")
-    if (state["criteria_extraction_error"] in (INSUFFICIENT_MESSAGE, REQUIREMENTS_REJECTED_MESSAGE)
-            and state["criteria_last_failed_description_hash"] == description_hash):
+    if retry_blocked_by_description(state["criteria_extraction_error"], state["criteria_last_failed_description_hash"],
+                                    description_hash):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Please update the job description with more meaningful details before retrying analysis.")
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Criteria extraction was already re-queued.")

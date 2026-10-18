@@ -130,8 +130,9 @@ def generate_sql() -> str:
     out += ["", "-- 3. Column grants: platform_secrets metadata only. No value column for any runtime role."]
     for role, columns in PLATFORM_SECRETS_COLUMN_GRANTS.items():
         out.append(f"GRANT SELECT ({', '.join(columns)}) ON cv_analyzer.platform_secrets TO {role};")
-    out += ["", "-- 4. Sequences for the roles that insert.",
-            f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA cv_analyzer TO {APP}, {WORKER}, {ADMIN};", "",
+    # job_code_seq is the only sequence. Only the job-creation path (routers/jobs.py) draws from it, as cv_app.
+    out += ["", "-- 4. Sequences: job_code_seq only.",
+            f"GRANT USAGE ON SEQUENCE cv_analyzer.job_code_seq TO {APP};", "",
             "-- 5. Functions: each executable by one role only.",
             ]
     for signature, role in FUNCTION_EXECUTE.items():

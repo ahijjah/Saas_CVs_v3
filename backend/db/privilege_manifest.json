@@ -1,0 +1,1574 @@
+{
+  "cells": [
+    {
+      "consumers": [
+        "routers.applications",
+        "routers.approvals",
+        "routers.campaigns",
+        "routers.client_organizations",
+        "routers.dashboard",
+        "routers.interviews",
+        "routers.jobs"
+      ],
+      "kind": "table",
+      "object": "agency_user_clients",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.ai_usage",
+        "services.ai_usage_service"
+      ],
+      "kind": "table",
+      "object": "ai_model_pricing",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.ai_usage_service"
+      ],
+      "kind": "table",
+      "object": "ai_model_pricing",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.ai_usage_service"
+      ],
+      "kind": "table",
+      "object": "ai_model_pricing",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.ai_models",
+        "services.ai_model_registry_service"
+      ],
+      "kind": "table",
+      "object": "ai_model_registry",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.ai_model_registry_service"
+      ],
+      "kind": "table",
+      "object": "ai_model_registry",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.ai_model_registry_service"
+      ],
+      "kind": "table",
+      "object": "ai_model_registry",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "main",
+        "services.ai_service",
+        "services.knockout_analysis_service",
+        "services.screening_validation_service"
+      ],
+      "kind": "table",
+      "object": "ai_prompts",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.ai_service",
+        "services.knockout_analysis_service"
+      ],
+      "kind": "table",
+      "object": "ai_prompts",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.ai_prompts",
+        "services.ai_service",
+        "services.knockout_analysis_service"
+      ],
+      "kind": "table",
+      "object": "ai_prompts",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.ai_models",
+        "services.ai_model_registry_service"
+      ],
+      "kind": "table",
+      "object": "ai_stage_defaults",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.ai_model_registry_service"
+      ],
+      "kind": "table",
+      "object": "ai_stage_defaults",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.ai_model_registry_service"
+      ],
+      "kind": "table",
+      "object": "ai_stage_defaults",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.ai_usage",
+        "services.ai_usage_service"
+      ],
+      "kind": "table",
+      "object": "ai_usage_log",
+      "path": "request",
+      "privileges": [
+        "INSERT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.ai_usage_service"
+      ],
+      "kind": "table",
+      "object": "ai_usage_log",
+      "path": "worker",
+      "privileges": [
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.ai_usage_service"
+      ],
+      "kind": "table",
+      "object": "ai_usage_log",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "routers.candidate_tags"
+      ],
+      "kind": "table",
+      "object": "application_candidate_tags",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "routers.jobs",
+        "services.application_intake_service",
+        "services.application_reuse_service",
+        "services.duplicate_detection",
+        "services.knockout_analysis_service",
+        "services.screening_validation_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_files",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.application_intake_service",
+        "services.duplicate_detection",
+        "services.knockout_analysis_service",
+        "workers.backfill_canonical_fp",
+        "workers.cv_score",
+        "workers.watchdog"
+      ],
+      "kind": "table",
+      "object": "application_files",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.admin",
+        "services.application_intake_service",
+        "services.duplicate_detection",
+        "services.knockout_analysis_service",
+        "workers.backfill_canonical_fp",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_files",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "INSERT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "services.application_intake_service",
+        "services.duplicate_detection",
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "services.screening_validation_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_intake_log",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.application_intake_service",
+        "services.duplicate_detection",
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "workers.cv_intake",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_intake_log",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.application_intake_service",
+        "services.duplicate_detection",
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_intake_log",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "services.knockout_analysis_service",
+        "services.screening_validation_service"
+      ],
+      "kind": "table",
+      "object": "application_knockout_answer_suggestions",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.knockout_analysis_service"
+      ],
+      "kind": "table",
+      "object": "application_knockout_answer_suggestions",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "services.knockout_analysis_service",
+        "services.screening_validation_service"
+      ],
+      "kind": "table",
+      "object": "application_knockout_answer_validations",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "services.knockout_questions_service",
+        "services.screening_validation_service"
+      ],
+      "kind": "table",
+      "object": "application_knockout_answers",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "services.knockout_questions_service"
+      ],
+      "kind": "table",
+      "object": "application_knockout_answers",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "services.knockout_questions_service"
+      ],
+      "kind": "table",
+      "object": "application_knockout_answers",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "services.screening_validation_service"
+      ],
+      "kind": "table",
+      "object": "application_knockout_validation_runs",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_score_comparisons",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_score_comparisons",
+      "path": "worker",
+      "privileges": [
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "routers.campaigns",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_scores",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_scores",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.analytics",
+        "routers.applications"
+      ],
+      "kind": "table",
+      "object": "application_workflow_history",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "main",
+        "routers.analytics",
+        "routers.applications",
+        "routers.approvals",
+        "routers.campaigns",
+        "routers.candidate_tags",
+        "routers.comments",
+        "routers.communication",
+        "routers.dashboard",
+        "routers.interviews",
+        "routers.jobs",
+        "routers.tenant",
+        "services.application_intake_service",
+        "services.application_reuse_service",
+        "services.communication_events",
+        "services.duplicate_detection",
+        "services.knockout_questions_service",
+        "services.screening_validation_service",
+        "services.subscription_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "applications",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.application_intake_service",
+        "services.duplicate_detection",
+        "services.intake_notification_service",
+        "services.knockout_questions_service",
+        "services.subscription_service",
+        "workers.cv_score",
+        "workers.watchdog"
+      ],
+      "kind": "table",
+      "object": "applications",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.admin",
+        "routers.public",
+        "services.application_intake_service",
+        "services.duplicate_detection",
+        "services.knockout_questions_service",
+        "services.subscription_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "applications",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "main",
+        "services.audit_service",
+        "services.requirements_edit"
+      ],
+      "kind": "table",
+      "object": "audit_logs",
+      "path": "request",
+      "privileges": [
+        "INSERT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.audit_service"
+      ],
+      "kind": "table",
+      "object": "audit_logs",
+      "path": "worker",
+      "privileges": [
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.audit_logs",
+        "services.audit_service"
+      ],
+      "kind": "table",
+      "object": "audit_logs",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.analytics",
+        "routers.applications",
+        "routers.approvals"
+      ],
+      "kind": "table",
+      "object": "candidate_approvals",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.comments"
+      ],
+      "kind": "table",
+      "object": "candidate_comments",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.communication",
+        "services.communication_events"
+      ],
+      "kind": "table",
+      "object": "candidate_communications",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.analytics",
+        "routers.applications",
+        "routers.interviews"
+      ],
+      "kind": "table",
+      "object": "candidate_interview_feedback",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.analytics",
+        "routers.applications",
+        "routers.interviews"
+      ],
+      "kind": "table",
+      "object": "candidate_interviews",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.communication",
+        "services.communication_events"
+      ],
+      "kind": "table",
+      "object": "candidate_message_templates",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.saved_views"
+      ],
+      "kind": "table",
+      "object": "candidate_saved_views",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "main",
+        "routers.applications",
+        "routers.candidate_tags"
+      ],
+      "kind": "table",
+      "object": "candidate_tags",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "main",
+        "routers.applications",
+        "routers.campaigns",
+        "routers.client_organizations",
+        "routers.jobs"
+      ],
+      "kind": "table",
+      "object": "client_organizations",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.communication",
+        "services.communication_events"
+      ],
+      "kind": "table",
+      "object": "communication_automation_rules",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.jobs",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "duplicate_application_logs",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "duplicate_application_logs",
+      "path": "worker",
+      "privileges": [
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.intake_notification_service",
+        "workers.cv_intake"
+      ],
+      "kind": "table",
+      "object": "email_ingest_log",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.admin"
+      ],
+      "kind": "table",
+      "object": "email_ingest_log",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "routers.campaigns",
+        "routers.dashboard",
+        "routers.jobs",
+        "services.campaign_service",
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "job_campaigns",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "job_campaigns",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "job_campaigns",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.jobs",
+        "services.ai_service",
+        "services.application_intake_service",
+        "services.application_reuse_service",
+        "services.criteria_status",
+        "services.requirements_edit",
+        "services.requirements_v2.contract",
+        "services.requirements_v2.scoring",
+        "workers.criteria_worker",
+        "workers.cv_score",
+        "workers.requirements_v2_worker"
+      ],
+      "kind": "table",
+      "object": "job_criteria",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.ai_service",
+        "services.application_intake_service",
+        "services.criteria_status",
+        "services.requirements_v2.contract",
+        "services.requirements_v2.scoring",
+        "workers.criteria_worker",
+        "workers.cv_score",
+        "workers.requirements_v2_worker"
+      ],
+      "kind": "table",
+      "object": "job_criteria",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.ai_service",
+        "services.application_intake_service",
+        "services.criteria_status",
+        "services.requirements_v2.contract",
+        "services.requirements_v2.scoring",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "job_criteria",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "services.knockout_questions_service",
+        "services.screening_validation_service"
+      ],
+      "kind": "table",
+      "object": "job_knockout_questions",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "services.knockout_questions_service"
+      ],
+      "kind": "table",
+      "object": "job_knockout_questions",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.knockout_analysis_service",
+        "services.knockout_answer_extraction_service",
+        "services.knockout_questions_service"
+      ],
+      "kind": "table",
+      "object": "job_knockout_questions",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "config",
+        "main",
+        "routers.ai_usage",
+        "routers.analytics",
+        "routers.applications",
+        "routers.approvals",
+        "routers.campaigns",
+        "routers.candidate_tags",
+        "routers.client_organizations",
+        "routers.communication",
+        "routers.dashboard",
+        "routers.interviews",
+        "routers.job_requirements",
+        "routers.jobs",
+        "routers.tenant",
+        "services.application_intake_service",
+        "services.application_reuse_service",
+        "services.campaign_service",
+        "services.communication_events",
+        "services.knockout_analysis_service",
+        "services.knockout_questions_service",
+        "services.prompt_config",
+        "services.requirements_edit",
+        "services.screening_validation_service",
+        "services.subscription_service",
+        "services.threshold_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "jobs",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "config",
+        "services.application_intake_service",
+        "services.intake_notification_service",
+        "services.knockout_analysis_service",
+        "services.knockout_questions_service",
+        "services.prompt_config",
+        "services.subscription_service",
+        "services.threshold_service",
+        "workers.cv_intake",
+        "workers.cv_score",
+        "workers.watchdog"
+      ],
+      "kind": "table",
+      "object": "jobs",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "config",
+        "routers.admin",
+        "routers.public",
+        "services.application_intake_service",
+        "services.knockout_analysis_service",
+        "services.knockout_questions_service",
+        "services.prompt_config",
+        "services.subscription_service",
+        "services.threshold_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "jobs",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "services.intake_notification_service",
+        "workers.notification_worker"
+      ],
+      "kind": "table",
+      "object": "notification_log",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.tenant"
+      ],
+      "kind": "table",
+      "object": "plan_features",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "routers.admin",
+        "routers.subscription_plans"
+      ],
+      "kind": "table",
+      "object": "plan_features",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "main",
+        "routers.tenant",
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "subscription_plans",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "subscription_plans",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.admin",
+        "routers.subscription_plans",
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "subscription_plans",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "config",
+        "routers.jobs",
+        "services.knockout_questions_service",
+        "services.llm_provider",
+        "services.local_processor",
+        "services.prompt_config",
+        "services.requirements_v2.acknowledgment",
+        "services.security_detection",
+        "services.threshold_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "system_config",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "config",
+        "services.intake_notification_service",
+        "services.knockout_questions_service",
+        "services.llm_provider",
+        "services.local_processor",
+        "services.prompt_config",
+        "services.requirements_v2.acknowledgment",
+        "services.security_detection",
+        "services.threshold_service",
+        "workers.cv_intake",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "system_config",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "config",
+        "routers.platform_config",
+        "services.knockout_questions_service",
+        "services.llm_provider",
+        "services.local_processor",
+        "services.prompt_config",
+        "services.requirements_v2.acknowledgment",
+        "services.security_detection",
+        "services.threshold_service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "system_config",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "tenant_usage_monthly",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "tenant_usage_monthly",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.subscription_service"
+      ],
+      "kind": "table",
+      "object": "tenant_usage_monthly",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.analytics",
+        "routers.applications",
+        "routers.approvals",
+        "routers.workflow_policies"
+      ],
+      "kind": "table",
+      "object": "tenant_workflow_policies",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "database",
+        "routers.ai_usage",
+        "routers.applications",
+        "routers.campaigns",
+        "routers.client_organizations",
+        "routers.dashboard",
+        "routers.jobs",
+        "routers.tenant",
+        "services.application_intake_service",
+        "services.application_reuse_service",
+        "services.prompt_config",
+        "services.subscription_service",
+        "services.threshold_service"
+      ],
+      "kind": "table",
+      "object": "tenants",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "database",
+        "services.application_intake_service",
+        "services.prompt_config",
+        "services.subscription_service",
+        "services.threshold_service",
+        "workers.cv_intake",
+        "workers.watchdog"
+      ],
+      "kind": "table",
+      "object": "tenants",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "database",
+        "routers.admin",
+        "routers.audit_logs",
+        "routers.auth",
+        "routers.subscription_plans",
+        "services.application_intake_service",
+        "services.prompt_config",
+        "services.subscription_service",
+        "services.threshold_service"
+      ],
+      "kind": "table",
+      "object": "tenants",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "routers.admin"
+      ],
+      "kind": "table",
+      "object": "user_invites",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "auth.dependencies",
+        "routers.analytics",
+        "routers.applications",
+        "routers.approvals",
+        "routers.campaigns",
+        "routers.candidate_tags",
+        "routers.client_organizations",
+        "routers.comments",
+        "routers.communication",
+        "routers.dashboard",
+        "routers.interviews",
+        "routers.jobs",
+        "routers.saved_views",
+        "routers.tenant",
+        "routers.workflow_policies",
+        "services.knockout_analysis_service",
+        "services.requirements_edit"
+      ],
+      "kind": "table",
+      "object": "users",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.intake_notification_service",
+        "services.knockout_analysis_service"
+      ],
+      "kind": "table",
+      "object": "users",
+      "path": "worker",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "auth.dependencies",
+        "routers.admin",
+        "routers.auth",
+        "routers.platform_config",
+        "routers.subscription_plans",
+        "services.knockout_analysis_service"
+      ],
+      "kind": "table",
+      "object": "users",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_admin"
+    }
+  ],
+  "columns": [
+    {
+      "columns": [
+        "key",
+        "has_value"
+      ],
+      "consumers": [
+        "main",
+        "services.ai_model_registry_service",
+        "services.llm_provider",
+        "services.runtime_config"
+      ],
+      "kind": "column",
+      "object": "platform_secrets",
+      "path": "request",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "columns": [
+        "key",
+        "masked_value",
+        "description",
+        "category",
+        "is_critical",
+        "has_value",
+        "updated_at",
+        "updated_by_email"
+      ],
+      "consumers": [
+        "routers.platform_secrets",
+        "services.ai_model_registry_service",
+        "services.llm_provider",
+        "services.runtime_config"
+      ],
+      "kind": "column",
+      "object": "platform_secrets",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "SELECT"
+      ],
+      "role": "cv_admin"
+    }
+  ],
+  "functions": [
+    {
+      "consumers": [
+        "services.runtime_config"
+      ],
+      "kind": "function",
+      "object": "get_platform_secret(text)",
+      "path": "secret reader (runtime configuration)",
+      "privileges": [
+        "EXECUTE"
+      ],
+      "role": "cv_secrets"
+    },
+    {
+      "consumers": [
+        "routers.platform_secrets"
+      ],
+      "kind": "function",
+      "object": "set_platform_secret(text, text, text, text, text)",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "EXECUTE"
+      ],
+      "role": "cv_admin"
+    }
+  ],
+  "generated_by": "python -m db.privilege_consumers",
+  "schema": 1,
+  "schemas": [
+    {
+      "consumers": [
+        "database.py"
+      ],
+      "kind": "schema",
+      "object": "cv_analyzer",
+      "path": "request",
+      "privileges": [
+        "USAGE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "database.py"
+      ],
+      "kind": "schema",
+      "object": "cv_analyzer",
+      "path": "worker",
+      "privileges": [
+        "USAGE"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "database.py"
+      ],
+      "kind": "schema",
+      "object": "cv_analyzer",
+      "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
+      "privileges": [
+        "USAGE"
+      ],
+      "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "database.py"
+      ],
+      "kind": "schema",
+      "object": "cv_analyzer",
+      "path": "secret reader (runtime configuration)",
+      "privileges": [
+        "USAGE"
+      ],
+      "role": "cv_secrets"
+    }
+  ],
+  "sequences": [
+    {
+      "consumers": [
+        "routers.jobs"
+      ],
+      "kind": "sequence",
+      "object": "job_code_seq",
+      "path": "request",
+      "privileges": [
+        "USAGE"
+      ],
+      "role": "cv_app"
+    }
+  ],
+  "source": "backend/db/runtime_grants.py"
+}

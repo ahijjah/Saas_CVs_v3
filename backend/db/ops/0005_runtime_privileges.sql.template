@@ -114,8 +114,8 @@ GRANT SELECT, INSERT, UPDATE ON cv_analyzer.users TO cv_admin;
 GRANT SELECT (key, has_value) ON cv_analyzer.platform_secrets TO cv_app;
 GRANT SELECT (key, masked_value, description, category, is_critical, has_value, updated_at, updated_by_email) ON cv_analyzer.platform_secrets TO cv_admin;
 
--- 4. Sequences for the roles that insert.
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA cv_analyzer TO cv_app, cv_worker, cv_admin;
+-- 4. Sequences: job_code_seq only.
+GRANT USAGE ON SEQUENCE cv_analyzer.job_code_seq TO cv_app;
 
 -- 5. Functions: each executable by one role only.
 GRANT EXECUTE ON FUNCTION cv_analyzer.get_platform_secret(text) TO cv_secrets;

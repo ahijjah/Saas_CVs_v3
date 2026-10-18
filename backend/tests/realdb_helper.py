@@ -159,8 +159,15 @@ def build(cluster: Cluster) -> Database:
         except RuntimeError as exc:
             failures.append(StepFailure("0000_migration_roles.sql.template", str(exc).splitlines()[0]))
     if not failures:
+        # docs/DATABASE_ROLES.md step 3: schema.sql objects move to the migrator before any migration runs.
         try:
-            runner.run(conn, allow_fresh=True)
+            transfer_ownership(database)
+        except (psycopg2.Error, RuntimeError) as exc:
+            failures.append(StepFailure("ownership transfer", str(exc).splitlines()[0]))
+    if not failures:
+        # Production runs the migrations as the operator login, which assumes the migrator (scripts/migrate.py).
+        try:
+            run_migrations_as_operator(database)
         except runner.MigrationError as exc:
             failures.append(StepFailure(exc.file or "migrations", str(exc).splitlines()[0]))
     cur.execute("SET search_path = cv_analyzer")
@@ -170,6 +177,35 @@ def build(cluster: Cluster) -> Database:
 
 
 RUNTIME_LOGIN_ROLES = ("cv_app", "cv_worker", "cv_admin", "cv_secrets")
+
+
+def transfer_ownership(database: "Database") -> None:
+    """Run the generated ownership statements (scripts.generate_ownership_transfer) as the bootstrap superuser. The generator reads the
+    catalogue and refuses object kinds it does not handle; its output is executed as one script."""
+    import sys as _sys
+    scripts_dir = str(BACKEND)
+    if scripts_dir not in _sys.path:
+        _sys.path.insert(0, scripts_dir)
+    from scripts.generate_ownership_transfer import generate
+    conn = psycopg2.connect(database.cluster.dsn(database.name))
+    conn.autocommit = True
+    try:
+        statements = generate(conn, "cv_migrator")
+        conn.cursor().execute("\n".join(statements))
+    finally:
+        conn.close()
+
+
+def run_migrations_as_operator(database: "Database") -> None:
+    """The chain, applied as cv_migration_operator with SET ROLE cv_migrator, as scripts/migrate.py does in production."""
+    operator = psycopg2.connect(host="127.0.0.1", port=database.cluster.port, user="cv_migration_operator",
+                                password=database.runtime_passwords["cv_migration_operator"], dbname=database.name,
+                                options="-c search_path=cv_analyzer,public")
+    operator.set_client_encoding("UTF8")
+    try:
+        runner.run(operator, allow_fresh=True, owner_role="cv_migrator")
+    finally:
+        operator.close()
 
 
 def provision_migration_roles(database: "Database") -> str:
