@@ -23,7 +23,7 @@ LEGACY = json.loads((BACKEND / "db" / "runner" / "legacy_checksums.json").read_t
 
 NEW_FROM = "095"
 DB0_FILES = ("095_repair_010_platform_control.sql", "096_repair_070_sla_policy_index.sql",
-             "097_repair_087_knockout_answer_tenant.sql")
+             "097_repair_087_knockout_answer_tenant.sql", "098_application_scores_requirements_revision.sql")
 
 FORBIDDEN_IN_NEW_MIGRATIONS = {
     "role creation": re.compile(r"\bCREATE\s+(ROLE|USER)\b", re.I),

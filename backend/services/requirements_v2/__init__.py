@@ -1,9 +1,9 @@
 """
 Requirements v2: contract, validation, weight arithmetic, readiness and edit-tracking (stage 1).
 
-PURE: functions over plain dicts; no database, no model call, no configuration. The only production code that
-imports it is services/requirements_api.py (the editing / review API); no worker, prompt, scoring or intake path does.
-Legacy job analysis is unaffected by this package.
+PURE: functions over plain dicts; no database, no model call, no configuration. The production callers are the extraction
+worker (workers/requirements_v2_worker.py), the editing service (services/requirements_edit.py) and its router, and the scoring
+adapter. Legacy job analysis is unaffected by this package.
 """
 from services.requirements_v2.acknowledgment import (
     CLASSIFICATION_WARNING_CODES, POLICY_KEY, AcknowledgmentError, ClassificationStatus, ReconcileResult,

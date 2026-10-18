@@ -2,8 +2,8 @@
 Requirements-v2 extraction, OFFLINE: the pinned criteria_extraction_v2 prompt, the AI-output contract and the
 parser/post-processor that turns a model response into a requirements-v2 draft.
 
-NOT WIRED: nothing here is imported by job creation, the criteria worker, the API or scoring; it makes no model call,
-reads no database and activates no prompt. Fixture responses are the only input in this stage.
+Wired into one place only: workers/requirements_v2_worker.py, which makes the model call, validates the draft and persists it.
+Nothing here is imported by job creation, the legacy criteria worker, the API or scoring, and nothing here reads the database.
 """
 from services.requirements_v2.extraction.parser import ExtractionResult, parse_response, process_ai_output
 from services.requirements_v2.extraction.prompt import (

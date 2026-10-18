@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
+import RequirementsPanel from '../components/RequirementsPanel';
+import { scoringBlockedByRequirements } from '../services/requirementsEdits';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
@@ -488,6 +490,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const isAgencyTenant = tenantType === 'agency' || tenantType === 'individual_recruiter';
 
   const [details, setDetails] = useState<JobDetailsType | null>(null);
+  // Requirements v2 jobs: scoring waits until the panel reports the document ready. Legacy jobs keep their own rules.
+  const [requirementsCanProceed, setRequirementsCanProceed] = useState(false);
+  const isRequirementsV2 = details?.requirements_schema_version === 2;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -2367,9 +2372,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                     )}
                     <div className="flex-1" />
                     <button
-                      disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId}
+                      disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId || scoringBlockedByRequirements(isRequirementsV2, requirementsCanProceed)}
                       onClick={handleScorePending}
-                      className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${!cvsHasPending || cvsScoringInProgress || !!deletingCVId ? 'bg-slate-200 text-textMuted cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                      className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${!cvsHasPending || cvsScoringInProgress || !!deletingCVId || scoringBlockedByRequirements(isRequirementsV2, requirementsCanProceed) ? 'bg-slate-200 text-textMuted cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                     >
                       {cvsScoringInProgress
                         ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>{t.scoringBtnLabel}</>
@@ -2642,7 +2647,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             {t.skillsAnalysis}
             {!editingCriteria && criteriaBadge}
           </h3>
-          {canEdit && details.criteria_extraction_status === 'completed' && !editingCriteria && (
+          {canEdit && !isRequirementsV2 && details.criteria_extraction_status === 'completed' && !editingCriteria && (
             <button onClick={handleCriteriaEdit} className="text-[10px] font-black text-primary hover:text-primaryDark uppercase tracking-widest transition-colors">{t.editCriteria}</button>
           )}
         </div>
@@ -2754,9 +2759,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       </section>
 
       </div>
-      {/* Right column — Evaluation Weights ────────────────────────────────── */}
+      {/* Right column — Requirements (v2 jobs) and the legacy Evaluation Weights ────────── */}
       <div className="space-y-6">
-        <div className="bg-white rounded-2xl border border-border shadow-sm p-6 lg:sticky lg:top-20">
+        {isRequirementsV2 && (
+          <RequirementsPanel jobId={details.job_id} userRole={auth.user?.role} onReadinessChange={setRequirementsCanProceed} />
+        )}
+        <div className={`bg-white rounded-2xl border border-border shadow-sm p-6 lg:sticky lg:top-20 ${isRequirementsV2 ? 'hidden' : ''}`}>
           <div className="flex items-center justify-between mb-5">
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
               <svg className="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>

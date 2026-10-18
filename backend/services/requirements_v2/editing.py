@@ -139,3 +139,17 @@ def set_category_weight(doc: dict, category: str, weight: int) -> dict:
     out = copy.deepcopy(doc)
     out["categories"][category]["weight"] = weight
     return out
+
+
+def reorder_items(doc: dict, category: str, item_ids: list[str]) -> dict:
+    """A new document with the items of ONE category in the given order. `item_ids` must be exactly the category's current item
+    ids: no omission, no addition and no duplicate. Item content, weights and provenance are not changed."""
+    if category not in CATEGORIES:
+        raise ValueError(f"unknown category {category!r}")
+    current = [i["id"] for i in doc["categories"][category]["items"]]
+    if len(item_ids) != len(set(item_ids)) or set(item_ids) != set(current):
+        raise ValueError("the new order must name every item of the category exactly once")
+    out = copy.deepcopy(doc)
+    by_id = {i["id"]: i for i in out["categories"][category]["items"]}
+    out["categories"][category]["items"] = [by_id[i] for i in item_ids]
+    return out
