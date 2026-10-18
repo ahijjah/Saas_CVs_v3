@@ -61,7 +61,7 @@ async def _send_async(notification_id: str) -> None:
 
     cfg = get_settings()
     engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )
@@ -218,7 +218,7 @@ async def _mark_failed(notification_id: str, error_message: str) -> None:
 
     cfg = get_settings()
     engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )

@@ -54,6 +54,11 @@ class Api:
         if status != 200:
             raise ApiError(f"update description failed: {status} {body}")
 
+    def retry_status(self, token, job):
+        """POST the retry route and return the HTTP status (202 queued, 400 refused for an unchanged description)."""
+        status, _ = _request("POST", f"{self.base}/jobs/{job}/criteria/retry", token, {})
+        return status
+
     def requirements(self, token, job, timeout=60):
         """The stored document, once extraction has produced one."""
         status = body = None
@@ -84,15 +89,19 @@ class Api:
             raise ApiError(f"upload failed: {status} {body}")
         return body
 
-    def _connect(self):
-        conn = psycopg2.connect(self.stack.psycopg_dsn, options="-c search_path=cv_analyzer")
+    def _connect(self, dsn=None):
+        conn = psycopg2.connect(dsn or self.stack.psycopg_dsn, options="-c search_path=cv_analyzer")
         conn.autocommit = True
         return conn
+
+    def _worker_connect(self):
+        """The scoring worker's output is read through the worker login, which owns that data path."""
+        return self._connect(self.stack.worker_psycopg_dsn)
 
     def score_row(self, job, timeout=60):
         """requirements_revision_used and final_score of the job's first score, once the scoring worker has written it."""
         for _ in range(timeout):
-            with self._connect() as conn, conn.cursor() as cur:
+            with self._worker_connect() as conn, conn.cursor() as cur:
                 cur.execute("SELECT s.requirements_revision_used, s.final_score FROM application_scores s"
                             " JOIN applications a ON a.application_id = s.application_id WHERE a.job_id = %s", (job,))
                 row = cur.fetchone()

@@ -12,6 +12,9 @@ WORKER_FAILED_MESSAGE = "Criteria extraction failed. Retry later."
 # A cancelled requirements-v2 attempt returns its row to pending with this fixed message, so the row is never left processing.
 EXTRACTION_CANCELLED_MESSAGE = "Criteria extraction was cancelled before it finished. Retry it."
 MODEL_NOT_CONFIGURED_MESSAGE = "AI criteria extraction is not configured. Ask an administrator to set the criteria model."
+# Requirements v2 only: the model returned output that is invalid for this description. Retrying the same description is refused
+# until the description changes, because the same input produces the same rejection. Transient failures do not use this message.
+REQUIREMENTS_REJECTED_MESSAGE = "The requirements could not be extracted from this description. Update the description and retry."
 
 # A processing row older than this, with no progress, is treated as abandoned by a crashed worker.
 STALE_PROCESSING_MINUTES = 30

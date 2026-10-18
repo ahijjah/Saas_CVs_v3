@@ -26,6 +26,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from services.runtime_config import get_secret
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
@@ -75,11 +77,8 @@ async def get_comparison_client_async(db) -> LLMClient | None:
         base_url = cfg.get("secondary_llm_base_url")  or _DEFAULT_BASE_URL
         model    = cfg.get("secondary_llm_model")      or _DEFAULT_MODEL
 
-        # Load API key from platform_secrets (DB) first, then env vars as fallback
-        key_row = await db.execute(
-            text("SELECT value FROM platform_secrets WHERE key = 'SECONDARY_LLM_API_KEY'")
-        )
-        db_key = (key_row.scalar_one_or_none() or "").strip()
+        # Load the API key through the secret reader (cv_secrets getter), then env vars as fallback.
+        db_key = (get_secret("SECONDARY_LLM_API_KEY") or "").strip()
 
         api_key = (
             db_key

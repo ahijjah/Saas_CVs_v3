@@ -24,13 +24,17 @@ LEGACY = json.loads((BACKEND / "db" / "runner" / "legacy_checksums.json").read_t
 NEW_FROM = "095"
 DB0_FILES = ("095_repair_010_platform_control.sql", "096_repair_070_sla_policy_index.sql",
              "097_repair_087_knockout_answer_tenant.sql", "098_application_scores_requirements_revision.sql")
+# Hardening migrations: functions and policies are allowed, and each is reviewed by name. DB0 files keep their stricter rules.
+HARDENING_FILES = ("099_platform_secret_accessors.sql", "100_runtime_rls_identity.sql", "101_job_code_sequence.sql")
 
 FORBIDDEN_IN_NEW_MIGRATIONS = {
     "role creation": re.compile(r"\bCREATE\s+(ROLE|USER)\b", re.I),
     "login change": re.compile(r"\b(NO)?LOGIN\b", re.I),
     "grant all": re.compile(r"\bGRANT\s+ALL\b", re.I),
-    "security definer without a fixed search_path": re.compile(r"SECURITY\s+DEFINER", re.I),
 }
+
+# SECURITY DEFINER is allowed only in the reviewed files below, and only where each such function sets a fixed search_path.
+SECURITY_DEFINER_ALLOWED = frozenset({"099_platform_secret_accessors.sql"})
 
 
 def _new_migrations() -> list[pathlib.Path]:
@@ -54,7 +58,7 @@ def test_manifest_lists_every_migration_file_exactly_once():
 
 
 def test_lint_scope_is_exactly_the_files_numbered_095_and_later():
-    assert [p.name for p in _new_migrations()] == sorted(DB0_FILES)
+    assert [p.name for p in _new_migrations()] == sorted(DB0_FILES + HARDENING_FILES)
 
 
 @pytest.mark.parametrize("label", list(FORBIDDEN_IN_NEW_MIGRATIONS))
@@ -100,19 +104,24 @@ def test_operator_templates_are_not_migrations():
     assert all(p.name.endswith(".template") for p in OPS.iterdir())
 
 
-def test_bootstrap_template_creates_no_runtime_role():
-    text = (OPS / "0001_roles_and_ledger.sql.template").read_text(encoding="utf-8")
-    created = re.findall(r"CREATE\s+ROLE\s+(\w+)", text)
-    assert created == ["cv_migrator", "cv_migration_operator"]
+def test_bootstrap_templates_create_only_the_migration_roles_and_no_runtime_role():
+    roles_0000 = re.findall(r"CREATE\s+ROLE\s+(\w+)", (OPS / "0000_migration_roles.sql.template").read_text(encoding="utf-8"))
+    roles_0001 = re.findall(r"CREATE\s+ROLE\s+(\w+)", (OPS / "0001_roles_and_ledger.sql.template").read_text(encoding="utf-8"))
+    assert roles_0000 == ["cv_migrator", "cv_migration_operator"]
+    assert roles_0001 == []
 
 
-def test_bootstrap_template_runs_on_a_database_without_a_ledger_and_yields_owned_ledger():
+def test_bootstrap_templates_run_in_order_on_a_database_without_a_ledger_and_yield_an_owned_ledger():
     from test_db0_migration_runner import empty_database
-    template = (OPS / "0001_roles_and_ledger.sql.template").read_text(encoding="utf-8")
-    script = "\n".join(line for line in template.splitlines() if not line.startswith("\\set"))
-    script = script.replace(":'migration_operator_password'", "'disposable-test-only'")
+
+    def script(name):
+        template = (OPS / name).read_text(encoding="utf-8")
+        body = "\n".join(line for line in template.splitlines() if not line.startswith("\\set"))
+        return body.replace(":'migration_operator_password'", "'disposable-test-only'")
+
     with empty_database() as conn:
-        conn.cursor().execute(script)
+        conn.cursor().execute(script("0000_migration_roles.sql.template"))
+        conn.cursor().execute(script("0001_roles_and_ledger.sql.template"))
         cur = conn.cursor()
         cur.execute("SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'cv_analyzer.schema_migrations'::regclass")
         assert cur.fetchone()[0] == "cv_migrator"
@@ -126,7 +135,9 @@ def test_generated_ownership_statements_cover_every_cv_analyzer_object_and_nothi
     from scripts.generate_ownership_transfer import generate
     with H.built_chain() as db:
         cur = db.conn.cursor()
-        cur.execute("CREATE ROLE cv_migrator NOLOGIN")
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = 'cv_migrator'")
+        if cur.fetchone() is None:
+            cur.execute("CREATE ROLE cv_migrator NOLOGIN")
         lines = generate(db.conn, "cv_migrator")
         statements = [line for line in lines if not line.startswith("--")]
         assert not any("REASSIGN" in line.upper() for line in lines)
@@ -158,3 +169,16 @@ def test_runner_rejects_an_owner_role_name_that_is_not_a_plain_identifier(tmp_pa
     with empty_database() as conn:
         with pytest.raises(runner.ManifestError):
             runner.run(conn, allow_fresh=True, directory=d, entries=_entries(files), owner_role="x; drop")
+
+
+def test_security_definer_is_used_only_in_reviewed_files_with_a_fixed_search_path():
+    for path in _new_migrations():
+        body = mask_comments(path.read_text(encoding="utf-8"))
+        if not re.search(r"SECURITY\s+DEFINER", body, re.I):
+            continue
+        assert path.name in SECURITY_DEFINER_ALLOWED, f"{path.name} uses SECURITY DEFINER but is not a reviewed file"
+        functions = re.split(r"CREATE\s+OR\s+REPLACE\s+FUNCTION", body, flags=re.I)[1:]
+        assert functions, f"{path.name}: SECURITY DEFINER outside a function definition"
+        for fn in functions:
+            if re.search(r"SECURITY\s+DEFINER", fn, re.I):
+                assert re.search(r"SET\s+search_path\s*=", fn, re.I), f"{path.name}: SECURITY DEFINER without SET search_path"

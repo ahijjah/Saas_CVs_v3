@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin
+from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
 from auth.password import hash_password
 from config import get_settings
 from database import get_db, set_rls_context
@@ -60,9 +60,8 @@ class InviteUserRequest(BaseModel):
 @router.get("/dashboard", dependencies=[RequireSuperAdmin])
 async def admin_dashboard(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     stats_row = await db.execute(text("""
         SELECT
@@ -111,7 +110,7 @@ async def admin_dashboard(
 @router.get("/tenants", dependencies=[RequireSuperAdmin])
 async def list_tenants(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
     page: int = 1,
     limit: int = 20,
     search: str | None = None,
@@ -119,7 +118,6 @@ async def list_tenants(
 ):
     limit = min(limit, 100)
     offset = (page - 1) * limit
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     where_clauses = []
     params = {"limit": limit, "offset": offset}
@@ -190,9 +188,8 @@ async def list_tenants(
 async def create_tenant(
     body: CreateTenantRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     valid_types = ("organization", "agency", "individual_recruiter")
     if body.tenant_type not in valid_types:
@@ -318,7 +315,7 @@ async def create_tenant(
 async def update_tenant_status(
     body: UpdateTenantStatusRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
     if body.status not in ("active", "suspended"):
         raise HTTPException(
@@ -326,7 +323,6 @@ async def update_tenant_status(
             detail="Invalid status",
         )
 
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     await db.execute(
         text("UPDATE tenants SET status = :status WHERE tenant_id = :tid"),
@@ -347,7 +343,7 @@ async def update_tenant_status(
 @router.get("/users", dependencies=[RequireSuperAdmin])
 async def list_users(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
     page: int = 1,
     limit: int = 20,
     search: str | None = None,
@@ -357,7 +353,6 @@ async def list_users(
 ):
     limit = min(limit, 100)
     offset = (page - 1) * limit
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     where_clauses = []
     params = {"limit": limit, "offset": offset}
@@ -422,9 +417,8 @@ async def create_user(
     tenant_id: str,
     body: InviteUserRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     existing = await db.execute(
         text("SELECT user_id FROM users WHERE email = :email"),
@@ -480,10 +474,9 @@ async def create_user(
 async def get_tenant_usage(
     tenant_id: str,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
     """Return current usage vs plan limits for a single tenant."""
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     tenant_row = await db.execute(
         text("""
@@ -577,10 +570,9 @@ async def update_tenant_subscription(
     tenant_id: str,
     body: UpdateTenantSubscriptionRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
     """Assign plan, extend trial, suspend, or reactivate a tenant subscription."""
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     existing = await db.execute(
         text("SELECT tenant_id FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
@@ -666,10 +658,9 @@ async def update_tenant_features(
     tenant_id: str,
     body: UpdateTenantFeaturesRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
     """Toggle feature flags for a tenant (Super Admin only)."""
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     existing = await db.execute(
         text("SELECT tenant_id FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),
@@ -706,10 +697,9 @@ async def update_tenant_fair_usage(
     tenant_id: str,
     body: UpdateTenantFairUsageRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
     """Update internal Fair Usage Policy limits and tenant type for a tenant."""
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     existing = await db.execute(
         text("SELECT tenant_id FROM tenants WHERE tenant_id = CAST(:tid AS uuid)"),

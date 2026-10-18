@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import pathlib
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -89,11 +90,13 @@ class Cluster:
     def __init__(self):
         self.dir = pathlib.Path(tempfile.mkdtemp(prefix="req_pg_"))
         try:
-            subprocess.run(["chown", "postgres", str(self.dir)], check=True)
+            if os.geteuid() == 0:    # the server runs as postgres when the tests run as root; an unprivileged runner runs it directly
+                subprocess.run(["chown", "postgres", str(self.dir)], check=True)
             with socket.socket() as s:
                 s.bind(("127.0.0.1", 0))
                 self.port = s.getsockname()[1]
-            self._as_pg([str(PG_BIN / "initdb"), "-D", str(self.dir / "data"), "-A", "trust", "-E", "UTF8"])
+            # The superuser is named explicitly: without -U it is the OS user running initdb (root maps to postgres, a CI runner does not).
+            self._as_pg([str(PG_BIN / "initdb"), "-D", str(self.dir / "data"), "-U", "postgres", "-A", "trust", "-E", "UTF8"])
             self._as_pg([str(PG_BIN / "pg_ctl"), "-D", str(self.dir / "data"), "-o",
                          f"-p {self.port} -k {self.dir} -c listen_addresses=127.0.0.1", "-l", str(self.dir / "log"), "-w", "start"])
         except BaseException:
@@ -124,6 +127,7 @@ class Database:
 
     def __init__(self, cluster: Cluster, name: str, admin, conn, failures: list[StepFailure]):
         self.cluster, self.name, self.admin, self.conn, self.failures = cluster, name, admin, conn, failures
+        self.runtime_passwords: dict[str, str] = {}
 
     def close(self) -> None:
         try:
@@ -149,13 +153,91 @@ def build(cluster: Cluster) -> Database:
         cur.execute(schema_sql())
     except psycopg2.Error as exc:
         failures.append(StepFailure("schema.sql", str(exc).splitlines()[0]))
+    database = Database(cluster, name, admin, conn, failures)
     if not failures:
+        # The migration roles exist before any migration runs, as an operator creates them (db/ops/0000).
         try:
-            runner.run(conn, allow_fresh=True)
+            provision_migration_roles(database)
+        except RuntimeError as exc:
+            failures.append(StepFailure("0000_migration_roles.sql.template", str(exc).splitlines()[0]))
+    if not failures:
+        # docs/DATABASE_ROLES.md step 3: schema.sql objects move to the migrator before any migration runs.
+        try:
+            transfer_ownership(database)
+        except (psycopg2.Error, RuntimeError) as exc:
+            failures.append(StepFailure("ownership transfer", str(exc).splitlines()[0]))
+    if not failures:
+        # Production runs the migrations as the operator login, which assumes the migrator (scripts/migrate.py).
+        try:
+            run_migrations_as_operator(database)
         except runner.MigrationError as exc:
             failures.append(StepFailure(exc.file or "migrations", str(exc).splitlines()[0]))
     cur.execute("SET search_path = cv_analyzer")
-    return Database(cluster, name, admin, conn, failures)
+    if not failures:
+        provision_runtime_logins(database)
+    return database
+
+
+RUNTIME_LOGIN_ROLES = ("cv_app", "cv_worker", "cv_admin", "cv_secrets")
+
+
+def transfer_ownership(database: "Database") -> None:
+    """Run the generated ownership statements (scripts.generate_ownership_transfer) as the bootstrap superuser. The generator reads the
+    catalogue and refuses object kinds it does not handle; its output is executed as one script."""
+    import sys as _sys
+    scripts_dir = str(BACKEND)
+    if scripts_dir not in _sys.path:
+        _sys.path.insert(0, scripts_dir)
+    from scripts.generate_ownership_transfer import generate
+    conn = psycopg2.connect(database.cluster.dsn(database.name))
+    conn.autocommit = True
+    try:
+        statements = generate(conn, "cv_migrator")
+        conn.cursor().execute("\n".join(statements))
+    finally:
+        conn.close()
+
+
+def run_migrations_as_operator(database: "Database") -> None:
+    """The chain, applied as cv_migration_operator with SET ROLE cv_migrator, as scripts/migrate.py does in production."""
+    operator = psycopg2.connect(host="127.0.0.1", port=database.cluster.port, user="cv_migration_operator",
+                                password=database.runtime_passwords["cv_migration_operator"], dbname=database.name,
+                                options="-c search_path=cv_analyzer,public")
+    operator.set_client_encoding("UTF8")
+    try:
+        runner.run(operator, allow_fresh=True, owner_role="cv_migrator")
+    finally:
+        operator.close()
+
+
+def provision_migration_roles(database: "Database") -> str:
+    """Apply db/ops/0000 with a per-database operator password. Returns the operator password for tests that use the operator login."""
+    password = secrets.token_urlsafe(18)
+    base = ["psql", "-h", "127.0.0.1", "-p", str(database.cluster.port), "-U", "postgres", "-d", database.name, "-X", "-q",
+            "-v", "ON_ERROR_STOP=1", "-v", f"migration_operator_password={password}"]
+    proc = subprocess.run(base + ["-f", str(DB_DIR / "ops" / "0000_migration_roles.sql.template")], capture_output=True, text=True,
+                          timeout=120)
+    if proc.returncode != 0:
+        raise RuntimeError(f"0000_migration_roles failed: {proc.stderr.strip()}")
+    database.runtime_passwords["cv_migration_operator"] = password
+    return password
+
+
+def provision_runtime_logins(database: "Database") -> dict[str, str]:
+    """Apply the operator scripts 0004 (logins and attributes) and 0005 (generated privileges) with per-database passwords, exactly as
+    an operator does. Tests connect as these logins. The passwords exist only in the returned dict and the test process."""
+    passwords = {role: secrets.token_urlsafe(18) for role in RUNTIME_LOGIN_ROLES}
+    variables: list[str] = []
+    for role in RUNTIME_LOGIN_ROLES:
+        variables += ["-v", f"{role}_password={passwords[role]}"]
+    base = ["psql", "-h", "127.0.0.1", "-p", str(database.cluster.port), "-U", "postgres", "-d", database.name, "-X", "-q",
+            "-v", "ON_ERROR_STOP=1"]
+    for script in ("0004_runtime_roles.sql.template", "0005_runtime_privileges.sql.template"):
+        proc = subprocess.run(base + variables + ["-f", str(DB_DIR / "ops" / script)], capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0:
+            raise RuntimeError(f"{script} failed on the test database: {proc.stderr.strip()}")
+    database.runtime_passwords.update(passwords)
+    return passwords
 
 
 @contextmanager

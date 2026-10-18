@@ -25,6 +25,7 @@ from sqlalchemy.pool import NullPool
 import config
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db
+from runtime_engines import async_engine, async_url
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import job_requirements
 from routers import jobs as jobs_router
@@ -78,10 +79,10 @@ def built():
 @pytest.fixture()
 def world(built, monkeypatch, tmp_path):
     """The real settings, pointed at this database; the broker captures tasks; the model returns the scripted responses."""
-    dsn = f"postgresql+asyncpg://postgres@127.0.0.1:{built.cluster.port}/{built.name}"
     real = config.get_settings()
     monkeypatch.setattr(config, "get_settings", lambda: real.model_copy(update={
-        "database_url": dsn, "db_schema": "cv_analyzer", "files_base_path": str(tmp_path)}))
+        "database_url": async_url(built, "cv_app"), "worker_database_url": async_url(built, "cv_worker"),
+        "db_schema": "cv_analyzer", "files_base_path": str(tmp_path)}))
     import services.ai_model_registry_service as registry
     monkeypatch.setattr(registry, "resolve_stage_client", _none)
     import services.local_processor as local_processor
@@ -116,10 +117,13 @@ def world(built, monkeypatch, tmp_path):
             {"model": "test-model", "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "finish_reason": "stop"}
 
     monkeypatch.setattr(ai_service, "score_cv", fake_score)
-    engine = create_async_engine(dsn, poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    # Requests run as cv_app; worker tasks run as cv_worker. The two sessions are kept apart so each path is tested as its own login.
+    engine = async_engine(built, "cv_app")
+    worker_engine = async_engine(built, "cv_worker")
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    yield SimpleNamespace(engine=engine, Session=Session, queued=queued, script=script, scored=scored, root=tmp_path, built=built,
-                          hooks=world_hooks)
+    WorkerSession = async_sessionmaker(worker_engine, class_=AsyncSession, expire_on_commit=False)
+    yield SimpleNamespace(engine=engine, Session=Session, worker_engine=worker_engine, WorkerSession=WorkerSession, queued=queued,
+                          script=script, scored=scored, root=tmp_path, built=built, hooks=world_hooks)
 
 
 async def _allowed(*args, **kwargs):
@@ -160,7 +164,7 @@ def _user(built, role="admin"):
 
 async def _run_worker(world, job_id, description):
     claim = {}
-    await v2_worker._extract_async(job_id, description, world.Session, claim)
+    await v2_worker._extract_async(job_id, description, world.WorkerSession, claim)
 
 
 def _criteria(built, job):
@@ -193,7 +197,7 @@ def _application(built, tenant_id, user_id, job, root) -> str:
 
 async def _score(world, app, job, tenant_id):
     await cv_score._score_cv_async(app, job, tenant_id, str(world.root / f"tenants/{tenant_id}/jobs/{job}/{app}.pdf"),
-                                   "application/pdf", {}, world.Session)
+                                   "application/pdf", {}, world.WorkerSession)
 
 
 async def _create(world, user, title, description):
@@ -247,22 +251,31 @@ async def test_a_new_job_is_extracted_reviewed_scored_and_its_score_records_the_
 # ---- C: an invalid extraction leaves a failed state, and a retry succeeds ----
 
 @pytest.mark.asyncio
-async def test_an_invalid_extraction_leaves_a_failed_state_and_a_retry_through_the_route_succeeds(world, monkeypatch):
+async def test_an_invalid_extraction_is_refused_for_the_same_description_and_retried_after_a_change(world, monkeypatch):
     built = world.built
     user = _user(built)
     job = await _create(world, user, "Senior Developer", EN_JD)
     world.script["responses"].extend(["{not json", "{not json", "{not json"])
-    monkeypatch.setattr(v2_worker, "_task_engine_and_session", lambda: (world.engine, world.Session))
+    monkeypatch.setattr(v2_worker, "_task_engine_and_session", lambda: (world.worker_engine, world.WorkerSession))
     await asyncio.to_thread(v2_worker.extract_requirements_v2_task.apply, args=(job, EN_JD))
     status, marker, revision, analysis, error = _criteria(built, job)
-    assert (status, error, revision, analysis) == ("failed", CS.WORKER_FAILED_MESSAGE, 0, None)
+    assert (status, error, revision, analysis) == ("failed", CS.REQUIREMENTS_REJECTED_MESSAGE, 0, None)
 
+    # The same description is refused: the model rejected this exact input, so re-running it is not allowed.
     world.queued["v2"].clear()
-    world.script["responses"].append(_response(EN_JD, "en"))
+    async with _client(_app(user, world)) as client:
+        refused = await client.post(f"/jobs/{job}/criteria/retry")
+    assert refused.status_code == 400 and [j for j, _ in world.queued["v2"]] == []
+
+    # A substantive change permits the retry, which completes through the v2 worker.
+    changed = EN_JD + "\nOn-call rotation is shared across the platform team."
+    cur = built.conn.cursor()
+    cur.execute("UPDATE jobs SET description = %s WHERE job_id = %s", (changed, job))
+    world.script["responses"].append(_response(changed, "en"))
     async with _client(_app(user, world)) as client:
         retry = await client.post(f"/jobs/{job}/criteria/retry")
     assert retry.status_code == 202 and [j for j, _ in world.queued["v2"]] == [job]
-    await _run_worker(world, job, EN_JD)
+    await _run_worker(world, job, changed)
     status, marker, revision, analysis, error = _criteria(built, job)
     assert (status, revision) == ("completed", 1) and analysis["requirements"]["schema_version"] == 2
 

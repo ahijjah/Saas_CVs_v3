@@ -11,8 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin
-from database import get_db, set_rls_context
+from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +23,13 @@ _PAGE_SIZE = 50
 @router.get("", dependencies=[RequireSuperAdmin])
 async def list_audit_logs(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
     page: int = Query(1, ge=1),
     action: str | None = Query(None),
     resource_type: str | None = Query(None),
     tenant_id: str | None = Query(None),
     user_email: str | None = Query(None),
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     filters: list[str] = []
     params: dict = {"limit": _PAGE_SIZE, "offset": (page - 1) * _PAGE_SIZE}

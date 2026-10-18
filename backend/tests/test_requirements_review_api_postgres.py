@@ -15,6 +15,7 @@ from sqlalchemy.pool import NullPool
 import config
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db
+from runtime_engines import async_engine
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import job_requirements
 from services.requirements_v2 import contract as C
@@ -35,8 +36,7 @@ def built():
 
 @pytest_asyncio.fixture()
 async def engine(built):
-    eng = create_async_engine(f"postgresql+asyncpg://postgres@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-                              connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    eng = async_engine(built, "cv_app")
     yield eng
     await eng.dispose()
 

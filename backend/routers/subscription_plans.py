@@ -6,8 +6,8 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin
-from database import get_db, set_rls_context
+from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
+from database import get_db
 
 router = APIRouter(tags=["subscription-plans"])
 
@@ -129,9 +129,8 @@ async def _load_features_by_plan(db: AsyncSession, plan_ids: list[str]) -> dict[
 @router.get("/admin/subscription-plans", dependencies=[RequireSuperAdmin])
 async def list_subscription_plans(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     rows = await db.execute(text("""
         SELECT sp.*, u.email AS updated_by_email
@@ -154,9 +153,8 @@ async def list_subscription_plans(
 async def create_subscription_plan(
     body: PlanRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     dup = await db.execute(
         text("SELECT plan_id FROM subscription_plans WHERE plan_code = :code"),
@@ -190,9 +188,8 @@ async def update_subscription_plan(
     plan_id: str,
     body: PlanRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     dup = await db.execute(
         text("""
@@ -236,10 +233,9 @@ async def patch_plan_feature(
     feature_key: str,
     body: FeaturePatchRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
     """Update a single feature value for a plan."""
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     row = await db.execute(
         text("""
@@ -285,9 +281,8 @@ async def patch_plan_feature(
 async def deactivate_or_delete_subscription_plan(
     plan_id: str,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     plan_row = await db.execute(
         text("SELECT plan_code FROM subscription_plans WHERE plan_id = CAST(:pid AS uuid)"),
@@ -334,7 +329,6 @@ async def list_public_plans(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, Any]:
     """Return active plans with features — no auth required (used for plan comparison page)."""
-    await set_rls_context(db, "", "super_admin")
 
     rows = await db.execute(text("""
         SELECT plan_id, plan_code, plan_name, description,
@@ -383,7 +377,6 @@ async def subscribe_to_plan(
 
     plan_code: str = body.plan_code
 
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     plan_row = await db.execute(
         text("SELECT plan_id, plan_code FROM subscription_plans WHERE plan_code = :code AND status = 'active'"),

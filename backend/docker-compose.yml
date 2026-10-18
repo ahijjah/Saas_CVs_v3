@@ -1,13 +1,23 @@
 version: "3.9"
 
+# Fresh-install order (docs/RELEASE_RUNBOOK.md, section "Fresh installation"):
+#   1. postgres initialises with the BOOTSTRAP superuser (cv_bootstrap). The application never connects as it.
+#   2. the operator runs db/ops scripts 0001 (migrator and operator logins), the ownership transfer, and 0004/0005 (runtime logins and
+#      privileges). These scripts are not run by compose: they need the secret store and are reviewed by an operator.
+#   3. migrate runs the migration runner as the operator login (cv_migration_operator, which may only SET ROLE to cv_migrator).
+#   4. api and worker start only after migrate exits successfully. Their own startup checks then refuse a superuser login and
+#      require the embedding model.
+#
+# Secrets come from the environment file, never from this file. BOOTSTRAP_DB_PASSWORD is used only by postgres to initialise.
+
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: cv_analyzer_prod
-      POSTGRES_USER: cv_app
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: cv_analyzer
+      POSTGRES_USER: cv_bootstrap
+      POSTGRES_PASSWORD: ${BOOTSTRAP_DB_PASSWORD:?set BOOTSTRAP_DB_PASSWORD in the environment file}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
@@ -15,7 +25,7 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cv_app -d cv_analyzer_prod"]
+      test: ["CMD-SHELL", "pg_isready -U cv_bootstrap -d cv_analyzer"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,6 +41,15 @@ services:
       timeout: 3s
       retries: 5
 
+  migrate:
+    build: .
+    restart: "no"
+    command: python -m scripts.migrate
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build: .
     restart: unless-stopped
@@ -40,12 +59,12 @@ services:
     volumes:
       - cvfiles:/files
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -58,8 +77,8 @@ services:
     volumes:
       - cvfiles:/files
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
 

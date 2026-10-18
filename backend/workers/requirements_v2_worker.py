@@ -27,7 +27,9 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from services.criteria_status import EXTRACTION_CANCELLED_MESSAGE, MODEL_NOT_CONFIGURED_MESSAGE, WORKER_FAILED_MESSAGE
+from services.criteria_status import (
+    EXTRACTION_CANCELLED_MESSAGE, MODEL_NOT_CONFIGURED_MESSAGE, REQUIREMENTS_REJECTED_MESSAGE, WORKER_FAILED_MESSAGE,
+)
 from services.requirements_v2.acknowledgment import REVIEW_KEY, empty_review
 from services.requirements_v2.contract import CATEGORIES, ITEM_ID_RE, SCHEMA_VERSION, WEIGHT_COLUMN, collect_item_ids
 from services.requirements_v2.extraction import build_request, parse_response
@@ -37,6 +39,7 @@ from services.requirements_v2.structural_review import READINESS_INVALID, struct
 from services.requirements_v2.structure import STRUCTURE_KEY, empty_block
 from services.requirements_v2.validation import validate_draft, validate_structure
 from workers.celery_app import celery_app
+from workers.criteria_worker import _normalize_description_hash
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +186,11 @@ _RELEASE_CANCELLED = """
     RETURNING updated_at
 """
 
+# The status, the fixed message and the normalized description hash change in one statement, guarded by the claim token. A stale claim
+# matches no row, so it can neither change the status nor overwrite a newer hash.
 _MARK_FAILED = """
-    UPDATE job_criteria SET criteria_extraction_status = 'failed', criteria_extraction_error = :err
+    UPDATE job_criteria SET criteria_extraction_status = 'failed', criteria_extraction_error = :err,
+        criteria_last_failed_description_hash = :desc_hash, criteria_last_failed_at = now()
     WHERE job_id = :jid AND criteria_extraction_status = 'processing' AND updated_at = :token
       AND requirements_schema_version = 2
 """
@@ -227,7 +233,7 @@ def _task_engine_and_session():
 
     cfg = get_settings()
     engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )
@@ -252,7 +258,7 @@ def extract_requirements_v2_task(self, job_id: str, description: str) -> None:
         # Not retryable: mark the row failed with the configuration message, so the failure is visible and the retry is an operator action.
         logger.error("[job:%s] No criteria model is configured for stage %s.", job_id, STAGE)
         try:
-            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession, MODEL_NOT_CONFIGURED_MESSAGE))
+            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession, MODEL_NOT_CONFIGURED_MESSAGE, description))
         except Exception as mark_exc:
             logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
         raise RequirementsExtractionFailed(MODEL_NOT_CONFIGURED_MESSAGE) from None
@@ -267,11 +273,13 @@ def extract_requirements_v2_task(self, job_id: str, description: str) -> None:
                 except Exception as release_exc:
                     logger.error("[job:%s] Could not release the claim before retry: %s", job_id, release_exc)
             raise self.retry(exc=exc)
+        # Invalid model output for this description is deterministic; anything else is treated as transient and stays retryable.
+        final_message = REQUIREMENTS_REJECTED_MESSAGE if isinstance(exc, InvalidModelOutput) else WORKER_FAILED_MESSAGE
         try:
-            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession, WORKER_FAILED_MESSAGE))
+            loop.run_until_complete(_mark_failed(job_id, claim.get("token"), TaskSession, final_message, description))
         except Exception as mark_exc:
             logger.error("[job:%s] _mark_failed itself failed: %s", job_id, mark_exc)
-        raise RequirementsExtractionFailed(WORKER_FAILED_MESSAGE) from None
+        raise RequirementsExtractionFailed(final_message) from None
     finally:
         try:
             if not loop.is_closed():
@@ -370,8 +378,8 @@ async def _release_claim(job_id: str, token, Session) -> None:
         await db.commit()
 
 
-async def _mark_failed(job_id: str, token, Session, message: str) -> bool:
-    """Final failure: processing -> failed with a fixed message, for the claim that holds `token` only."""
+async def _mark_failed(job_id: str, token, Session, message: str, description: str) -> bool:
+    """Final failure: processing -> failed with a fixed message and the normalized description hash, for the claim that holds `token`."""
     from database import set_rls_context
     from sqlalchemy import text
 
@@ -379,7 +387,9 @@ async def _mark_failed(job_id: str, token, Session, message: str) -> bool:
         return False
     async with Session() as db:
         await set_rls_context(db, "", "super_admin")
-        result = await db.execute(text(_MARK_FAILED), {"err": message, "jid": job_id, "token": token})
+        result = await db.execute(text(_MARK_FAILED), {
+            "err": message, "jid": job_id, "token": token, "desc_hash": _normalize_description_hash(description),
+        })
         await db.commit()
     marked = result.rowcount == 1
     if marked:

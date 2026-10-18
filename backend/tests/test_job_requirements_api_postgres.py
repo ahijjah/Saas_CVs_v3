@@ -19,6 +19,8 @@ from sqlalchemy.pool import NullPool
 
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db
+from runtime_engines import async_engine
+from runtime_engines import sync_connection
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import job_requirements as R
 from services.requirements_v2 import contract as C
@@ -27,8 +29,8 @@ pytestmark = pytest.mark.asyncio
 
 JD = "We need Python and SQL. Five years of backend work is preferred."
 CANARY = "CANARY"
-WRITER = "cv_api_writer"           # may read and update the criteria, and insert audit rows (non-owner: RLS applies)
-NO_AUDIT = "cv_api_noaudit"        # like the writer, but no INSERT on audit_logs
+WRITER = "cv_app"           # may read and update the criteria, and insert audit rows (non-owner: RLS applies)
+NO_AUDIT = "cv_admin"        # like the writer, but no INSERT on audit_logs
 REFUSED_ROLES = [None, "", "owner", "Admin", "ADMIN", "viewer", "super_admin", "hr_manager"]
 SAVE_TEXT = {"client_revision": 0, "operations": [{"op": "set_text", "item_id": "req_sql", "text": "SQL (PostgreSQL)"}]}
 
@@ -61,7 +63,6 @@ def built():
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
         for role, audit in ((WRITER, "SELECT, INSERT"), (NO_AUDIT, "SELECT")):
-            cur.execute(f"CREATE ROLE {role} LOGIN")
             cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {role}")
             cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {role}")
             cur.execute(f"GRANT {audit} ON cv_analyzer.audit_logs TO {role}")
@@ -72,10 +73,8 @@ def built():
 async def engines(built):
     made = []
 
-    def make(role: str = "postgres"):
-        engine = create_async_engine(
-            f"postgresql+asyncpg://{role}@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-            connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    def make(role: str = "cv_app"):
+        engine = async_engine(built, role)
         made.append(engine)
         return engine
 
@@ -184,8 +183,7 @@ async def test_an_admin_and_a_recruiter_can_read(built, engines, seeded):
 
 async def test_the_read_never_locks_the_criteria_row(built, engines, seeded):
     job = seeded["a"]["job"]
-    locker = psycopg2.connect(host="127.0.0.1", port=built.cluster.port, user="postgres", dbname=built.name,
-                              options="-csearch_path=cv_analyzer")
+    locker = sync_connection(built, "cv_app")
     try:
         locker.cursor().execute("SELECT 1 FROM job_criteria WHERE job_id = %s FOR UPDATE", (job,))
         response = await asyncio.wait_for(_get(_app(_user(seeded, "a"), engines()), job), timeout=5)
@@ -305,7 +303,7 @@ async def test_a_missing_job_and_another_tenants_job_return_identical_404s(built
     own_admin = _user(seeded, "a")
     missing_id = str(uuid.uuid4())
     other_tenant_job = seeded["b"]["job"]
-    for engine_role in ("postgres", WRITER):
+    for engine_role in ("cv_app",):
         app = _app(own_admin, engines(engine_role))
         missing_get, missing_post = await _get(app, missing_id), await _post(app, missing_id)
         cross_get, cross_post = await _get(app, other_tenant_job), await _post(app, other_tenant_job)

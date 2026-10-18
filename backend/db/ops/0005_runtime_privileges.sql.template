@@ -1,0 +1,124 @@
+-- ops/0005_runtime_privileges.sql.template
+--
+-- GENERATED from backend/db/runtime_grants.py. Do not edit by hand. Regenerate with:
+--   python -m db.runtime_grants > db/ops/0005_runtime_privileges.sql.template
+-- A test fails if this file differs from the generator output.
+--
+-- OPERATOR TEMPLATE, not a migration. Run after 0004 and after ownership has moved to the migrator role:
+--   psql -X -v ON_ERROR_STOP=1 -d "$DATABASE" -f 0005_runtime_privileges.sql.template
+-- It revokes every privilege the runtime roles hold on the application schema, then grants exactly the matrix. Nothing is
+-- granted to PUBLIC.
+
+\set ON_ERROR_STOP on
+
+BEGIN;
+
+-- 1. Start from nothing.
+REVOKE ALL ON ALL TABLES IN SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;
+REVOKE ALL ON SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;
+REVOKE ALL (key, value, masked_value, description, category, is_critical, has_value, updated_at, updated_by, updated_by_email) ON cv_analyzer.platform_secrets FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;
+
+-- 2. Schema access and the table grants of the matrix.
+GRANT USAGE ON SCHEMA cv_analyzer TO cv_app, cv_worker, cv_admin, cv_secrets;
+GRANT SELECT, INSERT, DELETE ON cv_analyzer.agency_user_clients TO cv_app;
+GRANT SELECT ON cv_analyzer.ai_model_pricing TO cv_app;
+GRANT SELECT ON cv_analyzer.ai_model_pricing TO cv_worker;
+GRANT SELECT, UPDATE ON cv_analyzer.ai_model_pricing TO cv_admin;
+GRANT SELECT ON cv_analyzer.ai_model_registry TO cv_app;
+GRANT SELECT ON cv_analyzer.ai_model_registry TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.ai_model_registry TO cv_admin;
+GRANT SELECT ON cv_analyzer.ai_prompts TO cv_app;
+GRANT SELECT ON cv_analyzer.ai_prompts TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.ai_prompts TO cv_admin;
+GRANT SELECT ON cv_analyzer.ai_stage_defaults TO cv_app;
+GRANT SELECT ON cv_analyzer.ai_stage_defaults TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.ai_stage_defaults TO cv_admin;
+GRANT INSERT ON cv_analyzer.ai_usage_log TO cv_app;
+GRANT INSERT ON cv_analyzer.ai_usage_log TO cv_worker;
+GRANT SELECT ON cv_analyzer.ai_usage_log TO cv_admin;
+GRANT SELECT, INSERT, DELETE ON cv_analyzer.application_candidate_tags TO cv_app;
+GRANT SELECT, INSERT, DELETE ON cv_analyzer.application_files TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_files TO cv_worker;
+GRANT INSERT ON cv_analyzer.application_files TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_intake_log TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_intake_log TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_intake_log TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_knockout_answer_suggestions TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_knockout_answer_suggestions TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_knockout_answer_validations TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_knockout_answers TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.application_knockout_answers TO cv_worker;
+GRANT INSERT, UPDATE ON cv_analyzer.application_knockout_answers TO cv_admin;
+GRANT SELECT, INSERT ON cv_analyzer.application_knockout_validation_runs TO cv_app;
+GRANT SELECT ON cv_analyzer.application_score_comparisons TO cv_app;
+GRANT INSERT ON cv_analyzer.application_score_comparisons TO cv_worker;
+GRANT SELECT, DELETE ON cv_analyzer.application_scores TO cv_app;
+GRANT SELECT, INSERT ON cv_analyzer.application_scores TO cv_worker;
+GRANT SELECT, INSERT ON cv_analyzer.application_workflow_history TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.applications TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.applications TO cv_worker;
+GRANT SELECT, INSERT ON cv_analyzer.applications TO cv_admin;
+GRANT INSERT ON cv_analyzer.audit_logs TO cv_app;
+GRANT INSERT ON cv_analyzer.audit_logs TO cv_worker;
+GRANT SELECT ON cv_analyzer.audit_logs TO cv_admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_approvals TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_comments TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_communications TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.candidate_interview_feedback TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_interviews TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_message_templates TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_saved_views TO cv_app;
+GRANT SELECT, INSERT, DELETE ON cv_analyzer.candidate_tags TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.client_organizations TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.communication_automation_rules TO cv_app;
+GRANT SELECT ON cv_analyzer.duplicate_application_logs TO cv_app;
+GRANT INSERT ON cv_analyzer.duplicate_application_logs TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.email_ingest_log TO cv_worker;
+GRANT SELECT ON cv_analyzer.email_ingest_log TO cv_admin;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.job_campaigns TO cv_app;
+GRANT SELECT ON cv_analyzer.job_campaigns TO cv_worker;
+GRANT SELECT ON cv_analyzer.job_campaigns TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.job_criteria TO cv_app;
+GRANT SELECT, UPDATE ON cv_analyzer.job_criteria TO cv_worker;
+GRANT SELECT ON cv_analyzer.job_criteria TO cv_admin;
+GRANT SELECT, INSERT, DELETE ON cv_analyzer.job_knockout_questions TO cv_app;
+GRANT SELECT ON cv_analyzer.job_knockout_questions TO cv_worker;
+GRANT SELECT ON cv_analyzer.job_knockout_questions TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.jobs TO cv_app;
+GRANT SELECT ON cv_analyzer.jobs TO cv_worker;
+GRANT SELECT, UPDATE ON cv_analyzer.jobs TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.notification_log TO cv_worker;
+GRANT SELECT ON cv_analyzer.plan_features TO cv_app;
+GRANT SELECT, UPDATE ON cv_analyzer.plan_features TO cv_admin;
+GRANT SELECT ON cv_analyzer.subscription_plans TO cv_app;
+GRANT SELECT ON cv_analyzer.subscription_plans TO cv_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.subscription_plans TO cv_admin;
+GRANT SELECT ON cv_analyzer.system_config TO cv_app;
+GRANT SELECT ON cv_analyzer.system_config TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.system_config TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenant_usage_monthly TO cv_app;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenant_usage_monthly TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenant_usage_monthly TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenant_workflow_policies TO cv_app;
+GRANT SELECT, UPDATE ON cv_analyzer.tenants TO cv_app;
+GRANT SELECT ON cv_analyzer.tenants TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenants TO cv_admin;
+GRANT INSERT ON cv_analyzer.user_invites TO cv_admin;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.users TO cv_app;
+GRANT SELECT ON cv_analyzer.users TO cv_worker;
+GRANT SELECT, INSERT, UPDATE ON cv_analyzer.users TO cv_admin;
+
+-- 3. Column grants: platform_secrets metadata only. No value column for any runtime role.
+GRANT SELECT (key, has_value) ON cv_analyzer.platform_secrets TO cv_app;
+GRANT SELECT (key, masked_value, description, category, is_critical, has_value, updated_at, updated_by_email) ON cv_analyzer.platform_secrets TO cv_admin;
+
+-- 4. Sequences: job_code_seq only.
+GRANT USAGE ON SEQUENCE cv_analyzer.job_code_seq TO cv_app;
+
+-- 5. Functions: each executable by one role only.
+GRANT EXECUTE ON FUNCTION cv_analyzer.get_platform_secret(text) TO cv_secrets;
+GRANT EXECUTE ON FUNCTION cv_analyzer.set_platform_secret(text, text, text, text, text) TO cv_admin;
+
+COMMIT;

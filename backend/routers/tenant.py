@@ -523,7 +523,6 @@ async def activate_trial(
 
     # Anti-abuse: one trial per email domain
     if tenant["email_domain"]:
-        await set_rls_context(db, "", "super_admin")
         abuse_row = await db.execute(
             text("""
                 SELECT COUNT(*) FROM tenants

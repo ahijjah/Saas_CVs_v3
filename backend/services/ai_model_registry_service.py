@@ -16,6 +16,8 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.runtime_config import get_secret
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,15 +51,11 @@ async def _load_registry_model(db: AsyncSession, model_id: str) -> dict | None:
 
 
 async def _get_api_key(db: AsyncSession, secret_key: str | None) -> str:
-    """Read API key from platform_secrets (DB), fall back to env."""
+    """Read API key through the secret reader (cv_secrets getter), then env. The request session never selects secret values."""
     if not secret_key:
         return ""
     try:
-        row = await db.execute(
-            text("SELECT value FROM cv_analyzer.platform_secrets WHERE key = :k"),
-            {"k": secret_key},
-        )
-        db_val = (row.scalar_one_or_none() or "").strip()
+        db_val = (get_secret(secret_key) or "").strip()
         if db_val:
             return db_val
     except Exception as exc:

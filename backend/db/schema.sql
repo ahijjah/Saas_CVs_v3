@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS system_config (
     editable    BOOLEAN      NOT NULL DEFAULT true,
     description TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_by  UUID        REFERENCES users (user_id) ON DELETE SET NULL
+    updated_by  UUID
 );
 
 -- Seed defaults (applied via seed.sql; schema only defines structure)
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
     display_order   INT           NOT NULL DEFAULT 0,
     created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
-    updated_by      UUID          REFERENCES users (user_id) ON DELETE SET NULL,
+    updated_by      UUID,
     CONSTRAINT uq_subscription_plan_code UNIQUE (plan_code)
 );
 
@@ -111,6 +111,12 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
     UNIQUE (email)
 );
+
+-- Declared after users exists: system_config is created earlier in this file (fresh installs would otherwise fail).
+ALTER TABLE system_config ADD CONSTRAINT system_config_updated_by_fkey
+    FOREIGN KEY (updated_by) REFERENCES users (user_id) ON DELETE SET NULL;
+ALTER TABLE subscription_plans ADD CONSTRAINT subscription_plans_updated_by_fkey
+    FOREIGN KEY (updated_by) REFERENCES users (user_id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_users_tenant ON users (tenant_id);
 CREATE INDEX IF NOT EXISTS idx_users_email  ON users (email);
@@ -324,12 +330,18 @@ ALTER TABLE application_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE application_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_ingest_log ENABLE ROW LEVEL SECURITY;
 
--- App role (used by FastAPI connection pool — NOT superuser)
+-- Runtime roles. They exist here so that migrations can name them, with no login and no password. The operator script
+-- db/ops/0004_runtime_roles.sql.template gives each role its login from the secret store, and db/ops/0005 sets its privileges.
+-- Every runtime role is non-superuser and subject to row-level security. None of them owns an object.
 DO $$
+DECLARE
+    r text;
 BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cv_app') THEN
-        CREATE ROLE cv_app LOGIN PASSWORD 'CHANGE_ME_IN_ENV';
-    END IF;
+    FOREACH r IN ARRAY ARRAY['cv_app', 'cv_worker', 'cv_admin', 'cv_secrets'] LOOP
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) THEN
+            EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT', r);
+        END IF;
+    END LOOP;
 END$$;
 
 GRANT USAGE ON SCHEMA cv_analyzer TO cv_app;

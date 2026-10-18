@@ -25,6 +25,7 @@ from sqlalchemy.pool import NullPool
 
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db, set_rls_context
+from runtime_engines import async_engine
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import applications as applications_router
 from routers import candidate_tags as candidate_router
@@ -53,7 +54,6 @@ def built():
 def chain_quota_grant(built):
     """TEST SETUP ONLY, not production evidence: see the module docstring."""
     cur = built.conn.cursor()
-    cur.execute(f"GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenant_usage_monthly TO {RUNTIME_ROLE}")
 
 
 def _cur(built):
@@ -113,8 +113,7 @@ def files_root(tmp_path, monkeypatch):
 
 @pytest_asyncio.fixture()
 async def engine(built):
-    eng = create_async_engine(f"postgresql+asyncpg://{RUNTIME_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}",
-                              poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    eng = async_engine(built, RUNTIME_ROLE)
     yield eng
     await eng.dispose()
 
@@ -445,12 +444,13 @@ async def test_each_intake_method_accepts_a_job_with_completed_criteria(built, e
 
 # ---- atomicity and concurrency: every decisive check is locked and holds until the single commit ----
 
-async def _superuser_statement(built, sql, params):
-    """A statement on its own connection as the cluster superuser (bypasses row-level security, so it tests the lock only)."""
-    engine = create_async_engine(f"postgresql+asyncpg://postgres@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-                                 connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+async def _tenant_statement(built, tenant, sql, params):
+    """A tenant action on its own connection, as the tenant login with the tenant context set (row-level security applies). It
+    contends with the reuse on the lock that the reuse takes, so it must wait until the reuse commits."""
+    engine = async_engine(built, "cv_app")
     try:
         async with engine.begin() as conn:
+            await conn.execute(text("SELECT set_config('app.current_tenant_id', :tid, true)"), {"tid": str(tenant["tenant"])})
             result = await conn.execute(text(sql), params)
             return result.rowcount
     finally:
@@ -512,8 +512,8 @@ async def test_a_target_status_change_waits_until_the_reuse_commits(built, engin
         async with _client(_app(_user(tenant), engine)) as client:
             reuse_call = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
             await asyncio.wait_for(paused_first_copy["inside"].wait(), 10)
-            change = asyncio.create_task(_superuser_statement(
-                built, "UPDATE jobs SET status = 'closed' WHERE job_id = CAST(:jid AS uuid)", {"jid": target}))
+            change = asyncio.create_task(_tenant_statement(
+                built, tenant, "UPDATE jobs SET status = 'closed' WHERE job_id = CAST(:jid AS uuid)", {"jid": target}))
             await asyncio.sleep(0.5)
             blocked_while_validated = not change.done()
             paused_first_copy["release"].set()
@@ -538,8 +538,8 @@ async def test_a_criteria_status_change_waits_until_the_reuse_commits(built, eng
         async with _client(_app(_user(tenant), engine)) as client:
             reuse_call = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
             await asyncio.wait_for(paused_first_copy["inside"].wait(), 10)
-            change = asyncio.create_task(_superuser_statement(
-                built, "UPDATE job_criteria SET criteria_extraction_status = 'failed' WHERE job_id = CAST(:jid AS uuid)", {"jid": target}))
+            change = asyncio.create_task(_tenant_statement(
+                built, tenant, "UPDATE job_criteria SET criteria_extraction_status = 'failed' WHERE job_id = CAST(:jid AS uuid)", {"jid": target}))
             await asyncio.sleep(0.5)
             blocked_while_validated = not change.done()
             paused_first_copy["release"].set()
@@ -572,8 +572,8 @@ async def test_a_source_delete_waits_for_the_reuse_so_no_cv_less_copy_can_result
         async with _client(_app(_user(tenant), engine)) as client:
             reuse_call = asyncio.create_task(client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target}))
             await asyncio.wait_for(paused_first_copy["inside"].wait(), 10)
-            delete = asyncio.create_task(_superuser_statement(
-                built, "DELETE FROM applications WHERE application_id = CAST(:aid AS uuid)", {"aid": source}))
+            delete = asyncio.create_task(_tenant_statement(
+                built, tenant, "DELETE FROM applications WHERE application_id = CAST(:aid AS uuid)", {"aid": source}))
             await asyncio.sleep(0.5)
             delete_blocked = not delete.done()
             paused_first_copy["release"].set()
@@ -591,7 +591,8 @@ async def test_a_source_deleted_before_the_reuse_gives_not_found_and_no_copy(bui
     tenant = _tenant(built)
     source = _application(built, tenant, _job(built, tenant), email=f"gone{uuid.uuid4().hex[:6]}@example.test", files_root=files_root)
     target = _job(built, tenant)
-    await _superuser_statement(built, "DELETE FROM applications WHERE application_id = CAST(:aid AS uuid)", {"aid": source})
+    await _tenant_statement(
+built, tenant, "DELETE FROM applications WHERE application_id = CAST(:aid AS uuid)", {"aid": source})
     async with _client(_app(_user(tenant), engine)) as client:
         response = await client.post(f"/applications/{source}/reuse-to-job", json={"target_job_id": target})
     assert response.status_code == 404

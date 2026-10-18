@@ -42,7 +42,9 @@ def _get_engine():
             from sqlalchemy import create_engine, pool
             from config import get_settings
 
-            db_url = get_settings().database_url
+            # cv_secrets: the only login that may execute the secret getter. The API and workers never use their own login here.
+            settings = get_settings()
+            db_url = settings.secrets_database_url or settings.database_url
             # Replace asyncpg driver with psycopg2 for sync access
             db_url = re.sub(r'\+(asyncpg|aiopg)\b', '+psycopg2', db_url)
             if not re.search(r'\+\w+', db_url.split('://')[0]):
@@ -52,7 +54,7 @@ def _get_engine():
                 db_url,
                 poolclass=pool.NullPool,  # no shared connections across fork boundary
                 pool_pre_ping=True,
-                connect_args={"options": "-csearch_path=cv_analyzer"},
+                connect_args={"options": "-csearch_path=cv_analyzer,public"},
             )
         except Exception as exc:
             logger.error("runtime_config: failed to create sync engine: %s", exc)
@@ -68,10 +70,8 @@ def _fetch_from_db(key: str) -> Optional[str]:
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT value FROM cv_analyzer.platform_secrets WHERE key = :k"),
-                {"k": key},
-            )
+            # The getter refuses keys outside its allowlist and never returns DB_PASSWORD or JWT_SECRET.
+            row = conn.execute(text("SELECT cv_analyzer.get_platform_secret(:k)"), {"k": key})
             value = row.scalar_one_or_none()
         logger.debug("runtime_config: loaded %r from DB", key)
         return value

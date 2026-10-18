@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
@@ -16,7 +17,7 @@ from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
 from services.criteria_status import (
     ENQUEUE_FAILED_MESSAGE, INSUFFICIENT_MESSAGE, LEGACY_ONLY_PREDICATE, LEGACY_REFUSAL_DETAIL,
-    EXTRACTION_CANCELLED_MESSAGE, REQUIREMENTS_V2_PREDICATE, REQUIREMENTS_V2_SCHEMA_VERSION, STALE_PROCESSING_MINUTES,
+    EXTRACTION_CANCELLED_MESSAGE, REQUIREMENTS_REJECTED_MESSAGE, REQUIREMENTS_V2_PREDICATE, REQUIREMENTS_V2_SCHEMA_VERSION, STALE_PROCESSING_MINUTES,
     WORKER_FAILED_MESSAGE, display_status,
 )
 from services.subscription_service import can_create_campaign
@@ -162,16 +163,10 @@ async def _get_forwarding_email(db) -> str:
 
 
 async def _next_job_code(db) -> str:
-    """Generate next sequential job code: JOB-YYYY-NNNN."""
+    """Next job code: JOB-YYYY-NNNN. The number comes from a global sequence, so it is unique across tenants (jobs.job_code is a
+    global unique index). A per-tenant count is not, once row-level security scopes the session to one tenant."""
     year = datetime.now().year
-    count_row = await db.execute(
-        text("""
-            SELECT COUNT(*) FROM jobs
-            WHERE EXTRACT(YEAR FROM created_at) = :year
-        """),
-        {"year": year},
-    )
-    seq = count_row.scalar_one() + 1
+    seq = (await db.execute(text("SELECT nextval('cv_analyzer.job_code_seq')"))).scalar_one()
     return f"JOB-{year}-{seq:04d}"
 
 
@@ -654,7 +649,7 @@ async def get_job_details(
     current_description_hash = _normalize_description_hash(job["description"] or "")
     if extraction_status == "blocked" or retry_count >= max_retries:
         retry_blocked_reason: str | None = "max_retries_reached"
-    elif last_failed_hash and current_description_hash == last_failed_hash:
+    elif retry_blocked_by_description(extraction_error, last_failed_hash, current_description_hash):
         retry_blocked_reason = "description_unchanged"
     else:
         retry_blocked_reason = None
@@ -1287,6 +1282,30 @@ _RECOVER_STALE_V2_SQL = f"""
       AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
 """
 
+# A stored description hash is a SHA-256 hex digest, as _normalize_description_hash writes it. Anything else is not evidence that the
+# description changed.
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+
+
+def hash_proves_change(stored_hash: str | None, current_hash: str) -> bool:
+    """True only when stored_hash is a well-formed digest that differs from the current one. A NULL, empty, malformed or uppercase
+    stored value proves nothing, so it does not allow a retry."""
+    return bool(stored_hash and _SHA256_HEX.match(stored_hash) and stored_hash != current_hash)
+
+
+def retry_blocked_by_description(error: str | None, stored_hash: str | None, current_hash: str) -> bool:
+    """The description rule for a failed V2 or legacy row, shared by the claim, the refusal and the derived status.
+
+    A rejected description (REQUIREMENTS_REJECTED) is refused unless its stored hash proves the description changed. An insufficient
+    row (legacy) is refused only when the description is the same as the one stored. Other failures are never blocked by this rule:
+    transient, timeout, connectivity and missing-model failures remain retryable."""
+    if error == REQUIREMENTS_REJECTED_MESSAGE:
+        return not hash_proves_change(stored_hash, current_hash)
+    if error == INSUFFICIENT_MESSAGE:
+        return stored_hash == current_hash
+    return False
+
+
 _CLAIM_RETRY_V2_SQL = f"""
     UPDATE job_criteria
     SET criteria_extraction_status = 'pending',
@@ -1298,6 +1317,10 @@ _CLAIM_RETRY_V2_SQL = f"""
       AND analysis_json IS NULL
       AND criteria_extraction_retry_count < :max_retries
       AND {REQUIREMENTS_V2_PREDICATE}
+      AND (criteria_extraction_error IS DISTINCT FROM :rejected_message
+           OR (length(criteria_last_failed_description_hash) = 64
+               AND criteria_last_failed_description_hash ~ '^[0-9a-f]+$'
+               AND criteria_last_failed_description_hash IS DISTINCT FROM :description_hash))
       AND job_id IN (SELECT j.job_id FROM jobs j WHERE j.tenant_id = :tid)
     RETURNING criteria_extraction_retry_count
 """
@@ -1324,8 +1347,8 @@ def _retry_refusal(state, max_retries: int, description_hash: str) -> HTTPExcept
     if int(state["criteria_extraction_retry_count"] or 0) >= max_retries:
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Maximum analysis retries reached for this campaign.")
-    if (state["criteria_extraction_error"] == INSUFFICIENT_MESSAGE
-            and state["criteria_last_failed_description_hash"] == description_hash):
+    if retry_blocked_by_description(state["criteria_extraction_error"], state["criteria_last_failed_description_hash"],
+                                    description_hash):
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                              detail="Please update the job description with more meaningful details before retrying analysis.")
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Criteria extraction was already re-queued.")
@@ -1348,12 +1371,15 @@ async def _retry_requirements_v2(job_id: str, description: str, current_user, db
     tenant_params = {"jid": job_id, "tid": current_user.tenant_id}
     await db.execute(text(_RECOVER_STALE_V2_SQL),
                      {**tenant_params, "failed_message": WORKER_FAILED_MESSAGE, "minutes": STALE_PROCESSING_MINUTES})
+    description_hash = _normalize_description_hash(description)
     claimed = (await db.execute(text(_CLAIM_RETRY_V2_SQL), {**tenant_params, "max_retries": max_retries,
-                                                              "cancelled_message": EXTRACTION_CANCELLED_MESSAGE})).scalar_one_or_none()
+                                                              "cancelled_message": EXTRACTION_CANCELLED_MESSAGE,
+                                                              "rejected_message": REQUIREMENTS_REJECTED_MESSAGE,
+                                                              "description_hash": description_hash})).scalar_one_or_none()
     if claimed is None:
         state = (await db.execute(text(_RETRY_STATE_SQL), tenant_params)).mappings().first()
         await db.commit()
-        raise _retry_refusal(state, max_retries, _normalize_description_hash(description))
+        raise _retry_refusal(state, max_retries, description_hash)
     await db.commit()
 
     try:

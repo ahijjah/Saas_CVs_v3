@@ -13,8 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
-from auth.dependencies import require_role
+from auth.dependencies import require_role, get_platform_db
 
 router = APIRouter(prefix="/admin/ai-usage", tags=["ai-usage"])
 
@@ -85,7 +84,7 @@ async def get_overview(
     tenant_id: str | None = Query(None),
     model: str | None = Query(None),
     stage: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_platform_db),
 ) -> dict[str, Any]:
     where, params = _build_where(
         tenant_id=tenant_id, job_id=None, application_id=None,
@@ -133,7 +132,7 @@ async def get_by_tenant(
     to_date: date | None = Query(None),
     model: str | None = Query(None),
     stage: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_platform_db),
 ) -> list[dict[str, Any]]:
     where, params = _build_where(
         tenant_id=None, job_id=None, application_id=None,
@@ -180,7 +179,7 @@ async def get_by_job(
     from_date: date | None = Query(None),
     to_date: date | None = Query(None),
     tenant_id: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_platform_db),
 ) -> list[dict[str, Any]]:
     where, params = _build_where(
         tenant_id=tenant_id, job_id=None, application_id=None,
@@ -227,7 +226,7 @@ async def get_by_job(
 async def get_by_model(
     from_date: date | None = Query(None),
     to_date: date | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_platform_db),
 ) -> list[dict[str, Any]]:
     date_clause, params = _date_filter("created_at", from_date, to_date)
     where = ("WHERE " + date_clause) if date_clause else ""
@@ -278,7 +277,7 @@ async def get_logs(
     stage: str | None = Query(None),
     model: str | None = Query(None),
     request_status: str | None = Query(None),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_platform_db),
 ) -> dict[str, Any]:
     where, params = _build_where(
         tenant_id=tenant_id, job_id=job_id, application_id=application_id,
@@ -346,7 +345,7 @@ async def get_logs(
 # ── Pricing Config ─────────────────────────────────────────────────────────────
 
 @router.get("/pricing", dependencies=[RequireSuperAdmin])
-async def get_pricing(db: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
+async def get_pricing(db: AsyncSession = Depends(get_platform_db)) -> list[dict[str, Any]]:
     rows = (await db.execute(text("""
         SELECT pricing_id, provider, model,
                input_price_per_1m_tokens, output_price_per_1m_tokens,
@@ -374,7 +373,7 @@ async def get_pricing(db: AsyncSession = Depends(get_db)) -> list[dict[str, Any]
 async def update_pricing(
     pricing_id: str,
     body: dict[str, Any],
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_platform_db),
 ) -> dict[str, Any]:
     allowed = {"input_price_per_1m_tokens", "output_price_per_1m_tokens", "active"}
     updates = {k: v for k, v in body.items() if k in allowed}

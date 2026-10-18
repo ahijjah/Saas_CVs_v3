@@ -10,8 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import get_db
-from auth.dependencies import require_role
+from auth.dependencies import require_role, get_platform_db
 
 router = APIRouter(prefix="/admin/ai-models", tags=["ai-models"])
 RequireSuperAdmin = Depends(require_role("super_admin"))
@@ -45,7 +44,7 @@ def _model_row(r) -> dict[str, Any]:
 # ── Model Registry ─────────────────────────────────────────────────────────────
 
 @router.get("/registry", dependencies=[RequireSuperAdmin])
-async def list_models(db: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
+async def list_models(db: AsyncSession = Depends(get_platform_db)) -> list[dict[str, Any]]:
     rows = (await db.execute(text("""
         SELECT model_id, provider, model_name, display_name, provider_secret_key,
                base_url, supported_stages, enabled, max_context_tokens,
@@ -72,7 +71,7 @@ class ModelCreate(BaseModel):
 
 
 @router.post("/registry", dependencies=[RequireSuperAdmin])
-async def create_model(body: ModelCreate, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def create_model(body: ModelCreate, db: AsyncSession = Depends(get_platform_db)) -> dict[str, Any]:
     invalid = [s for s in body.supported_stages if s not in VALID_STAGES]
     if invalid:
         raise HTTPException(status_code=400, detail=f"Invalid stages: {invalid}")
@@ -115,7 +114,7 @@ class ModelUpdate(BaseModel):
 
 @router.put("/registry/{model_id}", dependencies=[RequireSuperAdmin])
 async def update_model(
-    model_id: str, body: ModelUpdate, db: AsyncSession = Depends(get_db)
+    model_id: str, body: ModelUpdate, db: AsyncSession = Depends(get_platform_db)
 ) -> dict[str, Any]:
     if body.supported_stages is not None:
         invalid = [s for s in body.supported_stages if s not in VALID_STAGES]
@@ -163,7 +162,7 @@ async def update_model(
 # ── Stage Defaults ─────────────────────────────────────────────────────────────
 
 @router.get("/stage-defaults", dependencies=[RequireSuperAdmin])
-async def get_stage_defaults(db: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
+async def get_stage_defaults(db: AsyncSession = Depends(get_platform_db)) -> list[dict[str, Any]]:
     rows = (await db.execute(text("""
         SELECT sd.stage,
                sd.primary_model_id,   pm.model_name  AS primary_model_name,  pm.provider  AS primary_provider,  pm.enabled AS primary_enabled,
@@ -198,7 +197,7 @@ class StageDefaultUpdate(BaseModel):
 
 @router.put("/stage-defaults/{stage}", dependencies=[RequireSuperAdmin])
 async def update_stage_default(
-    stage: str, body: StageDefaultUpdate, db: AsyncSession = Depends(get_db)
+    stage: str, body: StageDefaultUpdate, db: AsyncSession = Depends(get_platform_db)
 ) -> dict[str, Any]:
     if stage not in VALID_STAGES:
         raise HTTPException(status_code=400, detail=f"Invalid stage: {stage}")
@@ -232,7 +231,7 @@ async def update_stage_default(
 # ── Provider secret status (never exposes values) ──────────────────────────────
 
 @router.get("/provider-secrets-status", dependencies=[RequireSuperAdmin])
-async def provider_secrets_status(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def provider_secrets_status(db: AsyncSession = Depends(get_platform_db)) -> dict[str, Any]:
     from services.ai_model_registry_service import check_provider_secret_status
     status = await check_provider_secret_status(db)
     return {"secrets": status}

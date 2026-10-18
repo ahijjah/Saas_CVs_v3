@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,33 @@ import tempfile
 from dataclasses import dataclass
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# Backend commands for the security mutants, run from backend/. Each mutant is checked against the module that owns its test.
+PYTEST = ["python3", "-m", "pytest", "-q", "-rfE", "-p", "no:cacheprovider"]
+SEC = "security"                               # placeholder, resolved by _command_for
+SEC_COMMAND = [*PYTEST, "tests/test_security_revalidation_postgres.py", "tests/test_privilege_justifications.py"]
+RETRY_COMMAND = [*PYTEST, "tests/test_retry_hash_proof_postgres.py", "tests/test_requirements_v2_worker_postgres.py"]
+JOBS_COMMAND = [*PYTEST, "tests/test_job_code_sequence_postgres.py"]
+REUSE_COMMAND = [*PYTEST, "tests/test_candidate_reuse_postgres.py", "-k", "one_file_reuse or multi_file"]
+_COMMAND_BY_TEST_PREFIX = (
+    ("test_a_rejected_extraction", RETRY_COMMAND),
+    ("test_a_stale_claim", RETRY_COMMAND),
+    ("test_the_rule_for_each", RETRY_COMMAND),
+    ("test_a_rejected_row_is_claimed", RETRY_COMMAND),
+    ("test_the_normaliser", RETRY_COMMAND),
+    ("test_concurrent_tenants", JOBS_COMMAND),
+    ("test_the_sequence_is_a_bigint", JOBS_COMMAND),
+    ("test_a_one_file_reuse", REUSE_COMMAND),
+)
+
+
+def _command_for(mutant: "Mutant") -> list[str]:
+    if mutant.command != SEC:
+        return list(mutant.command)
+    for prefix, command in _COMMAND_BY_TEST_PREFIX:
+        if mutant.expect.startswith(prefix):
+            return list(command)
+    return list(SEC_COMMAND)
 
 
 @dataclass(frozen=True)
@@ -30,9 +58,11 @@ class Mutant:
     file: str            # path relative to the repository root
     old: str             # text to replace (must occur exactly once)
     new: str
-    command: list[str]   # run inside the copy; must exit non-zero when the mutant is caught
+    command: list[str] | str   # run inside the copy; must exit non-zero when the mutant is caught (or SEC: see _command_for)
     surface: str         # "backend" or "frontend"
     extra_files: tuple[str, ...] = ()   # added to the copy before the mutation (rare)
+    edits: tuple[tuple[str, str, str], ...] = ()   # further (file, old, new) edits applied with the primary one
+    expect: str = ""     # backend: the test whose FAILED line must appear for the mutant to count as caught
 
 
 MUTANTS: tuple[Mutant, ...] = (
@@ -45,6 +75,7 @@ MUTANTS: tuple[Mutant, ...] = (
         command=["python3", "-m", "pytest", "tests/test_criteria_status_postgres.py",
                  "tests/test_security_detection.py", "-q", "-p", "no:cacheprovider"],
         surface="backend",
+        expect="test_helper_works_after_another_test_unsets_the_loop",
     ),
     Mutant(
         key="security-test-skipped",
@@ -55,6 +86,7 @@ MUTANTS: tuple[Mutant, ...] = (
         command=["python3", "-m", "pytest", "tests/test_security_detection.py::TestSuiteIntegrity",
                  "-q", "-p", "no:cacheprovider"],
         surface="backend",
+        expect="test_no_security_test_is_skipped_or_expected_to_fail",
     ),
     Mutant(
         key="security-test-removed",
@@ -65,6 +97,7 @@ MUTANTS: tuple[Mutant, ...] = (
         command=["python3", "-m", "pytest", "tests/test_security_detection.py::TestSuiteIntegrity",
                  "-q", "-p", "no:cacheprovider"],
         surface="backend",
+        expect="test_security_suite_keeps_its_test_count",
     ),
     Mutant(
         key="ts-config-exclude",
@@ -103,6 +136,7 @@ MUTANTS: tuple[Mutant, ...] = (
                  "tests/test_embedding_readiness_offline.py::TestTestDoublesStayOutOfProduction",
                  "-q", "-p", "no:cacheprovider"],
         surface="backend",
+        expect="test_no_production_module_references_a_test_double",
     ),
     Mutant(
         key="readiness-validation-skipped",
@@ -114,6 +148,7 @@ MUTANTS: tuple[Mutant, ...] = (
                  "tests/test_embedding_readiness_offline.py::TestReadiness::test_lifespan_refuses_to_start_without_the_model",
                  "-q", "-p", "no:cacheprovider"],
         surface="backend",
+        expect="test_lifespan_refuses_to_start_without_the_model",
     ),
     Mutant(
         key="e2e-cleanup-leak",
@@ -134,6 +169,304 @@ MUTANTS: tuple[Mutant, ...] = (
                  "tests/test_embedding_readiness_offline.py::TestLocalOnlyLoading::test_unset_path_fails_clearly_and_never_downloads",
                  "-q", "-p", "no:cacheprovider"],
         surface="backend",
+        expect="test_unset_path_fails_clearly_and_never_downloads",
+    ),
+    # ---- security and deployment-hardening mutants (backend) ----
+    # Each mutant names the test whose FAILED line must appear. A collection, import or setup error does not count.
+    Mutant(
+        key="forged-role-claim-trusted",
+        description="Platform identity takes the role from the bearer token, not from the database",
+        file="backend/auth/dependencies.py",
+        old='        role=user["role"],',
+        new="        role=role,",
+        command=SEC, surface="backend",
+        expect="test_a_token_claiming_super_admin_gets_the_database_role_not_the_claim",
+    ),
+    Mutant(
+        key="platform-admin-tenant-admin-allowed",
+        description="The administration pool admits tenant admins as well as super admins",
+        file="backend/auth/dependencies.py",
+        old='Annotated[CurrentUser, Depends(require_role("super_admin"))],',
+        new='Annotated[CurrentUser, Depends(require_role("super_admin", "admin"))],',
+        command=SEC, surface="backend",
+        expect="test_a_token_claiming_super_admin_gets_the_database_role_not_the_claim",
+    ),
+    Mutant(
+        key="platform-check-removed",
+        description="The administration pool dependency no longer checks the role at all",
+        file="backend/auth/dependencies.py",
+        old='Annotated[CurrentUser, Depends(require_role("super_admin"))],',
+        new="Annotated[CurrentUser, Depends(get_current_user)],",
+        command=SEC, surface="backend",
+        expect="test_a_token_claiming_super_admin_gets_the_database_role_not_the_claim",
+    ),
+    Mutant(
+        key="tenant-requests-use-admin-pool",
+        description="The tenant request session is bound to the administration engine",
+        file="backend/database.py",
+        old="AsyncSessionLocal = async_sessionmaker(bind=engine,",
+        new="AsyncSessionLocal = async_sessionmaker(bind=admin_engine,",
+        command=SEC, surface="backend",
+        expect="test_the_tenant_request_engine_is_the_cv_app_login",
+    ),
+    Mutant(
+        key="cv-app-bypasses-rls",
+        description="The tenant login is granted BYPASSRLS by the operator script",
+        file="db/ops/0004_runtime_roles.sql.template",
+        old="ALTER ROLE cv_app     LOGIN NOSUPERUSER NOBYPASSRLS",
+        new="ALTER ROLE cv_app     LOGIN NOSUPERUSER BYPASSRLS",
+        command=SEC, surface="backend",
+        expect="test_the_tenant_login_sees_no_row_of_another_tenant_in_any_tenant_table_it_reads",
+    ),
+    Mutant(
+        key="runtime-roles-related",
+        description="A runtime role is made a member of another runtime role",
+        file="db/ops/0004_runtime_roles.sql.template",
+        # Placed after the operator script's own membership check, so the test assertion (not a setup error) must catch it.
+        old="REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;",
+        new="REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;\nGRANT cv_app TO cv_secrets;",
+        command=SEC, surface="backend",
+        expect="test_no_runtime_role_is_related_to_the_operator_or_the_migrator",
+    ),
+    Mutant(
+        key="runtime-role-owns-table",
+        description="A runtime role is made the owner of a table",
+        file="db/ops/0004_runtime_roles.sql.template",
+        old="\\set ON_ERROR_STOP on",
+        new="\\set ON_ERROR_STOP on\nALTER TABLE cv_analyzer.jobs OWNER TO cv_app;",
+        command=SEC, surface="backend",
+        expect="test_no_runtime_role_owns_the_database_a_schema_a_relation_a_routine_or_a_sequence",
+    ),
+    Mutant(
+        key="runtime-role-can-create-in-schema",
+        description="A runtime role is granted CREATE on the application schema",
+        file="db/ops/0004_runtime_roles.sql.template",
+        old="REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;",
+        new="REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;\nGRANT CREATE ON SCHEMA cv_analyzer TO cv_app;",
+        command=SEC, surface="backend",
+        expect="test_a_runtime_role_holds_no_database_schema_or_public_create_privilege",
+        # The privilege script revokes schema privileges again (its step 1); the mutant must get past that revoke too.
+        edits=(("db/ops/0005_runtime_privileges.sql.template",
+                "REVOKE ALL ON SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;\n", ""),),
+    ),
+    Mutant(
+        key="rls-disabled-on-jobs",
+        description="Row-level security is disabled on the jobs table by the operator script",
+        file="db/ops/0004_runtime_roles.sql.template",
+        old="\\set ON_ERROR_STOP on",
+        new="\\set ON_ERROR_STOP on\nALTER TABLE cv_analyzer.jobs DISABLE ROW LEVEL SECURITY;",
+        command=SEC, surface="backend",
+        expect="test_the_tenant_login_sees_no_row_of_another_tenant_in_any_tenant_table_it_reads",
+    ),
+    Mutant(
+        key="policy-trusts-role-variable",
+        description="A tenant policy grants access when the forgeable role variable is super_admin",
+        file="db/migrations/100_runtime_rls_identity.sql",
+        old=("CREATE POLICY tenant_scope_ai_usage_log ON cv_analyzer.ai_usage_log FOR ALL TO PUBLIC\n"
+             "    USING (current_user = 'cv_admin' OR"),
+        new=("CREATE POLICY tenant_scope_ai_usage_log ON cv_analyzer.ai_usage_log FOR ALL TO PUBLIC\n"
+             "    USING (current_setting('app.current_role', true) = 'super_admin' OR"),
+        command=SEC, surface="backend",
+        expect="test_a_forged_role_variable_cannot_write_into_another_tenants_usage_log",
+        edits=(("db/migrations/100_runtime_rls_identity.sql",
+                "    WITH CHECK (current_user = 'cv_admin' OR tenant_id::text = current_setting('app.current_tenant_id', true));\nCREATE POLICY tenant_scope_candidate_approvals",
+                "    WITH CHECK (current_setting('app.current_role', true) = 'super_admin' OR tenant_id::text = current_setting('app.current_tenant_id', true));\nCREATE POLICY tenant_scope_candidate_approvals"),),
+    ),
+    Mutant(
+        key="public-executes-secret-accessors",
+        description="PUBLIC is left with EXECUTE on both secret functions",
+        file="db/migrations/099_platform_secret_accessors.sql",
+        old="REVOKE ALL ON FUNCTION cv_analyzer.get_platform_secret(text) FROM PUBLIC;\n",
+        new="",
+        command=SEC, surface="backend",
+        expect="test_public_cannot_read_modify_or_execute_any_secret_object",
+        edits=(
+            ("db/migrations/099_platform_secret_accessors.sql",
+             "REVOKE ALL ON FUNCTION cv_analyzer.set_platform_secret(text, text, text, text, text) FROM PUBLIC;\n", ""),
+            ("db/ops/0005_runtime_privileges.sql.template",
+             "ON ALL FUNCTIONS IN SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;",
+             "ON ALL FUNCTIONS IN SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets;"),
+        ),
+    ),
+    Mutant(
+        key="getter-returns-forbidden-key",
+        description="The getter allows DB_PASSWORD and JWT_SECRET to be read when they are on the allowlist",
+        file="db/migrations/099_platform_secret_accessors.sql",
+        old="p_key IN ('DB_PASSWORD', 'JWT_SECRET') THEN\n        RAISE EXCEPTION 'secret key is not readable",
+        new="p_key IN ('DB_PASSWORD') THEN\n        RAISE EXCEPTION 'secret key is not readable",
+        command=SEC, surface="backend",
+        expect="test_an_environment_only_key_is_refused_even_when_it_is_on_the_allowlist",
+    ),
+    Mutant(
+        key="retry-null-digest-bypass",
+        description="A rejected row with no stored digest is claimed for retry (the pre-fix claim)",
+        file="routers/jobs.py",
+        old=("      AND (criteria_extraction_error IS DISTINCT FROM :rejected_message\n"
+             "           OR (length(criteria_last_failed_description_hash) = 64\n"
+             "               AND criteria_last_failed_description_hash ~ '^[0-9a-f]+$'\n"
+             "               AND criteria_last_failed_description_hash IS DISTINCT FROM :description_hash))"),
+        new=("      AND (criteria_extraction_error IS DISTINCT FROM :rejected_message\n"
+             "           OR criteria_last_failed_description_hash IS DISTINCT FROM :description_hash)"),
+        command=SEC, surface="backend",
+        expect="test_a_rejected_row_is_claimed_only_when_the_stored_digest_proves_a_change",
+    ),
+    Mutant(
+        key="retry-malformed-digest-bypass",
+        description="A malformed stored digest is accepted as proof of a change",
+        file="routers/jobs.py",
+        old="    return bool(stored_hash and _SHA256_HEX.match(stored_hash) and stored_hash != current_hash)",
+        new="    return bool(stored_hash and stored_hash != current_hash)",
+        command=SEC, surface="backend",
+        expect="test_the_rule_for_each_failure_and_stored_value",
+    ),
+    Mutant(
+        key="transient-failure-permanent",
+        description="Every other failure is treated as a refused retry (transient failures become permanent)",
+        file="routers/jobs.py",
+        old="    if error == INSUFFICIENT_MESSAGE:\n        return stored_hash == current_hash\n    return False",
+        new="    if error == INSUFFICIENT_MESSAGE:\n        return stored_hash == current_hash\n    return True",
+        command=SEC, surface="backend",
+        expect="test_the_rule_for_each_failure_and_stored_value",
+    ),
+    Mutant(
+        key="normaliser-case-sensitive",
+        description="The description digest no longer ignores case",
+        file="backend/workers/criteria_worker.py",
+        old='    normalized = " ".join((description or "").lower().split())',
+        new='    normalized = " ".join((description or "").split())',
+        command=SEC, surface="backend",
+        expect="test_the_normaliser_ignores_case_and_whitespace_and_nothing_else",
+    ),
+    Mutant(
+        key="rejected-digest-not-recorded",
+        description="A failed extraction no longer stores the normalised description digest",
+        file="backend/workers/requirements_v2_worker.py",
+        old="        criteria_last_failed_description_hash = :desc_hash, criteria_last_failed_at = now()",
+        new="        criteria_last_failed_at = now()",
+        command=SEC, surface="backend",
+        expect="test_a_rejected_extraction_stores_the_normalized_hash_with_the_failed_status",
+    ),
+    Mutant(
+        key="stale-claim-overwrites-failure",
+        description="A stale worker's failure write is no longer guarded by the claim token",
+        file="backend/workers/requirements_v2_worker.py",
+        old=("criteria_last_failed_at = now()\n    WHERE job_id = :jid AND criteria_extraction_status = 'processing' "
+             "AND updated_at = :token"),
+        new="criteria_last_failed_at = now()\n    WHERE job_id = :jid AND criteria_extraction_status = 'processing'",
+        command=SEC, surface="backend",
+        expect="test_a_stale_claim_cannot_overwrite_the_status_or_the_hash",
+    ),
+    Mutant(
+        key="job-code-from-tenant-count",
+        description="Job codes are numbered from a count of the tenant's own jobs (the pre-101 behaviour)",
+        file="routers/jobs.py",
+        old="text(\"SELECT nextval('cv_analyzer.job_code_seq')\")",
+        new="text(\"SELECT count(*) + 1 FROM cv_analyzer.jobs\")",
+        command=SEC, surface="backend",
+        expect="test_concurrent_tenants_under_row_level_security_never_receive_the_same_code",
+    ),
+    Mutant(
+        key="job-code-sequence-granted-to-worker",
+        description="The job-code sequence is granted to the worker login as well",
+        file="db/runtime_grants.py",
+        old='f"GRANT USAGE ON SEQUENCE cv_analyzer.job_code_seq TO {APP};"',
+        new='f"GRANT USAGE ON SEQUENCE cv_analyzer.job_code_seq TO {APP}, {WORKER};"',
+        command=SEC, surface="backend",
+        expect="test_the_sequence_is_a_bigint_starting_at_one_and_granted_to_the_job_path_only",
+        edits=(("db/ops/0005_runtime_privileges.sql.template",
+                "GRANT USAGE ON SEQUENCE cv_analyzer.job_code_seq TO cv_app;",
+                "GRANT USAGE ON SEQUENCE cv_analyzer.job_code_seq TO cv_app, cv_worker;"),),
+    ),
+    Mutant(
+        key="application-files-row-lock",
+        description="The source files are row-locked FOR SHARE, which the runtime role cannot do",
+        file="backend/services/application_reuse_service.py",
+        old='    ORDER BY af.created_at, af.file_id\n""")',
+        new='    ORDER BY af.created_at, af.file_id\n    FOR SHARE\n""")',
+        command=SEC, surface="backend",
+        expect="test_a_one_file_reuse_creates_an_application_with_its_own_copy_and_scores_nothing",
+    ),
+    Mutant(
+        key="search-path-role-default-removed",
+        description="The tenant login loses its role-level search path",
+        file="db/ops/0004_runtime_roles.sql.template",
+        old="ALTER ROLE cv_app     SET search_path = cv_analyzer, public;",
+        new="-- ALTER ROLE cv_app     SET search_path = cv_analyzer, public;",
+        command=SEC, surface="backend",
+        expect="test_the_role_default_survives_an_error_and_a_rollback",
+    ),
+    Mutant(
+        key="runtime-role-can-create-databases",
+        description="The tenant worker login is granted CREATEDB by the operator script",
+        file="db/ops/0004_runtime_roles.sql.template",
+        old="ALTER ROLE cv_worker  LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE",
+        new="ALTER ROLE cv_worker  LOGIN NOSUPERUSER NOBYPASSRLS CREATEDB NOCREATEROLE",
+        command=SEC, surface="backend",
+        expect="test_every_runtime_role_is_a_plain_login_with_no_elevated_attribute",
+    ),
+    Mutant(
+        key="runtime-role-can-create-roles",
+        description="The platform administration login is granted CREATEROLE by the operator script",
+        file="db/ops/0004_runtime_roles.sql.template",
+        old="ALTER ROLE cv_admin   LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE",
+        new="ALTER ROLE cv_admin   LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB CREATEROLE",
+        command=SEC, surface="backend",
+        expect="test_every_runtime_role_is_a_plain_login_with_no_elevated_attribute",
+    ),
+    Mutant(
+        key="tenant-predicate-removed-from-policy",
+        description="The usage-log policy no longer restricts rows to the tenant",
+        file="db/migrations/100_runtime_rls_identity.sql",
+        old=("CREATE POLICY tenant_scope_ai_usage_log ON cv_analyzer.ai_usage_log FOR ALL TO PUBLIC\n"
+             "    USING (current_user = 'cv_admin' OR tenant_id::text = current_setting('app.current_tenant_id', true))\n"
+             "    WITH CHECK (current_user = 'cv_admin' OR tenant_id::text = current_setting('app.current_tenant_id', true));"),
+        new=("CREATE POLICY tenant_scope_ai_usage_log ON cv_analyzer.ai_usage_log FOR ALL TO PUBLIC\n"
+             "    USING (true)\n"
+             "    WITH CHECK (true);"),
+        command=SEC, surface="backend",
+        expect="test_a_forged_role_variable_cannot_write_into_another_tenants_usage_log",
+    ),
+    Mutant(
+        key="application-files-update-widened",
+        description="The tenant login is granted UPDATE on application_files (matrix and operator script)",
+        file="db/runtime_grants.py",
+        old='    "application_files":                         {APP: "DIS", ADMIN: "I", WORKER: "ISU"},',
+        new='    "application_files":                         {APP: "DISU", ADMIN: "I", WORKER: "ISU"},',
+        command=SEC, surface="backend",
+        expect="test_the_manifest_declares_exactly_the_matrix",
+        edits=(("db/ops/0005_runtime_privileges.sql.template",
+                "GRANT SELECT, INSERT, DELETE ON cv_analyzer.application_files TO cv_app;",
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.application_files TO cv_app;"),),
+    ),
+    Mutant(
+        key="super-admin-route-on-tenant-session",
+        description="The AI usage routes take the tenant session under the administration name",
+        file="routers/ai_usage.py",
+        old="from auth.dependencies import require_role, get_platform_db",
+        new="from auth.dependencies import require_role\nfrom database import get_db as get_platform_db",
+        command=SEC, surface="backend",
+        expect="test_every_super_admin_route_uses_the_administration_session",
+    ),
+    Mutant(
+        key="user-invites-excess-grants",
+        description="The administration login is granted SELECT, UPDATE and DELETE on user_invites (matrix and script)",
+        file="db/runtime_grants.py",
+        old='    "user_invites":                              {ADMIN: "I"},',
+        new='    "user_invites":                              {ADMIN: "ISU"},',
+        command=SEC, surface="backend",
+        expect="test_the_manifest_declares_exactly_the_matrix",
+        edits=(("db/ops/0005_runtime_privileges.sql.template",
+                "GRANT INSERT ON cv_analyzer.user_invites TO cv_admin;",
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.user_invites TO cv_admin;"),),
+    ),
+    Mutant(
+        key="security-test-removed-security",
+        description="A forged-claim test is deleted from the security suite",
+        file="backend/tests/test_security_revalidation_postgres.py",
+        old="def test_an_unsigned_token_is_refused(built, ids):",
+        new="def _removed_unsigned_token_check(built, ids):",
+        command=SEC, surface="backend",
+        expect="test_security_suite_keeps_its_required_tests",
     ),
 )
 
@@ -147,18 +480,75 @@ def _copy_repo(dest: pathlib.Path) -> None:
         (dest / "node_modules").symlink_to(nm)
 
 
-def _run(mutant: Mutant, work: pathlib.Path) -> tuple[bool, str]:
-    target = work / mutant.file
-    text = target.read_text(encoding="utf-8")
-    count = text.count(mutant.old)
-    if count != 1:
-        return False, f"anchor found {count} times; mutant not applied"
-    target.write_text(text.replace(mutant.old, mutant.new), encoding="utf-8")
+INVALID_OUTPUT = re.compile(
+    r"ERROR collecting|SyntaxError|IndentationError|ImportError|ModuleNotFoundError|INTERNALERROR|"
+    r"^ERROR |ChainValidationError|ManifestError|no tests ran", re.M)
+
+
+def _repo_path(mutant: Mutant, file: str) -> str:
+    """Backend mutants name files relative to backend/; the repository path is backend/ followed by that name."""
+    if mutant.surface == "backend" and not file.startswith("backend/"):
+        return f"backend/{file}"
+    return file
+
+
+def _apply(mutant: Mutant, work: pathlib.Path) -> str | None:
+    """Apply the primary edit and every extra edit. Returns an error string when an anchor does not match exactly once."""
+    edits = [(mutant.file, mutant.old, mutant.new), *mutant.edits] if mutant.surface == "backend" else []
+    if mutant.surface != "backend":
+        edits = [(mutant.file, mutant.old, mutant.new)]
+    for file, old, new in edits:
+        target = work / _repo_path(mutant, file)
+        text = target.read_text(encoding="utf-8")
+        count = text.count(old)
+        if count != 1:
+            return f"anchor in {file} found {count} times; mutant not applied"
+        target.write_text(text.replace(old, new), encoding="utf-8")
+    return None
+
+
+def _run_command(mutant: Mutant, work: pathlib.Path) -> tuple[int, str]:
     cwd = work / ("backend" if mutant.surface == "backend" else "")
-    proc = subprocess.run(mutant.command, cwd=cwd, capture_output=True, text=True, timeout=900)
-    caught = proc.returncode != 0
-    tail = (proc.stdout + proc.stderr).strip().splitlines()[-1:] or [""]
-    return caught, tail[0]
+    command = _command_for(mutant)
+    if mutant.surface == "backend" and "-rfE" not in command:
+        command.insert(command.index("pytest") + 1, "-rfE")    # the verdict reads the FAILED lines
+    proc = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=1500)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+def _verdict(mutant: Mutant, returncode: int, output: str) -> tuple[bool, str]:
+    """(caught, detail). Backend mutants are caught only by the named test failing; other surfaces by a non-zero exit."""
+    if mutant.surface != "backend":
+        tail = (output.strip().splitlines() or [""])[-1]
+        return returncode != 0, tail
+    if returncode == 0:
+        return False, "every test passed with the mutant in place"
+    if not mutant.expect:
+        return False, "backend mutant has no expected test"
+    # A FAILED line for the named test is the evidence: a setup or collection error reports ERROR, never FAILED for that test.
+    if not re.search(rf"^FAILED \S*::(?:\S*::)?{re.escape(mutant.expect)}", output, re.M):
+        if INVALID_OUTPUT.search(output):
+            return False, "collection, import or setup error: not an assertion"
+        return False, f"the expected test {mutant.expect} did not fail"
+    return True, f"{mutant.expect} failed as expected"
+
+
+def _check(mutant: Mutant, baselines: dict) -> tuple[bool, str]:
+    """Run one mutant in a throw-away copy. The unmutated copy must pass the same command first (cached per command)."""
+    with tempfile.TemporaryDirectory(prefix="mutant-") as tmp:
+        work = pathlib.Path(tmp) / "repo"
+        _copy_repo(work)
+        command_key = (mutant.surface, tuple(_command_for(mutant)))
+        if mutant.surface == "backend" and command_key not in baselines:
+            code, output = _run_command(mutant, work)
+            baselines[command_key] = (code == 0, output.strip().splitlines()[-1:] or [""])
+        if mutant.surface == "backend" and not baselines[command_key][0]:
+            return False, f"baseline failed on the unmutated copy: {baselines[command_key][1][0]}"
+        error = _apply(mutant, work)
+        if error:
+            return False, error
+        code, output = _run_command(mutant, work)
+        return _verdict(mutant, code, output)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -172,11 +562,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     failures = 0
+    baselines: dict = {}
     for mutant in selected:
-        with tempfile.TemporaryDirectory(prefix="mutant-") as tmp:
-            work = pathlib.Path(tmp) / "repo"
-            _copy_repo(work)
-            caught, detail = _run(mutant, work)
+        caught, detail = _check(mutant, baselines)
         verdict = "caught" if caught else "SURVIVED"
         failures += 0 if caught else 1
         print(f"{verdict:9} {mutant.key:<36} {mutant.description}")

@@ -47,8 +47,8 @@ INSERT INTO tenants (
     'active'
 ) ON CONFLICT (tenant_id) DO NOTHING;
 
--- Super-admin user  (password: CHANGE_ME — bcrypt cost 10)
--- Replace password_hash before deploying.
+-- Platform administrator. The account is created DISABLED with a random, unrecorded password hash, so no environment is seeded with a
+-- known credential. An operator enables it by setting a password hash from the deployment secret store (docs/RELEASE_RUNBOOK.md).
 INSERT INTO users (
     user_id,
     tenant_id,
@@ -61,8 +61,8 @@ INSERT INTO users (
     '00000000-0000-0000-0000-000000000002',
     '00000000-0000-0000-0000-000000000001',
     'admin@ai970.cloud',
-    crypt('CHANGE_ME_BEFORE_DEPLOY', gen_salt('bf', 10)),
+    crypt(gen_random_uuid()::text, gen_salt('bf', 10)),
     'Platform Administrator',
     'super_admin',
-    'active'
+    'disabled'
 ) ON CONFLICT (user_id) DO NOTHING;

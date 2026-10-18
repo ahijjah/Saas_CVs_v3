@@ -102,8 +102,10 @@ _SOURCE_FILES_SQL = text("""
     WHERE af.application_id = CAST(:app_id AS uuid)
       AND af.tenant_id = CAST(:tid AS uuid)
     ORDER BY af.created_at, af.file_id
-    FOR SHARE
 """)
+# No row lock on the files: PostgreSQL requires UPDATE privilege for every row lock, and the runtime role has none on application_files.
+# The source application row is locked FOR SHARE (_SOURCE_SQL), and the only delete of a file row runs inside deleting that application,
+# which must first take the same row for update. The copy therefore commits before any source file can be removed.
 
 _DUPLICATE_SQL = text("""
     SELECT 1 FROM applications

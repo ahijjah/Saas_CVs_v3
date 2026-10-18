@@ -13,7 +13,7 @@ from auth.dependencies import CurrentUserDep, get_current_user
 from auth.jwt import create_access_token
 from auth.password import hash_password, verify_password
 from config import get_settings
-from database import get_db, set_rls_context
+from database import get_admin_db, get_db, set_rls_context
 from services.email_service import send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -189,8 +189,7 @@ async def _fetch_profile(user_id: str, tenant_id: str, db) -> dict:
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/login")
-async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]):
-    await set_rls_context(db, "", "super_admin")
+async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_admin_db)]):
 
     row = await db.execute(
         text("""
@@ -255,8 +254,7 @@ async def login(body: LoginRequest, db: Annotated[AsyncSession, Depends(get_db)]
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(get_db)]):
-    await set_rls_context(db, "", "super_admin")
+async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(get_admin_db)]):
 
     existing = await db.execute(
         text("SELECT user_id FROM users WHERE email = :email"),
@@ -341,10 +339,9 @@ async def register(body: RegisterRequest, db: Annotated[AsyncSession, Depends(ge
 @router.get("/verify-email")
 async def verify_email(
     token: str = Query(..., description="Email verification token"),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_admin_db),
 ):
     """Verify email address via token from verification email. Issues a JWT on success."""
-    await set_rls_context(db, "", "super_admin")
 
     token_hash = _hash_token(token)
     row = await db.execute(
@@ -506,8 +503,7 @@ async def change_password(
 
 
 @router.post("/forgot-password")
-async def forgot_password(body: ForgotPasswordRequest, db: Annotated[AsyncSession, Depends(get_db)]):
-    await set_rls_context(db, "", "super_admin")
+async def forgot_password(body: ForgotPasswordRequest, db: Annotated[AsyncSession, Depends(get_admin_db)]):
 
     row = await db.execute(
         text("SELECT user_id, full_name FROM users WHERE email = :email AND status = 'active'"),
@@ -539,11 +535,10 @@ async def forgot_password(body: ForgotPasswordRequest, db: Annotated[AsyncSessio
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordRequest, db: Annotated[AsyncSession, Depends(get_db)]):
+async def reset_password(body: ResetPasswordRequest, db: Annotated[AsyncSession, Depends(get_admin_db)]):
     if body.new_password != body.confirm_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
 
-    await set_rls_context(db, "", "super_admin")
 
     token_hash = _hash_token(body.token)
     row = await db.execute(

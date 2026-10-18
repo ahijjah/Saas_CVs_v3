@@ -123,6 +123,13 @@ class TestReadiness:
         import main
 
         _settings(monkeypatch, embedding_model_path="", embedding_model_local_only=True)
+        # The runtime-role check needs a database; this test is about the model check, so that check is stubbed out here.
+        async def no_database_check(session):
+            return None
+
+        monkeypatch.setattr(main, "assert_runtime_role", no_database_check)
+        monkeypatch.setattr(main, "AsyncSessionLocal", lambda: _NullSession())
+        monkeypatch.setattr(main, "AdminSessionLocal", lambda: _NullSession())
 
         async def start():
             async with main.lifespan(main.app):
@@ -130,6 +137,14 @@ class TestReadiness:
 
         with pytest.raises(EmbeddingModelUnavailable, match="EMBEDDING_MODEL_PATH is not set"):
             asyncio.run(start())
+
+
+class _NullSession:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
 
 
 class TestSettings:

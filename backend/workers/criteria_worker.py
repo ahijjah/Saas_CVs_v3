@@ -131,7 +131,7 @@ def extract_criteria_task(self, job_id: str, description: str) -> None:
 
     cfg = get_settings()
     task_engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )
@@ -250,7 +250,7 @@ async def _extract_async(job_id: str, description: str, Session, claim: dict) ->
         from services.ai_model_registry_service import resolve_stage_client as _resolve_crit
         _reg_cfg = _get_settings()
         _reg_engine = create_async_engine(
-            _reg_cfg.database_url,
+            _reg_cfg.worker_database_url or _reg_cfg.database_url,
             poolclass=_NullPool,
             connect_args={"server_settings": {"search_path": _reg_cfg.db_schema}},
         )

@@ -14,6 +14,8 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from runtime_engines import async_engine
+from runtime_engines import sync_connection
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from services import requirements_edit as E
 from services.requirements_v2 import contract as C
@@ -23,9 +25,9 @@ pytestmark = pytest.mark.asyncio
 NOW = "2026-10-17T12:00:00+00:00"
 JD = "We need Python and SQL. Five years of backend work is preferred."
 CANARY = "CANARY"
-READ_ROLE = "cv_edit_reader"
-WRITER_ROLE = "cv_audit_writer"
-NO_AUDIT_ROLE = "cv_audit_nopriv"
+READ_ROLE = "cv_app"
+WRITER_ROLE = "cv_app"
+NO_AUDIT_ROLE = "cv_admin"
 
 
 def _item(item_id, text, importance, weight=None, **kw):
@@ -60,18 +62,6 @@ def built():
         check_chain(db.failures)
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         cur = db.conn.cursor()
-        cur.execute(f"CREATE ROLE {READ_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {READ_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {READ_ROLE}")
-        cur.execute(f"GRANT SELECT ON cv_analyzer.audit_logs TO {READ_ROLE}")
-        cur.execute(f"CREATE ROLE {WRITER_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {WRITER_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {WRITER_ROLE}")
-        cur.execute(f"GRANT SELECT, INSERT ON cv_analyzer.audit_logs TO {WRITER_ROLE}")
-        cur.execute(f"CREATE ROLE {NO_AUDIT_ROLE} LOGIN")
-        cur.execute(f"GRANT USAGE ON SCHEMA cv_analyzer TO {NO_AUDIT_ROLE}")
-        cur.execute(f"GRANT SELECT, UPDATE ON cv_analyzer.jobs, cv_analyzer.job_criteria TO {NO_AUDIT_ROLE}")
-        cur.execute(f"GRANT SELECT ON cv_analyzer.audit_logs TO {NO_AUDIT_ROLE}")
         yield db
 
 
@@ -79,10 +69,8 @@ def built():
 async def engines(built):
     made = []
 
-    def make(role: str = "postgres"):
-        engine = create_async_engine(
-            f"postgresql+asyncpg://{role}@127.0.0.1:{built.cluster.port}/{built.name}", poolclass=NullPool,
-            connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    def make(role: str = "cv_app"):
+        engine = async_engine(built, role)
         made.append(engine)
         return engine
 
@@ -216,8 +204,7 @@ async def test_a_malformed_stored_document_is_refused(built, engines, seeded):
 async def test_the_load_takes_no_row_lock(built, engines, seeded):
     """Another session holds the criteria row lock. The read must still return promptly."""
     job = seeded["a"]["job"]
-    locker = psycopg2.connect(host="127.0.0.1", port=built.cluster.port, user="postgres", dbname=built.name,
-                              options="-csearch_path=cv_analyzer")
+    locker = sync_connection(built, "cv_app")
     try:
         cur = locker.cursor()
         cur.execute("SELECT 1 FROM job_criteria WHERE job_id = %s FOR UPDATE", (job,))
@@ -329,13 +316,18 @@ async def test_a_missing_row_level_security_context_fails_closed(built, engines,
     assert _audit_rows(built, job) == []
 
 
-async def test_a_failed_audit_rolls_the_edit_back_with_it(built, engines, seeded):
-    """The edit and its audit share one transaction. The audit fails for a role without the INSERT privilege, the caller rolls
-    back, and neither the document nor the revision changes."""
+async def test_a_failed_audit_rolls_the_edit_back_with_it(built, engines, seeded, monkeypatch):
+    """The edit and its audit share one transaction. The audit fails after the edit is flushed; the caller rolls back, so neither the
+    document nor the revision changes. The edit runs as the tenant login, so the only failure is the audit step under test."""
     job = _job(built, seeded["a"])
     before = _row(built, job)
     body = [{"op": "set_text", "item_id": "req_sql", "text": "SQL (PostgreSQL)"}]
-    async with AsyncSession(engines(NO_AUDIT_ROLE)) as session:
+
+    async def failing_audit(session, *args, **kwargs):
+        raise E.AuditWriteError("audit failed after the edit was flushed")
+
+    monkeypatch.setattr(E, "write_audit_event", failing_audit)
+    async with AsyncSession(engines("cv_app")) as session:
         try:
             async with session.begin():
                 result = await E.save_operations(session, _user(seeded, "a"), job, client_revision=0,
@@ -346,4 +338,3 @@ async def test_a_failed_audit_rolls_the_edit_back_with_it(built, engines, seeded
         else:
             raise AssertionError("the audit failure must surface")
     assert _row(built, job) == before
-    assert _audit_rows(built, job) == []
