@@ -16,13 +16,16 @@ RECORD="$(mktemp -t e2e_pids.XXXXXX)"
 trap 'rm -f "$RECORD"' EXIT
 
 survivors() {
-  # Prints every recorded process or group that is still alive. A group member counts too: kill -0 on -PID tests the group.
+  # Prints every recorded process or group that is still running. A zombie (exited, not yet reaped) is not running. A group counts
+  # too: kill -0 on -PID tests the group, so a child left in the backend's or frontend's group is caught.
   while read -r name pid; do
     [ -z "${pid:-}" ] && continue
-    if kill -0 "$pid" 2>/dev/null || kill -0 -- "-$pid" 2>/dev/null; then
-      if [ "$name" = postgres ] || [ "$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ')" != Z ]; then
-        echo "$name $pid"
-      fi
+    state="$(ps -o stat= -p "$pid" 2>/dev/null | tr -d ' ')"
+    case "$state" in
+      Z*) continue ;;
+    esac
+    if [ -n "$state" ] || kill -0 -- "-$pid" 2>/dev/null; then
+      echo "$name $pid"
     fi
   done < "$RECORD"
 }

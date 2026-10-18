@@ -77,6 +77,16 @@ def _alive(pid: int) -> bool:
         return False
 
 
+def _wait_gone(pid: int, timeout: float) -> bool:
+    """True once the process has exited. pg_ctl stop returns before the postmaster exits, so a single check races it."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _alive(pid):
+            return True
+        time.sleep(0.2)
+    return not _alive(pid)
+
+
 def _stop_group(service: Service) -> None:
     pgid = service.process.pid            # start_new_session=True makes the child the leader of its own group
     try:
@@ -184,7 +194,7 @@ def running_stack(run_dir: Path):
                 teardown(services)
     finally:
         survivors = [s.name for s in services if s.process.poll() is None]
-        if postgres_pid and _alive(postgres_pid):
+        if postgres_pid and not _wait_gone(postgres_pid, TEARDOWN_TIMEOUT):
             survivors.append("postgres")
         if survivors:
             raise RuntimeError(f"E2E teardown left processes running: {survivors}")
