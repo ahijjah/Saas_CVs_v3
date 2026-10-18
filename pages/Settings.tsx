@@ -378,7 +378,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [usersAccessDenied, setUsersAccessDenied] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
-  const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', role: 'hr_manager' });
+  const [addUserForm, setAddUserForm] = useState({ email: '', full_name: '', password: '', role: 'hr_manager' });
   const [savingUser, setSavingUser] = useState(false);
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
   // Inline user edit state
@@ -876,7 +876,7 @@ export const Settings: React.FC<SettingsProps> = ({ auth, addToast }) => {
         setTenantUsers(prev => [...prev, response.user]);
         setUsersActiveCount(prev => prev + 1);
         setShowAddUser(false);
-        setAddUserForm({ email: '', full_name: '', role: 'hr_manager' });
+        setAddUserForm({ email: '', full_name: '', password: '', role: 'hr_manager' });
         addToast('User added successfully.', 'success');
       }
     } catch (err: any) {

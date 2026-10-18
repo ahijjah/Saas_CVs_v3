@@ -33,3 +33,6 @@ venv/
 
 backend/.env
 .env
+
+# E2E suite output
+e2e/artifacts/

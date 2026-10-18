@@ -2,9 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from config import get_settings
 from database import engine
+from services import local_processor
 from routers import (
     admin, ai_models, ai_prompts, ai_usage, analytics, applications, approvals, audit_logs, auth,
     campaigns, client_organizations, comments, dashboard, interviews, job_requirements, jobs, platform_config,
@@ -18,6 +20,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail fast: the API does not start serving if the embedding model is unavailable.
+    local_processor.ensure_model_loaded()
     yield
     await engine.dispose()
 
@@ -72,3 +76,13 @@ app.include_router(communication_automation)
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": "1.0.0"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    check = local_processor.embedding_readiness()
+    status = "ready" if check["ready"] else "unavailable"
+    return JSONResponse(
+        {"status": status, "checks": [check]},
+        status_code=200 if check["ready"] else 503,
+    )

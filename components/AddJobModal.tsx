@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
-import { User, ClientOrganization, Campaign, KnockoutQuestion, PassingCriteria } from '../types';
+import { User, ClientOrganization, Campaign, KnockoutQuestion, PassingCriteria, PassingOperator } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
@@ -258,7 +258,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
   type LocalQuestion = Partial<KnockoutQuestion> & {
     optionsText: string;        // raw textarea value for single_choice options
     passingAnswers: string[];   // for yes_no / single_choice
-    passingOperator: string;    // for number
+    passingOperator: PassingOperator;    // for number
     passingValue: string;       // for number (string for input binding)
   };
   const [knockoutQuestions, setKnockoutQuestions] = useState<LocalQuestion[]>([]);
@@ -346,7 +346,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
     if (knockoutQuestions.length >= MAX_KNOCKOUT) return;
     setKnockoutQuestions(prev => [...prev, {
       question_text: '', question_type: 'yes_no', is_required: true,
-      optionsText: '', passingAnswers: [], passingOperator: '>=', passingValue: '',
+      optionsText: '', passingAnswers: [], passingOperator: '>=' as PassingOperator, passingValue: '',
     }]);
   };
 
