@@ -222,8 +222,9 @@ MUTANTS: tuple[Mutant, ...] = (
         key="runtime-roles-related",
         description="A runtime role is made a member of another runtime role",
         file="db/ops/0004_runtime_roles.sql.template",
-        old="ALTER ROLE cv_secrets SET search_path = cv_analyzer, public;",
-        new="ALTER ROLE cv_secrets SET search_path = cv_analyzer, public;\nGRANT cv_app TO cv_secrets;",
+        # Placed after the operator script's own membership check, so the test assertion (not a setup error) must catch it.
+        old="REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;",
+        new="REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;\nGRANT cv_app TO cv_secrets;",
         command=SEC, surface="backend",
         expect="test_no_runtime_role_is_related_to_the_operator_or_the_migrator",
     ),
@@ -244,6 +245,9 @@ MUTANTS: tuple[Mutant, ...] = (
         new="REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;\nGRANT CREATE ON SCHEMA cv_analyzer TO cv_app;",
         command=SEC, surface="backend",
         expect="test_a_runtime_role_holds_no_database_schema_or_public_create_privilege",
+        # The privilege script revokes schema privileges again (its step 1); the mutant must get past that revoke too.
+        edits=(("db/ops/0005_runtime_privileges.sql.template",
+                "REVOKE ALL ON SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets, PUBLIC;\n", ""),),
     ),
     Mutant(
         key="rls-disabled-on-jobs",
