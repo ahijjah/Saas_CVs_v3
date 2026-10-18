@@ -141,3 +141,8 @@ export function acknowledgeWarning(warningId: string): RequirementsOperation {
 export function confirmStructure(itemId: string): RequirementsOperation {
   return { op: 'confirm_structure', item_id: itemId };
 }
+
+/** Whether the candidate-scoring action must stay disabled. A requirements-v2 job cannot be scored until its document is ready. */
+export function scoringBlockedByRequirements(isRequirementsV2: boolean, requirementsCanProceed: boolean): boolean {
+  return isRequirementsV2 && !requirementsCanProceed;
+}

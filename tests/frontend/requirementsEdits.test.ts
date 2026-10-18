@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFindingOperation, buildOperations, buildReorderOperation, findingProblem, moveItem, acknowledgeWarning, confirmStructure, CONFIRM_NO_NUMERIC_SCORE } from '../../services/requirementsEdits';
+import { scoringBlockedByRequirements, buildFindingOperation, buildOperations, buildReorderOperation, findingProblem, moveItem, acknowledgeWarning, confirmStructure, CONFIRM_NO_NUMERIC_SCORE } from '../../services/requirementsEdits';
 import { ids, view } from './fixtures';
 
 const none = {};
@@ -82,5 +82,13 @@ describe('review decisions', () => {
     expect(buildFindingOperation('f-1', { decision: 'dismissed_false_positive', note: 'Not an issue', evidence: [ids.py] })).toEqual({
       op: 'resolve_structural_finding', finding_id: 'f-1', decision: 'dismissed_false_positive', note: 'Not an issue',
       evidence_item_ids: null });
+  });
+});
+
+describe('scoring gate', () => {
+  it('blocks scoring of a requirements-v2 job until its document is ready, and never blocks a legacy job', () => {
+    expect(scoringBlockedByRequirements(true, false)).toBe(true);
+    expect(scoringBlockedByRequirements(true, true)).toBe(false);
+    expect(scoringBlockedByRequirements(false, false)).toBe(false);
   });
 });

@@ -61,7 +61,7 @@ describe('edits and review actions', () => {
   it('confirms the no-numeric-score document', async () => {
     const user = userEvent.setup();
     saveMock.mockResolvedValue({ requirements_revision: 4 });
-    renderPanel('admin', view({ review: { readiness: { state: 'needs_confirmation', can_proceed: false, scoring_mode: 'none', reasons: [] } } }));
+    renderPanel('admin', view({ review: { readiness: { state: 'needs_confirmation', can_proceed: false, scoring_mode: 'none', reasons: [] as never[] } } as never }));
     await user.click(await screen.findByRole('button', { name: 'Confirm: no numeric score' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledWith('job-1', 3, [{ op: 'confirm_no_numeric_score' }]));
   });

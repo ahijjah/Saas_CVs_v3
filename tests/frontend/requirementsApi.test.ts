@@ -44,7 +44,7 @@ describe('requirements API client', () => {
     const fetchMock = vi.fn(() => respond(200, { job_id: 'job-1' }));
     vi.stubGlobal('fetch', fetchMock);
     await getRequirements('job-1');
-    expect(fetchMock.mock.calls[0][0]).toBe('/jobs/job-1/requirements');
+    expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe('/jobs/job-1/requirements');
     vi.unstubAllGlobals();
   });
 });

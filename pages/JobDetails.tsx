@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
 import RequirementsPanel from '../components/RequirementsPanel';
+import { scoringBlockedByRequirements } from '../services/requirementsEdits';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria } from '../types';
 import { useLanguage } from '../context/LanguageContext';
@@ -2371,9 +2372,9 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                     )}
                     <div className="flex-1" />
                     <button
-                      disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId || (isRequirementsV2 && !requirementsCanProceed)}
+                      disabled={!cvsHasPending || cvsScoringInProgress || !!deletingCVId || scoringBlockedByRequirements(isRequirementsV2, requirementsCanProceed)}
                       onClick={handleScorePending}
-                      className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${!cvsHasPending || cvsScoringInProgress || !!deletingCVId || (isRequirementsV2 && !requirementsCanProceed) ? 'bg-slate-200 text-textMuted cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                      className={`inline-flex items-center gap-2 px-5 py-2 text-[11px] font-black rounded-xl transition-colors ${!cvsHasPending || cvsScoringInProgress || !!deletingCVId || scoringBlockedByRequirements(isRequirementsV2, requirementsCanProceed) ? 'bg-slate-200 text-textMuted cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                     >
                       {cvsScoringInProgress
                         ? <><svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>{t.scoringBtnLabel}</>
