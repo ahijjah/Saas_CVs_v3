@@ -61,7 +61,7 @@ MATRIX: dict[str, dict[str, str]] = {
     "tenant_usage_monthly":                      {APP: "ISU", ADMIN: "ISU", WORKER: "ISU"},
     "tenant_workflow_policies":                  {APP: "ISU"},
     "tenants":                                   {APP: "SU", ADMIN: "ISU", WORKER: "S"},
-    "user_invites":                              {ADMIN: "ISU"},
+    "user_invites":                              {ADMIN: "I"},
     "users":                                     {APP: "ISU", ADMIN: "ISU", WORKER: "S"},
 }
 

@@ -97,14 +97,18 @@ itself verifies; that is outside this release.
 
 Run from the repository root with the deployment secret store supplying every password. None is written in this repository.
 
-1. **Preflight (read-only).** On the existing database, using a read-only inspection login:
+1. **Preflight, before (read-only).** On the existing database, using an inspection login that is not a runtime role (the database
+   owner or the bootstrap login is typical; the check reads the catalogue and the ledger and writes nothing):
 
    ```bash
-   PREFLIGHT_DATABASE_URL='postgresql://<inspection login>@<host>/<database>' python -m scripts.db_preflight
+   PREFLIGHT_DATABASE_URL='postgresql://<inspection login>@<host>/<database>' python -m scripts.db_preflight --phase before
    ```
 
-   Every check must be `PASS`. `FAIL` means the state differs from what this release expects; `UNKNOWN` means the state could not be
-   established. **Stop on either.** Do not proceed to step 2 until the cause is understood.
+   In the `before` phase, anything this procedure creates or changes (roles, ownership, grants, policies, secret functions, pending
+   migrations) is `WARN`, because the steps below fix it. `FAIL` is blocking in every phase: a runtime role that is a superuser or
+   bypasses row-level security, an applied migration whose file has changed, an applied migration this release does not know, or an
+   unexpected table. `UNKNOWN` (no ledger, unreadable database) is blocking. **Stop on `FAIL` or `UNKNOWN`** (exit status 1 or 2). The
+   preflight prints no credential.
 
 2. **Role bootstrap (once per environment, as the bootstrap superuser).**
 
@@ -149,8 +153,16 @@ Run from the repository root with the deployment secret store supplying every pa
 8. **Backup** before steps 5 to 7 on an existing database: `pg_dump --format=custom --file <dump> "$DATABASE"` using the migration operator
    login. Keep the dump outside the database host, and verify that it lists (`pg_restore --list <dump>`).
 
-9. **Verification.** Re-run the preflight. All checks must pass before the application starts. The API refuses to start with a superuser or
-   RLS-bypassing login.
+9. **Verification.** Re-run the preflight with `--phase after`. Every check must be `PASS` before the application starts; a `WARN` in this
+   phase means the procedure is incomplete. The API refuses to start with a superuser or RLS-bypassing login.
+
+   ```bash
+   PREFLIGHT_DATABASE_URL='postgresql://<inspection login>@<host>/<database>' python -m scripts.db_preflight --phase after
+   ```
+
+   The privilege manifest (`backend/db/privilege_manifest.json`) must also match the live database. The test suite checks this on a
+   disposable cluster; on a deployed database, compare `has_table_privilege`, `has_function_privilege` and `has_sequence_privilege` for
+   the runtime roles with the manifest by hand after an upgrade.
 
 ## Rollback
 
@@ -165,6 +177,50 @@ Migrations are forward-only. Rollback restores the database from the backup take
 5. Run the smoke test. Do not use `REASSIGN OWNED`.
 
 Records written after the backup are lost by this procedure. Record the backup time in the release notes before step 5.
+
+Job codes: migration 101 creates `job_code_seq` at one more than the largest code already issued. After a restore from a backup, the
+sequence is restored with the data, so a code issued after the backup and lost by the restore can be issued again only if the same
+restore is repeated against the live data. Never run migration 101 by hand against a database that has issued codes outside the
+migration runner.
+
+Migration 101 is forward-only. Its rollback is the backup restore described above; the sequence is never dropped in place.
+
+## Privilege justifications
+
+`backend/db/privilege_manifest.json` declares every runtime privilege with its production consumers: for each table, column,
+function, sequence and schema, the login, the privileges, the code path and the modules that refer to the object and are reachable
+from that login. It is generated from the matrix and the code:
+
+```bash
+cd backend && python -m db.privilege_consumers > db/privilege_manifest.json
+```
+
+The test suite (`tests/test_privilege_justifications.py`) fails when:
+
+- the manifest does not declare exactly the matrix;
+- a declared consumer no longer exists, is no longer reachable from its login, or no longer refers to the object;
+- a live grant on the disposable database is not declared (undeclared or excessive), or a declared grant is not live (missing);
+- the append-only logs (`audit_logs`, `ai_usage_log`) grant the tenant or worker login anything beyond INSERT;
+- the job-code sequence is granted to any login except the job-creation path.
+
+Reachability is an over-approximation: it shows that a login's code can reach a module that refers to the object. It does not prove
+that every verb is needed. Verb minimality is reviewed when the matrix changes, and that review is the residual check.
+
+## Upgrading from the previous main state
+
+An existing database built from main (migrations 001 to 098) differs from this release in three ways the procedure must handle:
+
+1. **The application role carries a committed default password.** Main's `schema.sql` creates `cv_app` as `LOGIN` with the password
+   `CHANGE_ME_IN_ENV`, and grants it data manipulation on every table. Until step 6 and step 7 run, anyone who knows that password can
+   log in as the tenant login. Before step 2, rotate `cv_app`'s password from the deployment secret store
+   (`ALTER ROLE cv_app PASSWORD '<value from the store>'`, as the bootstrap login), or restrict network access to the database. Step 6
+   then sets the password again, and step 7 removes the broad grants.
+2. **Objects are owned by the bootstrap login.** Step 3 moves them to `cv_migrator`.
+3. **Migrations 099 to 101 are pending.** Step 5 applies them as the operator.
+
+The upgrade is tested end to end on a disposable database rebuilt in the main-098 state (`tests/test_operator_upgrade_postgres.py`):
+the `before` preflight reports only `WARN`, the procedure runs in order, the `after` preflight passes every check, the live grants equal
+the manifest, and a job from before the upgrade survives with its code.
 
 ## Bootstrap and fresh installation
 

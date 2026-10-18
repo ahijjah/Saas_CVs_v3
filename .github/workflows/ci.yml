@@ -103,6 +103,14 @@ jobs:
       - name: Security suite after the loop-leaking test (issue #20 order)
         working-directory: backend
         run: python -m pytest tests/test_criteria_status_postgres.py tests/test_security_detection.py -q -p no:cacheprovider
+      - name: Runtime roles, RLS, secrets, privilege manifest and the retry rule (disposable PostgreSQL 16 clusters)
+        working-directory: backend
+        run: |
+          python -m pytest tests/test_db_runtime_roles_postgres.py tests/test_runtime_search_path_postgres.py \
+            tests/test_security_revalidation_postgres.py tests/test_privilege_justifications.py \
+            tests/test_retry_hash_proof_postgres.py tests/test_job_code_sequence_postgres.py \
+            tests/test_operator_preflight_postgres.py tests/test_operator_upgrade_postgres.py \
+            tests/test_ci_workflow.py -q -p no:cacheprovider
 
   migration-lint-dry-run:
     name: Migration lint and dry run
@@ -247,9 +255,10 @@ jobs:
 
   mutation-checks:
     name: Release mutation checks
-    # Budget: about 10 to 20 minutes. Each mutant runs a targeted test in a throw-away copy; the E2E mutant runs the cleanup check twice.
+    # Budget: about 30 to 60 minutes. Each mutant runs a targeted test in a throw-away copy, after the same test passes on the
+    # unmutated copy. The E2E mutant runs the cleanup check twice.
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Point Playwright at the runner browser cache

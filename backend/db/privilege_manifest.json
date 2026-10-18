@@ -22,7 +22,6 @@
     },
     {
       "consumers": [
-        "routers.ai_usage",
         "services.ai_usage_service"
       ],
       "kind": "table",
@@ -47,6 +46,7 @@
     },
     {
       "consumers": [
+        "routers.ai_usage",
         "services.ai_usage_service"
       ],
       "kind": "table",
@@ -60,7 +60,6 @@
     },
     {
       "consumers": [
-        "routers.ai_models",
         "services.ai_model_registry_service"
       ],
       "kind": "table",
@@ -85,6 +84,7 @@
     },
     {
       "consumers": [
+        "routers.ai_models",
         "services.ai_model_registry_service"
       ],
       "kind": "table",
@@ -143,7 +143,6 @@
     },
     {
       "consumers": [
-        "routers.ai_models",
         "services.ai_model_registry_service"
       ],
       "kind": "table",
@@ -168,6 +167,7 @@
     },
     {
       "consumers": [
+        "routers.ai_models",
         "services.ai_model_registry_service"
       ],
       "kind": "table",
@@ -182,7 +182,6 @@
     },
     {
       "consumers": [
-        "routers.ai_usage",
         "services.ai_usage_service"
       ],
       "kind": "table",
@@ -207,6 +206,7 @@
     },
     {
       "consumers": [
+        "routers.ai_usage",
         "services.ai_usage_service"
       ],
       "kind": "table",
@@ -1001,7 +1001,6 @@
       "consumers": [
         "config",
         "main",
-        "routers.ai_usage",
         "routers.analytics",
         "routers.applications",
         "routers.approvals",
@@ -1063,6 +1062,7 @@
       "consumers": [
         "config",
         "routers.admin",
+        "routers.ai_usage",
         "routers.public",
         "services.application_intake_service",
         "services.knockout_analysis_service",
@@ -1293,7 +1293,6 @@
     {
       "consumers": [
         "database",
-        "routers.ai_usage",
         "routers.applications",
         "routers.campaigns",
         "routers.client_organizations",
@@ -1337,6 +1336,7 @@
       "consumers": [
         "database",
         "routers.admin",
+        "routers.ai_usage",
         "routers.audit_logs",
         "routers.auth",
         "routers.subscription_plans",
@@ -1363,9 +1363,7 @@
       "object": "user_invites",
       "path": "platform administration (verified super_admin) or an unauthenticated platform flow",
       "privileges": [
-        "SELECT",
-        "INSERT",
-        "UPDATE"
+        "INSERT"
       ],
       "role": "cv_admin"
     },

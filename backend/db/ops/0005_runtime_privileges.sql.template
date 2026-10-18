@@ -105,7 +105,7 @@ GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenant_workflow_policies TO cv_app;
 GRANT SELECT, UPDATE ON cv_analyzer.tenants TO cv_app;
 GRANT SELECT ON cv_analyzer.tenants TO cv_worker;
 GRANT SELECT, INSERT, UPDATE ON cv_analyzer.tenants TO cv_admin;
-GRANT SELECT, INSERT, UPDATE ON cv_analyzer.user_invites TO cv_admin;
+GRANT INSERT ON cv_analyzer.user_invites TO cv_admin;
 GRANT SELECT, INSERT, UPDATE ON cv_analyzer.users TO cv_app;
 GRANT SELECT ON cv_analyzer.users TO cv_worker;
 GRANT SELECT, INSERT, UPDATE ON cv_analyzer.users TO cv_admin;

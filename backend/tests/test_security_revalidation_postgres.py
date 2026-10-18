@@ -231,9 +231,20 @@ async def _current_user(built, credentials):
         await engine.dispose()
 
 
+def _declared_platform_checker():
+    """The callable that get_platform_db declares for its current_user parameter. The tests call this, not a copy of it, so a change
+    to the declared dependency is what they check."""
+    import inspect
+    from fastapi import params
+    from auth.dependencies import get_platform_db
+    annotation = inspect.signature(get_platform_db).parameters["current_user"].annotation
+    (depends,) = [m for m in annotation.__metadata__ if isinstance(m, params.Depends)]
+    return depends.dependency
+
+
 async def _platform_session(built, user, admin_pool_calls):
-    from auth.dependencies import get_platform_db, require_role
-    user = await require_role("super_admin")(user)
+    from auth.dependencies import get_platform_db
+    user = await _declared_platform_checker()(user)
     gen = get_platform_db(current_user=user)
     session = await gen.__anext__()
     try:
@@ -613,3 +624,21 @@ def test_the_tenant_request_engine_is_the_cv_app_login_and_never_the_administrat
     assert database.AsyncSessionLocal.kw["bind"] is database.engine
     assert database.AdminSessionLocal.kw["bind"] is database.admin_engine
     assert database.admin_engine is not database.engine
+
+
+REQUIRED_TESTS = (
+    "test_an_unsigned_token_is_refused",
+    "test_a_verified_super_admin_reaches_the_administration_login",
+    "test_a_token_claiming_super_admin_gets_the_database_role_not_the_claim",
+    "test_public_cannot_read_modify_or_execute_any_secret_object",
+    "test_the_getter_refuses_forbidden_and_unlisted_keys_with_no_value",
+    "test_the_role_default_survives_an_error_and_a_rollback",
+    "test_the_tenant_request_engine_is_the_cv_app_login_and_never_the_administration_pool",
+)
+
+
+def test_security_suite_keeps_its_required_tests():
+    """A required check cannot be renamed or deleted without this failing: the definition must be present in this file."""
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    missing = [name for name in REQUIRED_TESTS if f"def {name}(" not in source]
+    assert not missing, missing

@@ -250,3 +250,73 @@ def test_the_live_append_only_logs_hold_only_their_insert_grant(hardened_for_jus
     for table in ("audit_logs", "ai_usage_log"):
         for role in (G.APP, G.WORKER):
             assert {p for obj, r, p in live if obj == table and r == role} <= {"INSERT"}
+
+
+# ---- verb-level evidence: a privilege the code never exercises is excessive ----
+
+_VERB_SQL = {
+    "SELECT": r"\bFROM\s+(?:cv_analyzer\.)?{t}\b|\bJOIN\s+(?:cv_analyzer\.)?{t}\b",
+    "INSERT": r"\bINSERT\s+INTO\s+(?:cv_analyzer\.)?{t}\b",
+    "UPDATE": r"\bUPDATE\s+(?:cv_analyzer\.)?{t}\b|\bON\s+CONFLICT\b",
+    "DELETE": r"\bDELETE\s+FROM\s+(?:cv_analyzer\.)?{t}\b",
+}
+
+
+def test_every_declared_table_privilege_is_exercised_by_sql_in_one_of_its_consumers():
+    """A declared table privilege must be used by SQL that the consumer modules contain. The check is textual: it finds the statement
+    kind for the table. ORM access would need an explicit entry here, and there is none."""
+    import re
+    known = C.modules()
+    for cell in _manifest()["cells"]:
+        if cell["kind"] != "table":
+            continue
+        texts = [known[m].read_text(encoding="utf-8") for m in cell["consumers"] if m in known]
+        for privilege in cell["privileges"]:
+            pattern = re.compile(_VERB_SQL[privilege].format(t=re.escape(cell["object"])), re.I)
+            assert any(pattern.search(t) for t in texts), (
+                f"{cell['role']} holds {privilege} on {cell['object']} but no declared consumer issues it")
+
+
+def _dependency_calls(dependant) -> set:
+    """Every callable in a route's dependency graph, through sub-dependencies."""
+    calls = set()
+    stack = list(dependant.dependencies)
+    while stack:
+        item = stack.pop()
+        calls.add(item.call)
+        stack.extend(item.dependencies)
+    return calls
+
+
+def _checks_super_admin(call) -> bool:
+    """True for the checker require_role builds for super_admin (its closure holds the role tuple)."""
+    return any(isinstance(cell.cell_contents, tuple) and "super_admin" in cell.cell_contents
+               for cell in (getattr(call, "__closure__", None) or ()))
+
+
+def test_every_super_admin_route_uses_the_administration_session():
+    """Introspected from the mounted routes, not the source text: a route that requires super_admin must not take the tenant session
+    (get_db, the cv_app login) as its own session. The tenant login holds no write on the platform tables, so such a route fails at run
+    time."""
+    import importlib
+    from fastapi.routing import APIRoute
+    from database import get_db
+    from auth.dependencies import get_platform_db
+    offenders = []
+    checked = 0
+    for path in sorted((BACKEND / "routers").glob("*.py")):
+        module = importlib.import_module(f"routers.{path.stem}")
+        for route in getattr(module, "router", None).routes if hasattr(module, "router") else []:
+            if not isinstance(route, APIRoute):
+                continue
+            calls = _dependency_calls(route.dependant)
+            if not any(_checks_super_admin(call) for call in calls):
+                continue
+            checked += 1
+            # The route's own session parameter. get_current_user reads the caller's identity through the tenant login by design, so
+            # sub-dependencies are not the session the route writes through: only the route's direct dependencies are.
+            own = {item.call for item in route.dependant.dependencies}
+            if get_db in own:
+                offenders.append(f"{path.stem}:{route.name}")
+    assert checked > 0, "no super-admin route was found; the scan is not looking at the routers"
+    assert not offenders, offenders
