@@ -350,9 +350,9 @@ MUTANTS: tuple[Mutant, ...] = (
         key="stale-claim-overwrites-failure",
         description="A stale worker's failure write is no longer guarded by the claim token",
         file="backend/workers/requirements_v2_worker.py",
-        old=("    WHERE job_id = :jid AND criteria_extraction_status = 'processing' AND updated_at = :token\n"
-             "        AND"),
-        new="    WHERE job_id = :jid AND criteria_extraction_status = 'processing'\n        AND",
+        old=("criteria_last_failed_at = now()\n    WHERE job_id = :jid AND criteria_extraction_status = 'processing' "
+             "AND updated_at = :token"),
+        new="criteria_last_failed_at = now()\n    WHERE job_id = :jid AND criteria_extraction_status = 'processing'",
         command=SEC, surface="backend",
         expect="test_a_stale_claim_cannot_overwrite_the_status_or_the_hash",
     ),
@@ -525,9 +525,10 @@ def _verdict(mutant: Mutant, returncode: int, output: str) -> tuple[bool, str]:
         return False, "every test passed with the mutant in place"
     if not mutant.expect:
         return False, "backend mutant has no expected test"
-    if INVALID_OUTPUT.search(output):
-        return False, "collection, import or setup error: not an assertion"
+    # A FAILED line for the named test is the evidence: a setup or collection error reports ERROR, never FAILED for that test.
     if not re.search(rf"^FAILED \S*::(?:\S*::)?{re.escape(mutant.expect)}", output, re.M):
+        if INVALID_OUTPUT.search(output):
+            return False, "collection, import or setup error: not an assertion"
         return False, f"the expected test {mutant.expect} did not fail"
     return True, f"{mutant.expect} failed as expected"
 

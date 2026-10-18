@@ -582,25 +582,24 @@ def psycopg_connect_without_options(built, role):
 
 @pytest.mark.parametrize("key", ["DB_PASSWORD", "JWT_SECRET"])
 def test_an_environment_only_key_is_refused_even_when_it_is_on_the_allowlist(built, key):
-    """The refusal is a rule of the accessor, not a side effect of the allowlist. The key is put on the allowlist here (the
-    superuser fixture, rolled back), and the getter must still refuse it."""
-    conn = bootstrap(built)
-    cur = conn.cursor()
-    cur.execute("BEGIN")
+    """The refusal is a rule of the accessor, not a side effect of the allowlist. The key is put on the allowlist here, committed so
+    that the reader's connection sees it, and removed afterwards. The getter must still refuse it."""
+    admin = bootstrap(built)
+    cur = admin.cursor()
+    cur.execute("INSERT INTO cv_analyzer.platform_secrets (key, value, has_value, masked_value, description, category, is_critical) "
+                "VALUES (%s, 'x', TRUE, '***', 'test', 'test', FALSE) ON CONFLICT (key) DO UPDATE SET value = 'x'", (key,))
+    cur.execute("INSERT INTO cv_analyzer.platform_secret_readable (key, reason) VALUES (%s, 'test') ON CONFLICT DO NOTHING", (key,))
     try:
-        cur.execute("INSERT INTO cv_analyzer.platform_secrets (key, value, has_value, masked_value, description, category, is_critical) "
-                    "VALUES (%s, 'x', TRUE, '***', 'test', 'test', FALSE) ON CONFLICT (key) DO UPDATE SET value = 'x'", (key,))
-        cur.execute("INSERT INTO cv_analyzer.platform_secret_readable (key, reason) VALUES (%s, 'test') ON CONFLICT DO NOTHING", (key,))
-        reader = connect(built, "cv_secrets")
+        reader = connect(built, "cv_secrets", autocommit=True)
         rcur = reader.cursor()
         with pytest.raises(Exception) as err:
             rcur.execute("SELECT cv_analyzer.get_platform_secret(%s)", (key,))
         assert "not readable through the accessor" in str(err.value)
-        reader.rollback()
         reader.close()
     finally:
-        cur.execute("ROLLBACK")
-        conn.close()
+        cur.execute("DELETE FROM cv_analyzer.platform_secret_readable WHERE key = %s AND reason = 'test'", (key,))
+        cur.execute("DELETE FROM cv_analyzer.platform_secrets WHERE key = %s AND category = 'test'", (key,))
+        admin.close()
 
 
 def test_a_forged_role_variable_cannot_write_into_another_tenants_usage_log(built, ids):
