@@ -33,7 +33,7 @@ def backfill_canonical_fingerprints_task(self, batch_size: int = 200) -> dict:
 
     cfg = get_settings()
     engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )

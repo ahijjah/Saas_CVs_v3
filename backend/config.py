@@ -6,7 +6,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Database
-    database_url: str = "postgresql+asyncpg://cv_app:CHANGE_ME@localhost:5432/cv_analyzer_prod"
+    # Runtime logins (docs/DATABASE_ROLES.md). The API connects as cv_app. Platform administration uses cv_admin, workers use
+    # cv_worker, and secret reads use cv_secrets. An empty value falls back to database_url, for development only.
+    # No password is stored here: each URL is supplied by the deployment secret store.
+    database_url: str = "postgresql+asyncpg://cv_app@localhost:5432/cv_analyzer"
+    admin_database_url: str = ""
+    worker_database_url: str = ""
+    secrets_database_url: str = ""
+    # When true, startup refuses any runtime connection whose role is a superuser or bypasses row-level security.
+    enforce_runtime_role_checks: bool = True
     db_schema: str = "cv_analyzer"
 
     # JWT

@@ -233,7 +233,7 @@ def _task_engine_and_session():
 
     cfg = get_settings()
     engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )

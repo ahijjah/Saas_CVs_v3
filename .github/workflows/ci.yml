@@ -1,0 +1,278 @@
+# Continuous integration for the CV Analyzer repository.
+#
+# Requires no secrets. Every job runs against throw-away resources only:
+#   * PostgreSQL 16 clusters created inside the job (the test helper builds its own; the migration job starts one on port 55432).
+#   * External AI and e-mail are replaced by scripted fakes that exist only in test code (backend/tests, e2e/support).
+#   * The deterministic embedding encoder is test-only. No job sets an environment variable that enables a test double in
+#     production code; backend/tests/test_embedding_readiness_offline.py fails if a production module references one.
+#
+# Migration dry run: the job sets MIGRATION_OWNER_ROLE=postgres and MIGRATION_DATABASE_URL to a disposable cluster that the job
+# creates and destroys. That cluster is not production or staging, and the environment variables are scoped to that one step.
+#
+# Action pins: tags resolved from GitHub with `git ls-remote` (checkout v4.2.2, setup-python v5.6.0, setup-node v4.4.0,
+# upload-artifact v4.6.2). Each pin is a full commit SHA with the release as a comment.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"        # matches backend/Dockerfile
+  NODE_VERSION: "22"
+  PYTEST_VERSION: "9.1.1"
+  PYTEST_ASYNCIO_VERSION: "1.4.0"
+  PLAYWRIGHT_VERSION: "1.63.0"
+  PG16_BIN: /usr/lib/postgresql/16/bin
+
+jobs:
+  backend-tests:
+    name: Backend full suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install PostgreSQL 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          test -x "$PG16_BIN/initdb"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r backend/requirements.txt
+          python -m pip install "pytest==$PYTEST_VERSION" "pytest-asyncio==$PYTEST_ASYNCIO_VERSION"
+      - name: Fail if no tests were collected
+        working-directory: backend
+        run: |
+          python -m pytest tests --collect-only -q -p no:cacheprovider | tee collect.txt
+          python - <<'PY'
+          import re, sys
+          text = open("collect.txt").read()
+          match = re.search(r"(\d+) tests? collected", text)
+          count = int(match.group(1)) if match else 0
+          if count == 0:
+              sys.exit("no backend tests were collected")
+          print(f"collected {count} tests")
+          PY
+      - name: Run the full backend suite
+        working-directory: backend
+        run: python -m pytest tests -q -p no:cacheprovider
+
+  backend-security:
+    name: Security tests (isolated and leaker-first)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install PostgreSQL 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          test -x "$PG16_BIN/initdb"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r backend/requirements.txt
+          python -m pip install "pytest==$PYTEST_VERSION" "pytest-asyncio==$PYTEST_ASYNCIO_VERSION"
+      - name: Security suite in isolation
+        working-directory: backend
+        run: |
+          python -m pytest tests/test_security_detection.py --collect-only -q -p no:cacheprovider | tail -1 | grep -qE "[1-9][0-9]* tests? collected"
+          python -m pytest tests/test_security_detection.py -q -p no:cacheprovider
+      - name: Security suite after the loop-leaking test (issue #20 order)
+        working-directory: backend
+        run: python -m pytest tests/test_criteria_status_postgres.py tests/test_security_detection.py -q -p no:cacheprovider
+
+  migration-lint-dry-run:
+    name: Migration lint and dry run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Disposable cluster created by this job only (see the step below). Not production or staging.
+      DISPOSABLE_PGPORT: "55432"
+      DISPOSABLE_PGDATA: ${{ runner.temp }}/pg-disposable
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install PostgreSQL 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          test -x "$PG16_BIN/initdb"
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r backend/requirements.txt
+          python -m pip install "pytest==$PYTEST_VERSION" "pytest-asyncio==$PYTEST_ASYNCIO_VERSION"
+      - name: Start a disposable PostgreSQL 16 cluster
+        run: |
+          "$PG16_BIN/initdb" -D "$DISPOSABLE_PGDATA" -U postgres --auth=trust
+          "$PG16_BIN/pg_ctl" -D "$DISPOSABLE_PGDATA" -o "-p $DISPOSABLE_PGPORT -k $RUNNER_TEMP -c listen_addresses=127.0.0.1" \
+            -l "$RUNNER_TEMP/pg-disposable.log" -w start
+          "$PG16_BIN/psql" -h 127.0.0.1 -p "$DISPOSABLE_PGPORT" -U postgres \
+            -c "CREATE DATABASE cv_ci_disposable ENCODING 'UTF8' TEMPLATE template0"
+      - name: Migration lint
+        working-directory: backend
+        run: python -m pytest tests/test_migration_lint_new_files.py tests/test_db0_migration_runner.py tests/test_db0_audit_regressions.py tests/test_db0_operator_audit.py -q -p no:cacheprovider
+      - name: Apply the chain to the disposable database, then dry-run
+        working-directory: backend
+        # MIGRATION_OWNER_ROLE=postgres and this URL are scoped to this step and point at the disposable cluster above.
+        # The schema step applies db/schema.sql with the same single forward-reference patch the test helper uses
+        # (realdb_helper.schema_sql); unpatched, schema.sql fails on an empty database at its first reference to users.
+        env:
+          MIGRATION_DATABASE_URL: postgresql://postgres@127.0.0.1:${{ env.DISPOSABLE_PGPORT }}/cv_ci_disposable
+          MIGRATION_OWNER_ROLE: postgres
+          LC_ALL: C.UTF-8
+          LANG: C.UTF-8
+        run: |
+          python - <<'PY'
+          import os, sys
+          sys.path.insert(0, "tests")
+          import psycopg2
+          import realdb_helper
+          conn = psycopg2.connect(os.environ["MIGRATION_DATABASE_URL"])
+          conn.autocommit = True
+          conn.set_client_encoding("UTF8")
+          conn.cursor().execute(realdb_helper.schema_sql())
+          PY
+          python -m scripts.migrate --init-fresh
+          python -m scripts.migrate --dry-run | tee dry-run.txt
+          grep -q "dry run: 0 file(s) would be applied" dry-run.txt
+      - name: Stop the disposable cluster
+        if: always()
+        run: |
+          "$PG16_BIN/pg_ctl" -D "$DISPOSABLE_PGDATA" -m fast stop || true
+
+  frontend:
+    name: Frontend typecheck, Vitest and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: TypeScript (zero errors)
+        run: npm run typecheck
+      - name: Vitest (fails when no tests run)
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee vitest.log
+          python3 - <<'PY'
+          import re, sys
+          text = open("vitest.log").read()
+          match = re.search(r"Tests\s+(\d+) passed", text)
+          if not match or int(match.group(1)) == 0 or re.search(r"\d+ failed", text):
+              sys.exit("Vitest did not report a passing, non-empty run")
+          print(f"vitest passed {match.group(1)} tests")
+          PY
+      - name: Production build
+        run: npm run build
+
+  e2e:
+    name: Deterministic browser E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      # run.sh honours this value; without it the script falls back to a path that does not exist on runners.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install PostgreSQL 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          test -x "$PG16_BIN/initdb"
+      - name: Install backend and E2E dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r backend/requirements.txt
+          python -m pip install "pytest==$PYTEST_VERSION" "pytest-asyncio==$PYTEST_ASYNCIO_VERSION" "playwright==$PLAYWRIGHT_VERSION"
+      - run: npm ci
+      - name: Install the pinned Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+      - name: Fail if no E2E tests were collected
+        run: |
+          python -m pytest e2e --collect-only -q -p no:cacheprovider | tee e2e-collect.txt
+          grep -qE "[1-9][0-9]* tests? collected" e2e-collect.txt
+      - name: Run the E2E suite
+        run: ./e2e/run.sh
+      - name: Keep screenshots, traces and logs when the run fails
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-artifacts-${{ github.run_id }}
+          path: e2e/artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+  mutation-checks:
+    name: Release mutation checks
+    # Budget: about 10 to 20 minutes. Each mutant runs a targeted test in a throw-away copy; the E2E mutant runs the cleanup check twice.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install PostgreSQL 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          test -x "$PG16_BIN/initdb"
+      - name: Install backend and E2E dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r backend/requirements.txt
+          python -m pip install "pytest==$PYTEST_VERSION" "pytest-asyncio==$PYTEST_ASYNCIO_VERSION" "playwright==$PLAYWRIGHT_VERSION"
+      - run: npm ci
+      - name: Install the pinned Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+      - name: Run the mutation checks
+        run: python3 scripts/release_mutation_checks.py

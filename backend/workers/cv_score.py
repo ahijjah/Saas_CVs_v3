@@ -96,7 +96,7 @@ def score_cv_task(
     # Task-local NullPool engine: never shares connections with other tasks or
     # the FastAPI process pool, so there are no cross-loop Future references.
     task_engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )
@@ -1383,7 +1383,7 @@ async def _mark_failed(application_id: str, error: str) -> None:
     cfg = get_settings()
 
     fail_engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )

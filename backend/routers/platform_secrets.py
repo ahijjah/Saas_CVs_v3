@@ -24,8 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin
-from database import get_db, set_rls_context
+from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
 
 logger = logging.getLogger(__name__)
 
@@ -100,9 +99,8 @@ class UpdateSecretRequest(BaseModel):
 @router.get("", dependencies=[RequireSuperAdmin])
 async def list_secrets(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     rows = await db.execute(text("""
         SELECT key, masked_value, description, category, is_critical,
@@ -139,9 +137,8 @@ async def update_secret(
     key: str,
     body: UpdateSecretRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     val = body.value.strip() if body.value else ""
     if not val:
@@ -171,16 +168,8 @@ async def update_secret(
 
     masked = _mask(val)
 
-    await db.execute(text("""
-        UPDATE platform_secrets
-        SET value            = :val,
-            masked_value     = :masked,
-            has_value        = TRUE,
-            updated_at       = NOW(),
-            updated_by       = :uid,
-            updated_by_email = :email
-        WHERE key = :k
-    """), {
+    # Through the validated setter only (cv_admin may execute it; no login may write the table directly).
+    await db.execute(text("SELECT cv_analyzer.set_platform_secret(:k, :val, :masked, :uid, :email)"), {
         "val":    val,
         "masked": masked,
         "uid":    current_user.user_id,
@@ -214,7 +203,7 @@ async def update_secret(
 @router.post("/restart-services", dependencies=[RequireSuperAdmin])
 async def restart_services(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
     """
     Request a controlled restart of the api, worker, and beat services.
@@ -229,7 +218,6 @@ async def restart_services(
     - If available: runs `docker compose restart api worker beat` (fixed args, no shell).
     - If not available: returns success=False with a manual-restart message.
     """
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     logger.warning(
         "Service restart requested by %s (user_id=%s)",
@@ -307,7 +295,7 @@ async def restart_services(
 @router.get("/runtime-status", dependencies=[RequireSuperAdmin])
 async def runtime_status(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
     """
     Diagnostic: report whether each runtime-managed secret has a DB value.
@@ -315,7 +303,6 @@ async def runtime_status(
     Never exposes actual values — only boolean has_value flags.
     Reads directly from the DB (bypasses cache) to show current stored state.
     """
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     all_runtime_keys = _RUNTIME_IMAP_KEYS | _RUNTIME_SMTP_KEYS
     rows = await db.execute(

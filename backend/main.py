@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config import get_settings
-from database import engine
+from database import AdminSessionLocal, AsyncSessionLocal, assert_runtime_role, engine
 from services import local_processor
 from routers import (
     admin, ai_models, ai_prompts, ai_usage, analytics, applications, approvals, audit_logs, auth,
@@ -20,7 +20,11 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Fail fast: the API does not start serving if the embedding model is unavailable.
+    # Fail fast: refuse a superuser or RLS-bypassing login on either API pool, and refuse to serve without the embedding model.
+    async with AsyncSessionLocal() as session:
+        await assert_runtime_role(session)
+    async with AdminSessionLocal() as session:
+        await assert_runtime_role(session)
     local_processor.ensure_model_loaded()
     yield
     await engine.dispose()

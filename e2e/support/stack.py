@@ -38,6 +38,27 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+RUNTIME_ROLES = ("cv_app", "cv_worker", "cv_admin", "cv_secrets")
+OPS_DIR = REPO / "backend" / "db" / "ops"
+
+
+def _url(db, role: str, password: str, driver: str) -> str:
+    return f"{driver}://{role}:{password}@127.0.0.1:{db.cluster.port}/{db.name}"
+
+
+def _provision_runtime_roles(db, passwords: dict[str, str]) -> None:
+    """Apply the operator scripts exactly as an operator does, with this run's passwords. A failure stops the run."""
+    variables: list[str] = []
+    for role in RUNTIME_ROLES:
+        variables += ["-v", f"{role}_password={passwords[role]}"]
+    base = ["psql", "-h", "127.0.0.1", "-p", str(db.cluster.port), "-U", "postgres", "-d", db.name, "-X", "-q",
+            "-v", "ON_ERROR_STOP=1"]
+    for script in ("0004_runtime_roles.sql.template", "0005_runtime_privileges.sql.template"):
+        proc = subprocess.run(base + variables + ["-f", str(OPS_DIR / script)], capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0:
+            raise RuntimeError(f"operator script {script} failed: {proc.stderr.strip()}")
+
+
 @dataclass
 class Service:
     name: str
@@ -165,12 +186,22 @@ def running_stack(run_dir: Path):
         with built_chain() as db:
             postgres_pid = _postgres_pid(db.cluster.dir)
             _record("postgres", postgres_pid)
-            dsn = f"postgresql+asyncpg://postgres@127.0.0.1:{db.cluster.port}/{db.name}"
-            psycopg_dsn = f"postgresql://postgres@127.0.0.1:{db.cluster.port}/{db.name}"
             users = _seed(db)
+            # The application runs on the hardened runtime logins, exactly as an operator would provision them: the operator scripts
+            # 0004 and 0005 with per-run passwords. Nothing in the run uses the cluster superuser after fixture setup.
+            passwords = {role: secrets.token_urlsafe(18) for role in RUNTIME_ROLES}
+            _provision_runtime_roles(db, passwords)
+            dsn = _url(db, "cv_app", passwords["cv_app"], "postgresql+asyncpg")
+            admin_dsn = _url(db, "cv_admin", passwords["cv_admin"], "postgresql+asyncpg")
+            worker_dsn = _url(db, "cv_worker", passwords["cv_worker"], "postgresql+asyncpg")
+            secrets_dsn = _url(db, "cv_secrets", passwords["cv_secrets"], "postgresql+asyncpg")
+            # Test-side inspection reads through cv_admin, not the superuser (the grants allow it the rows the checks need).
+            psycopg_dsn = _url(db, "cv_admin", passwords["cv_admin"], "postgresql")
             secret = secrets.token_urlsafe(32)
             try:
-                backend_env = {**os.environ, "DATABASE_URL": dsn, "DB_SCHEMA": "cv_analyzer", "JWT_SECRET": secret}
+                backend_env = {**os.environ, "DATABASE_URL": dsn, "ADMIN_DATABASE_URL": admin_dsn,
+                               "WORKER_DATABASE_URL": worker_dsn, "SECRETS_DATABASE_URL": secrets_dsn,
+                               "DB_SCHEMA": "cv_analyzer", "JWT_SECRET": secret}
                 backend = _start("backend", [sys.executable, str(HERE / "backend_app.py"), "--port", str(backend_port),
                                              "--origin", origin, "--files-root", str(files_root)],
                                  backend_env, REPO, run_dir / "backend.log")

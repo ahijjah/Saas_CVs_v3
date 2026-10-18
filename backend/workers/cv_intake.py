@@ -343,7 +343,7 @@ async def _poll_async() -> None:
     # The engine and all its connections are disposed in the finally block before
     # asyncio.run() closes this event loop.
     engine = create_async_engine(
-        cfg.database_url,
+        cfg.worker_database_url or cfg.database_url,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": cfg.db_schema}},
     )

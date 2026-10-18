@@ -247,7 +247,7 @@ async def test_a_new_job_is_extracted_reviewed_scored_and_its_score_records_the_
 # ---- C: an invalid extraction leaves a failed state, and a retry succeeds ----
 
 @pytest.mark.asyncio
-async def test_an_invalid_extraction_leaves_a_failed_state_and_a_retry_through_the_route_succeeds(world, monkeypatch):
+async def test_an_invalid_extraction_is_refused_for_the_same_description_and_retried_after_a_change(world, monkeypatch):
     built = world.built
     user = _user(built)
     job = await _create(world, user, "Senior Developer", EN_JD)
@@ -255,14 +255,23 @@ async def test_an_invalid_extraction_leaves_a_failed_state_and_a_retry_through_t
     monkeypatch.setattr(v2_worker, "_task_engine_and_session", lambda: (world.engine, world.Session))
     await asyncio.to_thread(v2_worker.extract_requirements_v2_task.apply, args=(job, EN_JD))
     status, marker, revision, analysis, error = _criteria(built, job)
-    assert (status, error, revision, analysis) == ("failed", CS.WORKER_FAILED_MESSAGE, 0, None)
+    assert (status, error, revision, analysis) == ("failed", CS.REQUIREMENTS_REJECTED_MESSAGE, 0, None)
 
+    # The same description is refused: the model rejected this exact input, so re-running it is not allowed.
     world.queued["v2"].clear()
-    world.script["responses"].append(_response(EN_JD, "en"))
+    async with _client(_app(user, world)) as client:
+        refused = await client.post(f"/jobs/{job}/criteria/retry")
+    assert refused.status_code == 400 and [j for j, _ in world.queued["v2"]] == []
+
+    # A substantive change permits the retry, which completes through the v2 worker.
+    changed = EN_JD + "\nOn-call rotation is shared across the platform team."
+    cur = built.conn.cursor()
+    cur.execute("UPDATE jobs SET description = %s WHERE job_id = %s", (changed, job))
+    world.script["responses"].append(_response(changed, "en"))
     async with _client(_app(user, world)) as client:
         retry = await client.post(f"/jobs/{job}/criteria/retry")
     assert retry.status_code == 202 and [j for j, _ in world.queued["v2"]] == [job]
-    await _run_worker(world, job, EN_JD)
+    await _run_worker(world, job, changed)
     status, marker, revision, analysis, error = _criteria(built, job)
     assert (status, revision) == ("completed", 1) and analysis["requirements"]["schema_version"] == 2
 

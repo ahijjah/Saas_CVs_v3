@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, AsyncGenerator
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.jwt import decode_access_token
-from database import get_db, set_rls_context
+from database import AdminSessionLocal, get_db, set_rls_context
 
 bearer_scheme = HTTPBearer(auto_error=True)
 
@@ -69,3 +69,12 @@ def require_role(*roles: str):
 RequireAdmin = Depends(require_role("super_admin", "admin"))
 RequireSuperAdmin = Depends(require_role("super_admin"))
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+async def get_platform_db(
+    current_user: Annotated[CurrentUser, Depends(require_role("super_admin"))],
+) -> AsyncGenerator[AsyncSession, None]:
+    """Cross-tenant platform administration. The token is verified and the user is a super_admin before the administration login is
+    used. Nothing in the request chooses this pool: it is reached only by declaring this dependency."""
+    async with AdminSessionLocal() as session:
+        yield session

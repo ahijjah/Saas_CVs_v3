@@ -6,8 +6,7 @@ from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin
-from database import get_db, set_rls_context
+from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
 
 router = APIRouter(prefix="/admin", tags=["platform-config"])
 
@@ -78,10 +77,9 @@ class UpdateConfigValueRequest(BaseModel):
 @router.get("/platform-config", dependencies=[RequireSuperAdmin])
 async def get_platform_config(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
     category: str | None = None,
 ) -> dict[str, Any]:
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     params: dict[str, Any] = {}
     where = ""
@@ -126,9 +124,8 @@ async def update_platform_config(
     key: str,
     body: UpdateConfigValueRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     row = await db.execute(
         text("SELECT key, type, editable FROM system_config WHERE key = :key"),
@@ -163,9 +160,8 @@ async def update_platform_config(
 async def create_platform_config(
     body: CreateConfigRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ) -> dict[str, Any]:
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     existing = await db.execute(
         text("SELECT key FROM system_config WHERE key = :key"),

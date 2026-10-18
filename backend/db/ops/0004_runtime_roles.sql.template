@@ -1,0 +1,44 @@
+-- ops/0004_runtime_roles.sql.template
+--
+-- OPERATOR TEMPLATE. This is not a migration. The runner never reads this directory. Run it once per environment after
+-- 0001_roles_and_ledger.sql.template, as the bootstrap superuser, with each login password from the deployment secret store.
+-- No password is written in this file or in the repository.
+--
+--   psql -X -v ON_ERROR_STOP=1 \
+--        -v cv_app_password="$CV_APP_PASSWORD" \
+--        -v cv_worker_password="$CV_WORKER_PASSWORD" \
+--        -v cv_admin_password="$CV_ADMIN_PASSWORD" \
+--        -v cv_secrets_password="$CV_SECRETS_PASSWORD" \
+--        -d "$DATABASE" -f 0004_runtime_roles.sql.template
+--
+-- What it does: gives each runtime role its login and asserts its attributes. Runtime roles are never superusers, never bypass
+-- row-level security, own nothing, inherit nothing, and are members of no other role. It then removes PUBLIC access to the
+-- application schema. Object privileges are set separately by 0005_runtime_privileges.sql.template.
+
+\set ON_ERROR_STOP on
+
+ALTER ROLE cv_app     LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'cv_app_password';
+ALTER ROLE cv_worker  LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'cv_worker_password';
+ALTER ROLE cv_admin   LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'cv_admin_password';
+-- cv_secrets reads secrets only through the getter. It is a login role with no table access.
+ALTER ROLE cv_secrets LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD :'cv_secrets_password';
+
+-- No runtime role may be a member of another role, and no other role may be a member of a runtime role.
+DO $$
+DECLARE
+    v_bad text;
+BEGIN
+    SELECT string_agg(DISTINCT m.roleid::regrole::text, ', ') INTO v_bad
+    FROM pg_auth_members m
+    JOIN pg_roles r ON r.oid = m.member
+    WHERE r.rolname IN ('cv_app', 'cv_worker', 'cv_admin', 'cv_secrets');
+    IF v_bad IS NOT NULL THEN
+        RAISE EXCEPTION 'runtime roles must not be members of other roles: %', v_bad;
+    END IF;
+END$$;
+
+-- The application schema and the public schema are closed to PUBLIC. Runtime roles get USAGE only through 0005.
+REVOKE ALL ON SCHEMA cv_analyzer FROM PUBLIC;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+REVOKE CREATE ON SCHEMA cv_analyzer FROM cv_app, cv_worker, cv_admin, cv_secrets;
+REVOKE CREATE ON SCHEMA public FROM cv_app, cv_worker, cv_admin, cv_secrets;

@@ -54,6 +54,11 @@ class Api:
         if status != 200:
             raise ApiError(f"update description failed: {status} {body}")
 
+    def retry_status(self, token, job):
+        """POST the retry route and return the HTTP status (202 queued, 400 refused for an unchanged description)."""
+        status, _ = _request("POST", f"{self.base}/jobs/{job}/criteria/retry", token, {})
+        return status
+
     def requirements(self, token, job, timeout=60):
         """The stored document, once extraction has produced one."""
         status = body = None

@@ -231,22 +231,13 @@ def test_extraction_failure_and_retry(api, ui, admin):
     api.retry_state(job, retries=0)
     page = ui.open("admin", job, token_user=admin)
     expect(page.get_by_text("AI criteria analysis failed.")).to_be_visible(timeout=20000)
-    retry = page.get_by_role("button", name="Retry AI Analysis")
-    expect(retry).to_be_enabled(timeout=15000)
-    check("R1 Retry: a failed job offers retry while its description is unchanged from the first attempt")
-    retry.click()
-    api.retry_state(job, retries=1)
-    page.reload()                       # the page reads job details once; reload to see the settled state
-    expect(page.get_by_text("AI criteria analysis failed.")).to_be_visible(timeout=20000)
-    expect(page.get_by_role("button", name="Retry AI Analysis")).to_be_enabled(timeout=15000)
-    # Current behaviour for requirements V2: a failed attempt does not record the failed description, so an unchanged description
-    # does not block retry. Retries are bounded by criteria_extraction_max_retries only (recorded in the release notes).
-    check("R2 Retry: a retry on the same description fails again, is counted, and stays available (bounded by max retries)")
+    # The model rejected this exact description, so the server refuses a retry until the description changes.
+    assert api.retry_status(token, job) == 400
+    check("R1 Retry: an unchanged description after an invalid extraction is refused by the server")
     api.update_description(token, job, f"SCENARIO-RETRY-FIXED\n{EN}")
-    page.reload()
-    expect(retry).to_be_enabled(timeout=15000)
-    retry.click()
+    assert api.retry_status(token, job) == 202
+    check("R2 Retry: a changed description permits the retry")
     api.requirements(token, job, timeout=90)     # the document exists once the retry has completed
     page.reload()
     expect(panel(page).get_by_text("Ready for scoring")).to_be_visible(timeout=30000)
-    check("R3 Retry: after the description is corrected, retry produces a ready document")
+    check("R3 Retry: the corrected description produces a ready document")

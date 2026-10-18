@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import get_settings
-from database import get_db, set_rls_context
+from database import get_admin_db
 from services.application_intake_service import (
     IntakeValidationError,
     process_cv_intake,
@@ -73,10 +73,9 @@ async def _count_valid_applications(job_id: str, db: AsyncSession) -> int:
 @router.get("/jobs/public/{job_code}")
 async def get_public_job(
     job_code: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_admin_db)],
 ):
     """Return public job details for the candidate apply page. No auth required."""
-    await set_rls_context(db, "", "super_admin")
     job = await _get_active_public_job(job_code, db)
 
     deadline = job["application_deadline"]
@@ -115,7 +114,7 @@ async def get_public_job(
 
 @router.post("/applications/public", status_code=http_status.HTTP_201_CREATED)
 async def submit_public_application(
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_admin_db)],
     job_code: Annotated[str, Form()],
     candidate_name: Annotated[str, Form()],
     email: Annotated[str, Form()],
@@ -178,7 +177,6 @@ async def _handle_public_submission(
 ) -> dict:
     content = await file.read()
 
-    await set_rls_context(db, "", "super_admin")
 
     # ── Validate job and intake state ─────────────────────────────────────────
     job = await _get_active_public_job(job_code, db)

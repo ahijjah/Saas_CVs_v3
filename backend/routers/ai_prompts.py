@@ -21,8 +21,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin
-from database import get_db, set_rls_context
+from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
 
 router = APIRouter(prefix="/admin/ai-prompts", tags=["ai-prompts"])
 
@@ -373,9 +372,8 @@ def _row_to_dict(r) -> dict:
 @router.get("", dependencies=[RequireSuperAdmin])
 async def list_prompts(
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     rows = await db.execute(text("""
         SELECT prompt_id, prompt_code, prompt_name, prompt_category,
@@ -401,9 +399,8 @@ async def list_prompts(
 async def get_prompt(
     prompt_code: str,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     rows = await db.execute(text("""
         SELECT prompt_id, prompt_code, prompt_name, prompt_category,
@@ -429,9 +426,8 @@ async def get_prompt(
 async def create_prompt(
     body: CreatePromptRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     # Determine next version number for this prompt_code
     ver_row = await db.execute(
@@ -481,9 +477,8 @@ async def update_prompt(
     prompt_id: str,
     body: UpdatePromptRequest,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     row = await db.execute(
         text("SELECT prompt_id, is_active FROM ai_prompts WHERE prompt_id = :pid"),
@@ -529,9 +524,8 @@ async def update_prompt(
 async def activate_prompt(
     prompt_id: str,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     row = await db.execute(
         text("SELECT prompt_id, prompt_code FROM ai_prompts WHERE prompt_id = :pid"),
@@ -564,9 +558,8 @@ async def activate_prompt(
 async def reset_to_default(
     prompt_code: str,
     current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_db)],
+    db: Annotated[AsyncSession, Depends(get_platform_db)],
 ):
-    await set_rls_context(db, current_user.tenant_id, "super_admin")
 
     default = _DEFAULT_PROMPTS.get(prompt_code)
     if not default:
