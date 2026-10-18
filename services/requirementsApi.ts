@@ -58,7 +58,13 @@ export type RequirementsOperation =
   | { op: 'set_category_weight'; category: string; weight: number }
   | { op: 'add_item'; category: string; text: string; importance: ImportanceLevel; weight: number | null;
       alternatives: string[] | null; experience: { subject: string | null; min_years: number | null } | null }
-  | { op: 'remove_item'; item_id: string };
+  | { op: 'remove_item'; item_id: string }
+  | { op: 'confirm_no_numeric_score' }
+  | { op: 'acknowledge_classification_warning'; warning_id: string }
+  | { op: 'confirm_structure'; item_id: string }
+  | { op: 'resolve_structural_finding'; finding_id: string; decision: 'fixed' | 'accepted_as_is' | 'dismissed_false_positive';
+      note: string | null; evidence_item_ids: string[] | null }
+  | { op: 'reorder_items'; category: string; item_ids: string[] };
 
 export class RequirementsApiError extends Error {
   readonly status: number;
