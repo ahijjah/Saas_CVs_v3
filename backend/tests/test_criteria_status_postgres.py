@@ -26,13 +26,14 @@ from sqlalchemy.pool import NullPool
 import config
 from auth.dependencies import CurrentUser, get_current_user
 from database import get_db, set_rls_context
+from runtime_engines import async_engine, async_url
 from realdb_helper import EXPECTED_PRE_EXISTING_FAILURES, built_chain, check_chain, unavailable_reason
 from routers import jobs as jobs_router
 from services import ai_service
 from services import criteria_status as CS
 from workers import criteria_worker as worker
 
-RUNTIME_ROLE = "cv_app"
+RUNTIME_ROLE = "cv_worker"   # the claim, failure and cleanup paths run in the worker process (criteria_worker)
 JD = ("Senior Python developer to build REST APIs, design PostgreSQL schemas and mentor two engineers. "
       "Five years of Python required.")
 DEFAULT_WEIGHTS = (30, 25, 15, 10, 10, 5, 5)
@@ -51,16 +52,6 @@ def built():
         check_chain(db.failures)
         assert {f.file for f in db.failures} == EXPECTED_PRE_EXISTING_FAILURES
         yield db
-
-
-@pytest.fixture(scope="module", autouse=True)
-def chain_read_grants(built):
-    """TEST SETUP ONLY, not production evidence. The migrated chain grants cv_app no privilege on these tables (a separately
-    recorded grant defect), and the job list and details routes read them. Only SELECT is granted, only on these tables, only for
-    this module. Every other table keeps the grant the chain actually gives cv_app."""
-    cur = built.conn.cursor()
-    cur.execute(f"GRANT SELECT ON cv_analyzer.client_organizations, cv_analyzer.job_campaigns,"
-                f" cv_analyzer.job_knockout_questions TO {RUNTIME_ROLE}")
 
 
 def _cur(built):
@@ -130,17 +121,18 @@ def dsn(built):
 
 @pytest_asyncio.fixture()
 async def engine(built):
-    eng = create_async_engine(f"postgresql+asyncpg://{RUNTIME_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}",
-                              poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+    eng = async_engine(built, RUNTIME_ROLE)
     yield eng
     await eng.dispose()
 
 
 @pytest.fixture()
-def worker_settings(monkeypatch, dsn):
-    """The worker and its helpers read the database and the model from config. Both are pointed at this test database, and no AI
-    model is resolved (the registry lookup returns None, as an unconfigured stage does)."""
-    fake = SimpleNamespace(database_url=dsn, db_schema="cv_analyzer", openai_model="test-model")
+def worker_settings(monkeypatch, built):
+    """The worker and its helpers read the database and the model from config. The worker login is used on this test database, and
+    no AI model is resolved (the registry lookup returns None, as an unconfigured stage does)."""
+    worker_url = async_url(built, "cv_worker")
+    fake = SimpleNamespace(database_url=worker_url, worker_database_url=worker_url, db_schema="cv_analyzer",
+                           openai_model="test-model")
     monkeypatch.setattr(config, "get_settings", lambda: fake)
 
     async def no_registry(db, stage):
@@ -326,48 +318,43 @@ def test_a_retried_attempt_claims_the_released_row_and_can_complete(built, worke
     assert _row(built, job)[0] == "completed"
 
 
-async def _with_runtime_session(dsn, action):
-    engine = create_async_engine(dsn, poolclass=NullPool, connect_args={"server_settings": {"search_path": "cv_analyzer"}})
+async def _with_runtime_session(built, action):
+    engine = async_engine(built, RUNTIME_ROLE)
     try:
         return await action(async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False))
     finally:
         await engine.dispose()
 
 
-def _mark_failed_as_runtime(runtime_dsn, job, token):
+def _mark_failed_as_runtime(built, job, token):
     async def action(Session):
         return await worker._mark_failed(job, token, Session)
 
-    return asyncio.run(_with_runtime_session(runtime_dsn, action))
+    return asyncio.run(_with_runtime_session(built, action))
 
 
-@pytest.fixture()
-def runtime_dsn(built):
-    return f"postgresql+asyncpg://{RUNTIME_ROLE}@127.0.0.1:{built.cluster.port}/{built.name}"
-
-
-def test_a_stale_claim_cannot_mark_the_row_failed(built, runtime_dsn):
+def test_a_stale_claim_cannot_mark_the_row_failed(built):
     tenant = _tenant(built)
     job = _job(built, tenant, status="processing")
     current = _row(built, job)[14]
-    marked = _mark_failed_as_runtime(runtime_dsn, job, current - timedelta(microseconds=1))
+    marked = _mark_failed_as_runtime(built, job, current - timedelta(microseconds=1))
     assert marked is False
     assert _row(built, job)[0] == "processing"
 
 
-def test_a_pending_row_is_never_marked_failed_even_with_a_matching_token(built, runtime_dsn):
+def test_a_pending_row_is_never_marked_failed_even_with_a_matching_token(built):
     tenant = _tenant(built)
     job = _job(built, tenant, status="pending")
     token = _row(built, job)[14]
-    assert _mark_failed_as_runtime(runtime_dsn, job, token) is False
+    assert _mark_failed_as_runtime(built, job, token) is False
     assert _row(built, job)[0] == "pending"
 
 
-def test_the_matching_claim_marks_the_row_failed_with_the_fixed_message(built, runtime_dsn):
+def test_the_matching_claim_marks_the_row_failed_with_the_fixed_message(built):
     tenant = _tenant(built)
     job = _job(built, tenant, status="processing")
     token = _row(built, job)[14]
-    assert _mark_failed_as_runtime(runtime_dsn, job, token) is True
+    assert _mark_failed_as_runtime(built, job, token) is True
     status, error, *_ = _row(built, job)
     assert (status, error) == ("failed", CS.WORKER_FAILED_MESSAGE)
 
@@ -580,10 +567,12 @@ async def test_put_criteria_content_still_updates_a_legacy_row(built, engine):
     ("failed", CS.WORKER_FAILED_MESSAGE, False, "failed"),
     ("pending", None, False, "pending"),
 ])
-async def test_the_job_list_and_details_report_the_derived_status(built, engine, stored, error, at_cap, expected):
+async def test_the_job_list_and_details_report_the_derived_status(built, stored, error, at_cap, expected):
     tenant = _tenant(built)
     retry = _max_retries(built) if at_cap else 0
     job = _job(built, tenant, status=stored, error=error, retry=retry)
+    # The job list and details are tenant routes: they run as cv_app, not as the worker login.
+    engine = async_engine(built, "cv_app")
     async with _client(_app(_user(tenant), engine)) as client:
         listing = await client.get("/jobs")
         details = await client.get("/jobs/details", params={"job_id": job})

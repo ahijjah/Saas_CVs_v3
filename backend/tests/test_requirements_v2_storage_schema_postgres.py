@@ -13,7 +13,7 @@ import pytest
 from realdb_helper import (EXPECTED_PRE_EXISTING_FAILURES, Database, built_chain, check_chain, unavailable_reason)
 
 MIGRATION = "093_requirements_v2_storage_schema.sql"
-PROBE_ROLE = "cv_storage_probe"
+PROBE_ROLE = "cv_app"   # the production tenant login; the superuser connection switches to it with SET ROLE for the check
 
 
 @pytest.fixture(scope="module")
@@ -24,7 +24,6 @@ def db():
     with built_chain() as built:
         check_chain(built.failures)                      # the failing steps are exactly the known set; 093 and schema.sql succeed
         cur = built.conn.cursor()
-        cur.execute(f"CREATE ROLE {PROBE_ROLE} NOLOGIN")
         yield built
 
 
