@@ -236,6 +236,22 @@ async def _score_cv_async(
         async with Session() as db:
             await set_rls_context(db, tenant_id, "super_admin")
 
+            # ── Retry of a requirements-v2 application that is already scored: nothing is scored or written again ──
+            # Only v2 jobs take this path; a legacy application keeps its existing behaviour exactly.
+            already = (await db.execute(
+                text("""
+                    SELECT jc.requirements_schema_version = 2 AS is_v2,
+                           EXISTS (SELECT 1 FROM application_scores s WHERE s.application_id = a.application_id) AS scored
+                    FROM applications a
+                    JOIN job_criteria jc ON jc.job_id = a.job_id
+                    WHERE a.application_id = :aid
+                """),
+                {"aid": application_id},
+            )).mappings().first()
+            if already and already["is_v2"] and already["scored"]:
+                logger.info("[%s] Requirements v2 application is already scored; nothing to do.", application_id)
+                return
+
             # ── Mark processing ───────────────────────────────────────────────
             logger.info("[%s] status → processing", application_id)
             await db.execute(
@@ -596,9 +612,9 @@ async def _score_cv_async(
                            j.send_confirmation_to_cv_email_for_platform_email
                     FROM job_criteria jc
                     JOIN jobs j ON j.job_id = jc.job_id
-                    WHERE jc.job_id = :jid
+                    WHERE jc.job_id = :jid AND j.tenant_id = :tid
                 """),
-                {"jid": job_id},
+                {"jid": job_id, "tid": tenant_id},
             )
             criteria = criteria_row.mappings().first()
             if not criteria:
