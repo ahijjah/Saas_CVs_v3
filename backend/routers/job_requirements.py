@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, StrictInt, model_serializer
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,6 +71,14 @@ class DocumentOut(_Strict):
     schema_version: int
     categories: dict[CategoryName, CategoryOut]
     context: ContextOut | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_context(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """A document without job context keeps the exact response shape it had before the context block existed."""
+        data = handler(self)
+        if data.get("context") is None:
+            data.pop("context", None)
+        return data
 
 
 # ---- response: the read-only review, one section per EditView part ----

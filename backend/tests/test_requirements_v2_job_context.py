@@ -185,6 +185,15 @@ def test_the_api_model_accepts_documents_without_context_and_refuses_extra_field
         ContextOut.model_validate({"location": None, "work_arrangement": None, "reports_to": None, "salary": 1})
 
 
+def test_the_response_omits_context_when_absent_and_returns_it_when_present():
+    base = {"schema_version": 2, "categories": {c: {"weight": 0, "items": []} for c in CATEGORIES}}
+    assert "context" not in DocumentOut.model_validate(base).model_dump()
+    assert "context" not in json.loads(DocumentOut.model_validate(base).model_dump_json())
+    context = {"location": "Ramallah", "work_arrangement": "hybrid", "reports_to": "IT Operations Manager"}
+    dumped = DocumentOut.model_validate({**base, "context": context}).model_dump()
+    assert dumped["context"] == context
+
+
 # ── the pinned prompt: explicit only, and the context block is in its output format ─────────────────────────────────
 
 def test_the_pinned_prompt_states_the_context_rule_and_its_output_shape():
