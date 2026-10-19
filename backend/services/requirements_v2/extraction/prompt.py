@@ -18,9 +18,9 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 PROMPT_CODE = "criteria_extraction_v2"
-PROMPT_VERSION = "criteria_extraction_v2-1"
-PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "criteria_extraction_v2-1.txt"
-PROMPT_SHA256 = "f2017d2879554935baa5d0d4f51d53fa0600e18858cc875d4a791c5ac0678b04"
+PROMPT_VERSION = "criteria_extraction_v2-2"
+PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "criteria_extraction_v2-2.txt"
+PROMPT_SHA256 = "837678793bdb2b022bed32104bc24812fdd9fb0864406f14864d4c7c89ffdad1"
 
 # Proposed settings. The model itself is expected to come from the model registry (stage cv_analyzer) later.
 EXTRACTION_CONFIG = MappingProxyType({
@@ -37,7 +37,7 @@ _CONTEXT_FIELDS = (
 
 
 class PromptIntegrityError(RuntimeError):
-    """The prompt file is not the pinned criteria_extraction_v2-1 text."""
+    """The prompt file is not the pinned criteria_extraction_v2-2 text."""
 
 
 def load_prompt() -> str:

@@ -197,9 +197,27 @@ def validate_structure(doc: Any) -> tuple[Issue, ...]:
     return tuple(_structure_issues(doc))
 
 
+def context_shape_issues(doc: Any) -> list[Issue]:
+    """The optional context block: absent is valid; present must be exactly the whitelisted fields with the allowed values."""
+    from services.requirements_v2.contract import CONTEXT_FIELDS, CONTEXT_KEY, CONTEXT_MAX_CHARS, CONTEXT_TEXT_FIELDS, WORK_ARRANGEMENTS
+    if not isinstance(doc, dict) or CONTEXT_KEY not in doc:
+        return []
+    ctx = doc[CONTEXT_KEY]
+    if not isinstance(ctx, dict) or set(ctx) != set(CONTEXT_FIELDS):
+        return [Issue("bad_context", f"context must be an object with exactly these fields: {list(CONTEXT_FIELDS)}.")]
+    out: list[Issue] = []
+    for name in CONTEXT_TEXT_FIELDS:
+        value = ctx[name]
+        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > CONTEXT_MAX_CHARS):
+            out.append(Issue("bad_context", f"context.{name} must be text of at most {CONTEXT_MAX_CHARS} characters, or null."))
+    if ctx["work_arrangement"] is not None and ctx["work_arrangement"] not in WORK_ARRANGEMENTS:
+        out.append(Issue("bad_context", "context.work_arrangement must be onsite, hybrid, remote or null."))
+    return out
+
+
 def validate_draft(doc: Any) -> ValidationResult:
     """Reviewable extraction draft: malformed input is an error, rule violations are review issues."""
-    structure = _structure_issues(doc)
+    structure = _structure_issues(doc) or context_shape_issues(doc)
     if structure:
         return ValidationResult(errors=tuple(structure))
     if doc.get("scoring_confirmation") is not None:
@@ -229,7 +247,7 @@ def validate_draft(doc: Any) -> ValidationResult:
 
 def validate_final(doc: Any) -> ValidationResult:
     """Final saved requirements: every structural problem and rule violation is an error."""
-    structure = _structure_issues(doc)
+    structure = _structure_issues(doc) or context_shape_issues(doc)
     if structure:
         return ValidationResult(errors=tuple(structure))
     return ValidationResult(errors=tuple(_rule_issues(doc) + _confirmation_issues(doc)))

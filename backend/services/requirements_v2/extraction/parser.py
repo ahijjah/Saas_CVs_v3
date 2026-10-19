@@ -403,6 +403,49 @@ def merge_explicit_alternatives(raw_items: list) -> list:
     return out
 
 
+# Surface forms that establish a work arrangement in the source wording. The value is a closed vocabulary; nothing else is accepted.
+_ARRANGEMENT_FORMS = {
+    "onsite": ("onsite", "on-site", "on site", "in-office", "in office", "حضوري", "في المكتب"),
+    "hybrid": ("hybrid", "هجين", "مختلط"),
+    "remote": ("remote", "عن بعد", "عن بُعد"),
+}
+
+
+def convert_context(raw: Any, jd: str, review: list[Issue]) -> dict | None:
+    """The AI's optional context, verified against the job description, or None.
+
+    The model must give one exact source sentence. It is used only when it appears in the job description, and each value is
+    kept only when it appears in that sentence (a place or a role) or its arrangement word does (work_arrangement). Anything that
+    cannot be verified is dropped and reported. Context never becomes an item or a category."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        review.append(Issue("context_invalid", "The context is not an object and was not used."))
+        return None
+    values = {"location": raw.get("location"), "work_arrangement": raw.get("work_arrangement"), "reports_to": raw.get("reports_to")}
+    if not any(v not in (None, "") for v in values.values()):
+        return None
+    source = raw.get("source_text")
+    if not isinstance(source, str) or not source.strip() or not contains_phrase(jd, source):
+        review.append(Issue("context_not_verified", "The job context was not used: its source wording was not found in the job description."))
+        return None
+    lowered = source.lower()
+    kept: dict[str, str | None] = {"location": None, "work_arrangement": None, "reports_to": None}
+    for name in ("location", "reports_to"):
+        value = values[name]
+        if isinstance(value, str) and value.strip() and value.strip().lower() in lowered:
+            kept[name] = " ".join(value.split())
+        elif value not in (None, ""):
+            review.append(Issue("context_not_verified", f"The job context {name} was not used: it does not appear in its source wording."))
+    arrangement = values["work_arrangement"]
+    if isinstance(arrangement, str) and arrangement in _ARRANGEMENT_FORMS \
+            and any(form in lowered for form in _ARRANGEMENT_FORMS[arrangement]):
+        kept["work_arrangement"] = arrangement
+    elif arrangement not in (None, ""):
+        review.append(Issue("context_not_verified", "The job context work arrangement was not used: it is not stated in its source wording."))
+    return kept if any(v is not None for v in kept.values()) else None
+
+
 def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[str]], str] = new_item_id,
                       require_classification_acknowledgment: bool = True,
                       merge_alternatives: bool = True) -> ExtractionResult:
@@ -482,6 +525,10 @@ def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[s
                 isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in proposed.values()):
             review.append(Issue("category_weights_ignored_no_required_items",
                                 "The AI proposed category weights but no category has a required item; all weights are 0."))
+
+    context = convert_context(ai.get("context"), jd, review)
+    if context is not None:                               # optional, non-scoring; only when verified
+        doc["context"] = context
 
     checked = validate_draft(doc)
     if checked.errors:                                    # defensive: the builder above must not produce these

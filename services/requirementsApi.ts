@@ -31,11 +31,18 @@ export interface ReadinessReason {
   item_id: string | null;
 }
 
+// Optional job context. Read-only and never scored: it is not a category and has no effect on weights or readiness.
+export interface RequirementsContext {
+  location: string | null;
+  work_arrangement: 'onsite' | 'hybrid' | 'remote' | null;
+  reports_to: string | null;
+}
+
 export interface RequirementsView {
   job_id: string;
   requirements_revision: number;
   schema_version: number;
-  document: { schema_version: number; categories: Record<string, RequirementsCategory> };
+  document: { schema_version: number; categories: Record<string, RequirementsCategory>; context?: RequirementsContext | null };
   review: {
     readiness: { state: string; can_proceed: boolean; scoring_mode: string | null; reasons: ReadinessReason[] };
     confirmation: { status: string; confirmed_at: string | null };

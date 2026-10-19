@@ -60,9 +60,17 @@ class CategoryOut(_Strict):
     items: list[ItemOut]
 
 
+class ContextOut(_Strict):
+    """Optional job context. Read-only and never scored."""
+    location: str | None
+    work_arrangement: Literal["onsite", "hybrid", "remote"] | None
+    reports_to: str | None
+
+
 class DocumentOut(_Strict):
     schema_version: int
     categories: dict[CategoryName, CategoryOut]
+    context: ContextOut | None = None
 
 
 # ---- response: the read-only review, one section per EditView part ----

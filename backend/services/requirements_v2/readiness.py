@@ -177,9 +177,22 @@ def carry_confirmation(stored: dict | None, incoming: dict) -> dict:
     return out
 
 
+def carry_context(stored: dict | None, incoming: dict) -> dict:
+    """The job context is server-owned: the stored block (if any) replaces whatever the save sent, and a block the client
+    adds is dropped. Context never changes scoring, weights, readiness or classification, so it is copied through untouched."""
+    from services.requirements_v2.contract import CONTEXT_KEY
+    if not isinstance(incoming, dict):
+        return incoming
+    out = copy.deepcopy(incoming)
+    out.pop(CONTEXT_KEY, None)
+    if isinstance(stored, dict) and stored.get(CONTEXT_KEY) is not None:
+        out[CONTEXT_KEY] = copy.deepcopy(stored[CONTEXT_KEY])
+    return out
+
+
 def carry_server_owned(stored: dict | None, incoming: dict) -> dict:
     """carry_confirmation + carry_classification_review + carry_structure_review + carry_structural_review: the single call an API
     save should make to rebuild all server-owned state from the TRUSTED stored document. Everything the client sent for these keys
     is discarded. The structural block is carried last, on its own key, so the order of the earlier carries is unchanged."""
-    out = carry_structure_review(stored, carry_classification_review(stored, carry_confirmation(stored, incoming)))
+    out = carry_structure_review(stored, carry_classification_review(stored, carry_confirmation(stored, carry_context(stored, incoming))))
     return carry_structural_review(stored, out)

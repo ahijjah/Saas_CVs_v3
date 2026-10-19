@@ -98,6 +98,15 @@ NEEDS_STRUCTURAL_REVIEW = "needs_structural_review"   # an open structural findi
 READINESS_STATES = (READY, NEEDS_ITEMS, NEEDS_CLASSIFICATION_REVIEW, NEEDS_STRUCTURE_REVIEW, NEEDS_STRUCTURAL_REVIEW,
                     NEEDS_CONFIRMATION, NEEDS_REVIEW)
 
+# Optional job context (not scored). A top-level block next to `categories`, never an item and never a category. Only these fields
+# exist; any other key is refused. It has no effect on weights, readiness, scoring or classification, and it is server-owned: it
+# comes from the extraction and is kept by every save (readiness.carry_context). Documents without it are valid.
+CONTEXT_KEY = "context"
+CONTEXT_FIELDS = ("location", "work_arrangement", "reports_to")
+CONTEXT_TEXT_FIELDS = ("location", "reports_to")
+WORK_ARRANGEMENTS = ("onsite", "hybrid", "remote")
+CONTEXT_MAX_CHARS = 200
+
 SCORING_WEIGHTED = "weighted"
 SCORING_NONE = "none"
 

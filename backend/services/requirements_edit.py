@@ -825,7 +825,11 @@ def _project_document(doc: dict) -> dict:
             projected["experience"] = None if exp is None else {"subject": exp["subject"], "min_years": exp["min_years"]}
             items.append(projected)
         categories[c] = {"weight": doc["categories"][c]["weight"], "items": items}
-    return {"schema_version": doc["schema_version"], "categories": categories}
+    projected = {"schema_version": doc["schema_version"], "categories": categories}
+    context = doc.get("context")
+    if isinstance(context, dict):          # optional, non-scoring: the whitelisted fields only
+        projected["context"] = {k: context.get(k) for k in ("location", "work_arrangement", "reports_to")}
+    return projected
 
 
 def _readiness_view(doc: dict, original: dict | None, jd_text: str | None) -> ReadinessView:

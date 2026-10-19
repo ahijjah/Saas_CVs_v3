@@ -23,6 +23,9 @@ OUTPUT FORMAT (exactly these top-level keys; JSON keys and enum values stay in E
   "non_scoreable_requirements": [CONDITION, ...],
   "post_hiring_conditions": [CONDITION, ...],
   "informational_items": [CONDITION, ...],
+  "context": {"location": null | "<place of work, exactly as written>", "work_arrangement": null | "onsite" | "hybrid" | "remote",
+              "reports_to": null | "<role this position reports to, exactly as written>",
+              "source_text": null | "<exact words copied from the job description that state these>"},
   "warnings": ["<short note>", ...]
 }
 
@@ -77,6 +80,7 @@ RULES
 12. scoreability: "scoreable" when at least one requirement exists; "open_broad" when the description says the role is open to all backgrounds and states no requirements; "insufficient" when the description is too thin to extract anything. With no requirements, return empty arrays.
 
 13. Write text, reason and warnings in the language of the job description (Arabic descriptions get Arabic text). warnings: ambiguities or conflicts you noticed (for example two contradictory experience requirements); an empty array if none.
+14. Job context (not scored). The place of work, the work arrangement and the role this position reports to go in "context", and only when the job description states them explicitly. work_arrangement is "onsite", "hybrid" or "remote" only when the words say so; otherwise null. Copy location and reports_to exactly as written. source_text is one exact span of the job description that states them; if any value is not stated explicitly, its field is null. Context values are never requirements: do not add them to a category, do not change any item for them, and do not infer a place from a company name or a manager from a department.
 
 EXAMPLES (illustrative only; never copy them into your answer)
 
