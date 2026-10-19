@@ -479,6 +479,9 @@ const T = {
   },
 };
 
+const CRITERIA_POLL_MS = 5000;
+const CRITERIA_POLL_LIMIT = 120;
+
 export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, onOpenApplication, addToast }) => {
   const { lang, isAr } = useLanguage();
   const t = T[lang];
@@ -495,6 +498,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const isRequirementsV2 = details?.requirements_schema_version === 2;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 403 or 404 on the job itself. Rendered as its own state; no job data is ever shown with it.
+  const [accessError, setAccessError] = useState<number | null>(null);
 
   useEffect(() => {
     const title = details?.job_title || (isAr ? 'تفاصيل الوظيفة' : 'Job Details');
@@ -516,6 +521,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   // Criteria extraction polling tick — increments after each poll so the
   // effect always re-schedules even when status string stays unchanged.
   const [criteriaPolltick, setCriteriaPolltick] = useState(0);
+  // Bounded polling of requirements extraction: CRITERIA_POLL_LIMIT polls of CRITERIA_POLL_MS each (about 10 minutes). After that the
+  // page stops and says so; "Check again" resumes it. Counted in a ref so that restarting never runs two timers.
+  const criteriaPollCountRef = useRef(0);
+  const [criteriaPollsExhausted, setCriteriaPollsExhausted] = useState(false);
 
   // Manual CV upload state
   const [uploadedCVs, setUploadedCVs] = useState<UploadedCV[]>([]);
@@ -578,6 +587,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       if (!jobId) return;
       setLoading(true);
       setError(null);
+      setAccessError(null);
       try {
         const data = await apiService.get(
           WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL,
@@ -591,52 +601,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           throw new Error('No data received for this job ID.');
         }
       } catch (err: any) {
+        // No sample job is ever shown in place of a real one. A 403 or 404 renders its own state; anything else is an error with a retry.
+        const status = typeof err?.status === 'number' ? err.status : null;
+        setDetails(null);
+        if (status === 403 || status === 404) {
+          setAccessError(status);
+          return;
+        }
         const errorMsg =
           err.name === 'TypeError' && err.message === 'Failed to fetch'
             ? 'Network connection error.'
             : err.message || 'Failed to load job details.';
         setError(errorMsg);
         addToast(errorMsg, 'error');
-        // Provide stub data for offline development
-        setDetails({
-          job_id: jobId,
-          job_code: 'JB-772',
-          job_title: 'Senior Frontend Engineer',
-          job_client: 'Global Finance Solutions',
-          job_status: 'Active',
-          job_type: 'Full-time',
-          location: 'London (Hybrid)',
-          posted_date: '2023-10-15',
-          closing_date: '2023-11-30',
-          ingestion_note: '',
-          applications_total: 142,
-          applications_qualified: 24,
-          applications_partial: 45,
-          applications_rejected: 73,
-          applications_above_threshold: 18,
-          applications_below_threshold: 102,
-          applications_recommended: 12,
-          description: 'We are seeking a highly skilled Senior Frontend Engineer to lead the development of our core product interface.',
-          analysis_json: {
-            skills: {
-              required: ['React', 'TypeScript', 'Tailwind CSS', 'State Management (Redux/Zustand)'],
-              preferred: ['Next.js', 'GraphQL', 'Jest/Cypress', 'Web Accessibility (WCAG)'],
-            },
-            experience: {
-              minimum_years: 5,
-              relevant_roles: ['Senior Frontend Engineer', 'Lead Developer', 'React Specialist'],
-              key_responsibilities: ['Architect scalable frontend components', 'Optimizing application performance', 'Mentoring junior engineering staff'],
-            },
-            education: {
-              minimum_level: "Bachelor's Degree",
-              fields_of_study: ['Computer Science', 'Software Engineering', 'Information Technology'],
-            },
-            certifications: ['AWS Certified Developer', 'Meta Frontend Professional'],
-            domain_knowledge: ['FinTech', 'Enterprise SaaS', 'Data Visualization'],
-            other_requirements: ['Strong communication skills', 'Agile/Scrum experience'],
-            scoring_weights: { skills: 40, experience: 30, education: 10, certifications: 5, soft_skills: 10, domain_knowledge: 5 },
-          },
-        });
       } finally {
         setLoading(false);
       }
@@ -652,11 +629,25 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     }
   }, [details]);
 
-  // ── Poll job analysis status every 5 s while pending/processing ────────────
+  // ── Poll job analysis status while pending/processing (bounded, one timer at a time) ─────────────────────────────
+  useEffect(() => {
+    criteriaPollCountRef.current = 0;
+    setCriteriaPollsExhausted(false);
+  }, [jobId]);
+
   useEffect(() => {
     const status = details?.criteria_extraction_status;
-    if (status !== 'pending' && status !== 'processing') return;
+    if (status !== 'pending' && status !== 'processing') {
+      criteriaPollCountRef.current = 0;
+      setCriteriaPollsExhausted(false);
+      return;
+    }
+    if (criteriaPollCountRef.current >= CRITERIA_POLL_LIMIT) {
+      setCriteriaPollsExhausted(true);
+      return;
+    }
     const timer = setTimeout(async () => {
+      criteriaPollCountRef.current += 1;
       try {
         const data = await apiService.get(
           WEBHOOK_CONFIG.GET_JOB_DETAILS_WEBHOOK_URL,
@@ -667,11 +658,18 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           const payload = Array.isArray(data) ? data[0] : data;
           setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis });
         }
-      } catch { /* ignore transient polling errors */ }
+      } catch { /* ignore transient polling errors; the next poll retries */ }
       setCriteriaPolltick(t => t + 1); // always re-trigger effect
-    }, 5000);
+    }, CRITERIA_POLL_MS);
     return () => clearTimeout(timer);
   }, [criteriaPolltick, details?.criteria_extraction_status, jobId, auth.token]);
+
+  // Check again: a new bounded run of polls, from the current state.
+  const resumeCriteriaPolling = useCallback(() => {
+    criteriaPollCountRef.current = 0;
+    setCriteriaPollsExhausted(false);
+    setCriteriaPolltick(t => t + 1);
+  }, []);
 
   // ── Fetch uploaded CVs ──────────────────────────────────────────────────────
   const fetchUploadedCVs = useCallback(async (): Promise<UploadedCV[]> => {
@@ -777,6 +775,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         criteria_retry_allowed: false,
         criteria_retry_blocked_reason: null,
       } : prev);
+      criteriaPollCountRef.current = 0;
+      setCriteriaPollsExhausted(false);
       setCriteriaPolltick(0);
       addToast('AI analysis retry queued.', 'success');
     } catch (err: any) {
@@ -1268,6 +1268,21 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     );
   }
 
+  if (accessError && !details) {
+    const notFound = accessError === 404;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center" data-testid={notFound ? 'job-not-found' : 'job-unauthorized'}>
+        <div className="bg-slate-50 text-slate-800 p-6 rounded-2xl mb-6 max-w-md">
+          <p className="font-bold mb-2">{notFound ? 'Job not found' : 'Unauthorized'}</p>
+          <p className="text-sm opacity-80">{notFound
+            ? 'This job does not exist or is not available to your account.'
+            : 'You do not have permission to view this job.'}</p>
+        </div>
+        <button onClick={onBack} className="bg-primary text-white px-8 py-3 rounded-xl font-bold shadow-lg">{t.returnDashboard}</button>
+      </div>
+    );
+  }
+
   if (error && !details) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center">
@@ -1707,6 +1722,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       <div className="lg:col-span-2 space-y-6">
 
       {/* C. Job Metadata ──────────────────────────────────────────────────── */}
+      {/* Requirements V2 jobs show one authoritative analysis: the Requirements panel. This legacy summary is for non-V2 jobs only. */}
+      {!isRequirementsV2 && (
       <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2">
@@ -1918,6 +1935,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
 
       </section>
+      )}
 
       {/* D. Application Controls ──────────────────────────────────────────── */}
       {!!(details as any).job_application_controls_enabled && <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
@@ -2760,7 +2778,19 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       {/* Right column — Requirements (v2 jobs) and the legacy Evaluation Weights ────────── */}
       <div className="space-y-6">
         {isRequirementsV2 && (
-          <RequirementsPanel jobId={details.job_id} userRole={auth.user?.role} onReadinessChange={setRequirementsCanProceed} />
+          <>
+            {criteriaPollsExhausted && details.criteria_extraction_status !== 'completed' && (
+              <div role="status" data-testid="requirements-polling-timeout" className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 flex items-center justify-between gap-3">
+                <span>Requirements are still being generated. This page stopped checking automatically.</span>
+                <span className="flex gap-2">
+                  <button type="button" onClick={() => { resumeCriteriaPolling(); void fetchJobDetails(); }} className="font-bold underline">Check again</button>
+                  <button type="button" onClick={() => window.location.reload()} className="font-bold underline">Reload page</button>
+                </span>
+              </div>
+            )}
+            <RequirementsPanel jobId={details.job_id} userRole={auth.user?.role} onReadinessChange={setRequirementsCanProceed}
+              extractionStatus={details.criteria_extraction_status} />
+          </>
         )}
         <div className={`bg-white rounded-2xl border border-border shadow-sm p-6 lg:sticky lg:top-20 ${isRequirementsV2 ? 'hidden' : ''}`}>
           <div className="flex items-center justify-between mb-5">

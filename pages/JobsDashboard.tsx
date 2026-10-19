@@ -162,11 +162,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
       console.error(err);
       if (!silent) {
         addToast("Failed to fetch jobs.", "error");
-        setJobs([
-          { job_id: 'JOB-2026-00074', job_code: 'JB001', job_title: 'Senior Frontend Engineer', job_client: 'Tech Corp', job_status: 'Active', applications_total: 45, applications_qualified: 12, applications_partial: 20, applications_rejected: 13 },
-          { job_id: 'JOB-2026-00075', job_code: 'JB002', job_title: 'Backend Developer', job_client: 'Data Systems', job_status: 'Active', applications_total: 30, applications_qualified: 5, applications_partial: 10, applications_rejected: 15 },
-          { job_id: 'JOB-2026-00076', job_code: 'JB003', job_title: 'UX Designer', job_client: 'Creative Lab', job_status: 'Closed', applications_total: 15, applications_qualified: 8, applications_partial: 4, applications_rejected: 3 },
-        ]);
+        setJobs([]); // never sample data in place of the real list
       }
     } finally {
       setLoading(false);

@@ -34,6 +34,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
@@ -332,7 +333,8 @@ def _convert_conditions(raw: Any, list_name: str, jd: str, review: list[Issue], 
 
 def parse_response(raw_text: Any, jd_text: str, finish_reason: str | None = None, *,
                    id_factory: Callable[[Iterable[str]], str] = new_item_id,
-                   require_classification_acknowledgment: bool = True) -> ExtractionResult:
+                   require_classification_acknowledgment: bool = True,
+                   merge_alternatives: bool = True) -> ExtractionResult:
     """Convert the raw model output for `jd_text` into an ExtractionResult (see the module doc).
     `require_classification_acknowledgment` is the admin policy, passed explicitly (default: required); it only
     affects the readiness reported on the result."""
@@ -345,11 +347,65 @@ def parse_response(raw_text: Any, jd_text: str, finish_reason: str | None = None
     except ValueError as exc:
         return _failed("invalid_json", f"The model output is not valid JSON: {exc}")
     return process_ai_output(ai, jd_text, id_factory=id_factory,
-                             require_classification_acknowledgment=require_classification_acknowledgment)
+                             require_classification_acknowledgment=require_classification_acknowledgment,
+                             merge_alternatives=merge_alternatives)
+
+
+# An explicit OR connector in the source sentence ("X or Y", "X أو Y"). The word "and" is not a connector: "X and Y" stays two requirements.
+_OR_CONNECTOR = re.compile(r"(?<![^\W_])or(?![^\W_])|أو", re.IGNORECASE)
+
+
+def merge_explicit_alternatives(raw_items: list) -> list:
+    """Merge AI items that are alternatives of one requirement into ONE item with alternatives.
+
+    Two or more items are alternatives when they come from the same source sentence, have the same importance, and that
+    sentence joins them with an explicit OR. Items that already carry alternatives, structured experience, or no source
+    sentence are left alone. Nothing is matched on particular words: the rule is the shared sentence plus the OR connector.
+    The merged item keeps the first item's id position, its source sentence and its cue; its text is the alternatives joined by
+    " or ", and its alternatives list holds each alternative's own wording."""
+    groups: dict[tuple[str, str], list[int]] = {}
+    for index, raw in enumerate(raw_items):
+        if not isinstance(raw, dict) or raw.get("alternatives") or raw.get("experience") is not None:
+            continue
+        source = raw.get("source_text")
+        importance = raw.get("importance")
+        text = raw.get("text")
+        if not (isinstance(source, str) and source.strip() and isinstance(importance, str)
+                and isinstance(text, str) and text.strip()):
+            continue
+        groups.setdefault((" ".join(source.split()).lower(), importance.strip().lower()), []).append(index)
+
+    merged_at: dict[int, dict] = {}
+    absorbed: set[int] = set()
+    for (source_key, _importance), indexes in groups.items():
+        if len(indexes) < 2 or not _OR_CONNECTOR.search(source_key):
+            continue
+        members = [raw_items[i] for i in indexes]
+        texts = []
+        for member in members:
+            cleaned = " ".join(member["text"].split())
+            if cleaned.lower() not in {t.lower() for t in texts}:
+                texts.append(cleaned)
+        if len(texts) < 2:
+            continue
+        head = dict(members[0])
+        head["text"] = " or ".join(texts)
+        head["alternatives"] = texts
+        head["importance_cue"] = next((m.get("importance_cue") for m in members if m.get("importance_cue")), None)
+        merged_at[indexes[0]] = head
+        absorbed.update(indexes[1:])
+
+    out: list = []
+    for index, raw in enumerate(raw_items):
+        if index in absorbed:
+            continue
+        out.append(merged_at.get(index, raw))
+    return out
 
 
 def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[str]], str] = new_item_id,
-                      require_classification_acknowledgment: bool = True) -> ExtractionResult:
+                      require_classification_acknowledgment: bool = True,
+                      merge_alternatives: bool = True) -> ExtractionResult:
     if not isinstance(ai, dict):
         return _failed("not_an_object", "The model output is not a JSON object.")
     raw_copy = copy.deepcopy(ai)
@@ -380,6 +436,8 @@ def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[s
             review.append(Issue("category_not_a_list", f"'{category}' is not a list; kept in the unmapped list",
                                 category=category))
             value = []
+        if merge_alternatives:
+            value = merge_explicit_alternatives(value)
         items = [i for pos, raw in enumerate(value)
                  if (i := _convert_item(raw, category, pos, jd, new_id, review, unmapped, classification)) is not None]
         categories[category] = {"weight": 0, "items": items}
