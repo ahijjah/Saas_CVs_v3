@@ -104,7 +104,7 @@ def test_the_job_creation_path_is_the_only_code_formatter_and_it_uses_the_sequen
     assert "nextval('cv_analyzer.job_code_seq')" in body
     assert not re.search(r"count\(", body, re.I), "a count generates codes"
     workers_and_others = []
-    for path in BACKEND.rglob("*.py"):
+    for path in sorted(BACKEND.rglob("*.py")):          # sorted: directory order differs between machines
         if "tests" in path.parts or "__pycache__" in path.parts:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
