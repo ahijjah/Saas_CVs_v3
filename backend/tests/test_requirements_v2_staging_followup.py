@@ -227,6 +227,12 @@ def test_headings_and_cue_only_lines_are_not_statements_and_conditions_count_as_
     assert missed_preferred_statements(jd, doc, conditions) == ()
 
 
+def test_a_cue_joined_to_another_word_by_a_hyphen_is_not_a_statement():
+    doc = C.empty_requirements()
+    assert missed_preferred_statements("SCENARIO-PREFERRED\nA non-preferred vendor list.\n", doc) == ()
+    assert missed_preferred_statements("Role.\nNice-to-have: Docker.\n", doc) == ("Nice-to-have: Docker.",)
+
+
 def test_missing_context_sentences_are_named_only_while_there_is_no_context():
     doc = C.empty_requirements()
     assert HYBRID in missed_context_statements(JD, doc)

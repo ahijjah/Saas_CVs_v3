@@ -24,7 +24,8 @@ _PREFERRED_EN = (r"preferred", r"preferably", r"desirable", r"nice[- ]to[- ]have
                  r"(?:an|is|are) advantage", r"advantageous", r"ideally", r"(?:an|is|are) asset", r"(?:a|is) bonus",
                  r"optional")
 _PREFERRED_AR = ("يفضل", "مفضل", "تفضل", "ميزة", "أفضلية", "افضلية", "مرغوب", "اختيارية")
-_PREFERRED_RE = re.compile(r"(?<![^\W_])(?:" + "|".join(_PREFERRED_EN) + r")(?![^\W_])|" + "|".join(_PREFERRED_AR))
+# A cue joined to another word by a hyphen ("non-preferred", "SCENARIO-PREFERRED") is part of that word, not a statement.
+_PREFERRED_RE = re.compile(r"(?<![^\W_]|-)(?:" + "|".join(_PREFERRED_EN) + r")(?![^\W_])|" + "|".join(_PREFERRED_AR))
 
 # A reporting line or a work arrangement (the closed vocabulary the context block accepts).
 _CONTEXT_RE = re.compile(
