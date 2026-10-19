@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  canEditRequirements, getRequirements, ImportanceLevel, RequirementsApiError, RequirementsCategory, RequirementsOperation,
-  RequirementsView, saveRequirementEdits,
+  canEditRequirements, getRequirements, ImportanceLevel, RequirementsApiError, RequirementsCategory, RequirementsContext,
+  RequirementsOperation, RequirementsView, saveRequirementEdits,
 } from '../services/requirementsApi';
 import {
   acknowledgeWarning, buildFindingOperation, buildOperations, buildReorderOperation, CONFIRM_NO_NUMERIC_SCORE, confirmStructure,
@@ -28,6 +28,13 @@ const READINESS_LABELS: Record<string, string> = {
   needs_structural_review: 'Needs structural review',
 };
 
+const ARRANGEMENT_LABELS: Record<'onsite' | 'hybrid' | 'remote', string> = { onsite: 'Onsite', hybrid: 'Hybrid', remote: 'Remote' };
+
+// Shown only when the job context holds at least one value; a document without context shows nothing for it.
+function hasJobContext(context: RequirementsContext | null | undefined): context is RequirementsContext {
+  return !!context && (!!context.location || !!context.work_arrangement || !!context.reports_to);
+}
+
 const DECISION_LABELS: Record<FindingDecision, string> = {
   fixed: 'Fixed: the requirements now have the correct structure',
   accepted_as_is: 'Accepted as is',
@@ -43,11 +50,16 @@ interface Props {
   jobId: string;
   userRole: string | null | undefined;
   onReadinessChange?: (canProceed: boolean) => void;
+  // The job's requirements extraction status. The panel reloads on every change, so a completed or retried extraction
+  // replaces the waiting state without a browser refresh.
+  extractionStatus?: string | null;
 }
+
+const EXTRACTION_IN_PROGRESS = new Set(['pending', 'processing']);
 
 let newItemCounter = 0;
 
-export default function RequirementsPanel({ jobId, userRole, onReadinessChange }: Props) {
+export default function RequirementsPanel({ jobId, userRole, onReadinessChange, extractionStatus }: Props) {
   const canEdit = canEditRequirements(userRole);
   const [view, setView] = useState<RequirementsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -75,7 +87,16 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange }
     }
   }, [jobId, onReadinessChange]);
 
+  // Reload when the extraction status changes (pending -> completed, failed -> pending on retry, and so on).
+  const lastStatusRef = useRef(extractionStatus);
   useEffect(() => {
+    if (lastStatusRef.current === extractionStatus) return;
+    lastStatusRef.current = extractionStatus;
+    void load();
+  }, [extractionStatus, load]);
+
+  useEffect(() => {
+    lastStatusRef.current = extractionStatus;
     setView(null);
     setItemDrafts({});
     setCategoryDrafts({});
@@ -154,9 +175,15 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange }
   };
 
   if (loadError && !view) {
+    const waiting = !!extractionStatus && EXTRACTION_IN_PROGRESS.has(extractionStatus);
     return (
       <section className="bg-white rounded-xl border border-slate-200 p-6" data-testid="requirements-unavailable">
-        <p className="text-sm text-slate-700" role="status">{loadError}</p>
+        <p className="text-sm text-slate-700" role="status">
+          {waiting ? 'The requirements are being generated. They appear here when extraction completes.' : loadError}
+        </p>
+        {!waiting && (
+          <button type="button" onClick={() => void load()} className="mt-3 text-sm font-bold text-primary underline">Reload requirements</button>
+        )}
       </section>
     );
   }
@@ -170,6 +197,7 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange }
 
   const { readiness, classification, structural, structure } = view.review;
   const readinessLabel = READINESS_LABELS[readiness.state] ?? 'Not ready';
+  const context = hasJobContext(view.document.context) ? view.document.context : null;
   const openWarnings = classification.open_warnings.filter((w) => !w.acknowledged);
 
   return (
@@ -186,6 +214,21 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange }
           {readinessLabel}
         </span>
       </header>
+
+      {context && (
+        <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm" aria-labelledby="job-context-heading" data-testid="job-context">
+          <h3 id="job-context-heading" className="font-medium text-slate-900">Job context</h3>
+          <p className="text-xs text-slate-500 mb-2">Not scored. Shown for reference only.</p>
+          <dl className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {context.location && (<div><dt className="text-xs text-slate-500">Location</dt><dd className="text-slate-800" dir="auto">{context.location}</dd></div>)}
+            {context.work_arrangement && (
+              <div><dt className="text-xs text-slate-500">Work arrangement</dt>
+                <dd className="text-slate-800">{ARRANGEMENT_LABELS[context.work_arrangement]}</dd></div>
+            )}
+            {context.reports_to && (<div><dt className="text-xs text-slate-500">Reports to</dt><dd className="text-slate-800" dir="auto">{context.reports_to}</dd></div>)}
+          </dl>
+        </section>
+      )}
 
       {!readiness.can_proceed && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900" role="status" data-testid="scoring-blocked">

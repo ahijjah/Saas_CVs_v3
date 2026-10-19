@@ -52,7 +52,9 @@ def _block(jd: str, kind: str, source: str, tokens, eid: str = "exp-1", **overri
 def _draft(jd: str, items: list[dict]):
     raw = json.dumps({"categories": {"skills": items}, "category_weights": {"skills": 100}, "scoring_confirmation": None},
                      ensure_ascii=False)
-    res = parse_response(raw, jd)
+    # Split alternatives are the input under test here: the parser's own alternatives merge is turned off, so the document keeps
+    # the split that the structural review must find (a split can also come from a recruiter's edit).
+    res = parse_response(raw, jd, merge_alternatives=False)
     assert res.status == "draft", res.errors
     return res.requirements
 

@@ -31,7 +31,10 @@ async function handleResponse(response: Response) {
     // Throw an error with the backend's specific message if available
     const detail = Array.isArray(data?.detail) ? data.detail.map((d: any) => d.msg).join(', ') : data?.detail;
     const errorMsg = detail || data?.message || data?.error || `API Error: ${response.status} ${response.statusText}`;
-    throw new Error(errorMsg);
+    // The HTTP status travels with the error so that callers can tell "not allowed" and "not found" from a transient failure.
+    const error = new Error(errorMsg) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
 
   return data;
