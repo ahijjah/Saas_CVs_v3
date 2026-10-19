@@ -44,11 +44,12 @@ def _ai_result():
             "red_flags": [], "evaluation_notes": "fixture", "interview_questions": [], "reasoning": {}, "score_details": {}}
 
 
-def _build(jd, categories, weights):
+def _build(jd, categories, weights, *, merge_alternatives=True):
     cats = {c: [] for c in C.CATEGORIES}
     cats.update(categories)
     raw = {"categories": cats, "category_weights": weights, "scoreability": {"status": "scoreable"}}
-    parsed = parse_response(json.dumps(raw, ensure_ascii=False), jd, "stop", id_factory=v2_worker.stable_id_factory(jd))
+    parsed = parse_response(json.dumps(raw, ensure_ascii=False), jd, "stop", id_factory=v2_worker.stable_id_factory(jd),
+                            merge_alternatives=merge_alternatives)
     doc, expectations = v2_worker.finalise_document(v2_worker.checked_document(parsed), jd)
     return doc, parsed.original, expectations
 
@@ -79,7 +80,7 @@ def _classification_warning():
 def _structural_split(jd=SPLIT_JD, source="Python or Java is required", alternatives=("Python", "Java")):
     items = [{"text": t, "importance": "required", "source_text": source, "alternatives": list(alternatives), "origin": "stated"}
              for t in alternatives]
-    return _build(jd, {"skills": items}, {"skills": 100})
+    return _build(jd, {"skills": items}, {"skills": 100}, merge_alternatives=False)   # the split is the fixture: the detector must see it
 
 
 def _pending_structure():

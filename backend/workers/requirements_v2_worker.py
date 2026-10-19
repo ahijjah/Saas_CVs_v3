@@ -155,10 +155,10 @@ async def _resolve_model(Session):
         return await resolve_stage_client(db, STAGE)
 
 
-async def _request_extraction(description: str, resolved):
+async def _request_extraction(description: str, resolved, missed_statements=()):
     """One chat-completion call with the pinned request, through the resolved client. Returns (content, finish_reason).
-    Tests replace this seam."""
-    request = build_request(description, model=resolved.model_name)
+    `missed_statements` is only given on the one repair request (see _extract_once). Tests replace this seam."""
+    request = build_request(description, model=resolved.model_name, missed_statements=missed_statements)
     response = await resolved.client.chat.completions.create(**request)
     choice = response.choices[0]
     return choice.message.content, choice.finish_reason
@@ -325,14 +325,36 @@ async def _extract_async(job_id: str, description: str, Session, claim: dict) ->
         raise
 
 
+async def _extract_once(description: str, resolved, retired, missed=()):
+    """One model request and its parse. Ids come from a fresh stable factory, so a repeat of the same description gives the same ids."""
+    if missed:
+        content, finish_reason = await _request_extraction(description, resolved, missed_statements=missed)
+    else:
+        content, finish_reason = await _request_extraction(description, resolved)
+    return parse_response(content, description, finish_reason, id_factory=stable_id_factory(description, reserved=retired))
+
+
+async def _extract_checked(description: str, resolved, retired, job_id: str = ""):
+    """The extraction result to store. A valid answer that left stated sentences uncovered is asked for once more with those sentences
+    named, and the better answer is kept. A stated preferred requirement that is still uncovered raises InvalidModelOutput: the
+    extraction does not report success without it. A missed context sentence is only reported to the model, never a failure."""
+    result = await _extract_once(description, resolved, retired)
+    if result.ok and (result.missed_preferred or result.missed_context):
+        again = await _extract_once(description, resolved, retired, missed=(*result.missed_preferred, *result.missed_context))
+        if again.ok and (len(again.missed_preferred), len(again.missed_context)) <= (len(result.missed_preferred), len(result.missed_context)):
+            result = again
+    if result.ok and result.missed_preferred:
+        logger.error("[job:%s] %d stated preferred sentence(s) are not covered by the extraction.", job_id, len(result.missed_preferred))
+        raise InvalidModelOutput("preferred_statement_missing")
+    return result
+
+
 async def _attempt(job_id, description, Session, claim, token, retired, text, set_rls_context) -> None:
     resolved = await _resolve_model(Session)
     if resolved is None:
         raise ModelNotConfigured(STAGE)
 
-    content, finish_reason = await _request_extraction(description, resolved)
-    result = parse_response(content, description, finish_reason,
-                            id_factory=stable_id_factory(description, reserved=retired))
+    result = await _extract_checked(description, resolved, retired, job_id)
     doc, expectations = finalise_document(checked_document(result, retired=retired), description)
     analysis = result.analysis
     analysis["requirements"] = doc

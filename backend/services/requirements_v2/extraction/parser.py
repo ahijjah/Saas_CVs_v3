@@ -46,9 +46,10 @@ from services.requirements_v2.contract import (
     CATEGORIES, EXPERIENCE_CATEGORY, IMPORTANCE_PREFERRED, IMPORTANCE_REQUIRED, MAX_REQUIRED_PER_CATEGORY,
     ORIGIN_FROM_RESPONSIBILITIES, ORIGIN_STATED, SCHEMA_VERSION, Issue, is_int, make_item, new_item_id,
 )
+from services.requirements_v2.extraction.completeness import missed_context_statements, missed_preferred_statements
 from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA256, PROMPT_VERSION
 from services.requirements_v2.extraction.text import (
-    contains_phrase, cue_relationship, locate_quote, locate_span, numbers_in,
+    contains_phrase, cue_relationship, locate_quote, locate_span, normalize, numbers_in,
 )
 from services.requirements_v2.readiness import Readiness, compute_readiness
 from services.requirements_v2.validation import validate_draft
@@ -92,6 +93,8 @@ class ExtractionResult:
     ai_warnings: tuple[str, ...] = ()
     unmapped: tuple[dict, ...] = ()                          # AI content that could not be represented
     raw_ai_output: dict | None = None                        # the parsed AI JSON exactly as received
+    missed_preferred: tuple[str, ...] = ()                   # stated preferred sentences that no item / condition / context covers
+    missed_context: tuple[str, ...] = ()                     # reporting-line / work-arrangement sentences while there is no context
 
     @property
     def ok(self) -> bool:
@@ -351,56 +354,152 @@ def parse_response(raw_text: Any, jd_text: str, finish_reason: str | None = None
                              merge_alternatives=merge_alternatives)
 
 
-# An explicit OR connector in the source sentence ("X or Y", "X أو Y"). The word "and" is not a connector: "X and Y" stays two requirements.
+# An explicit OR connector ("X or Y", "X أو Y"). The word "and" is not a connector: "X and Y" stays two requirements.
 _OR_CONNECTOR = re.compile(r"(?<![^\W_])or(?![^\W_])|أو", re.IGNORECASE)
+_AND_CONNECTOR = re.compile(r"(?<![^\W_])and(?![^\W_])|&|(?<!\S)و(?!\S)", re.IGNORECASE)
+_LIST_COMMA = r"[,،;]"
+# What may sit between two alternatives in the source wording: only an OR ("A or B", "A, or B", "A أو B") or a list comma.
+_GAP_OR = re.compile(rf"\s*(?:{_LIST_COMMA}\s*)?(?:or|أو)\s*", re.IGNORECASE)
+_GAP_COMMA = re.compile(rf"\s*{_LIST_COMMA}\s*")
 
 
-def merge_explicit_alternatives(raw_items: list) -> list:
-    """Merge AI items that are alternatives of one requirement into ONE item with alternatives.
+def _meaningful_experience(value: Any) -> bool:
+    """A structured experience object that actually carries a subject or a duration. An empty object does not."""
+    return isinstance(value, dict) and any(v not in (None, "", 0) for v in value.values())
 
-    Two or more items are alternatives when they come from the same source sentence, have the same importance, and that
-    sentence joins them with an explicit OR. Items that already carry alternatives, structured experience, or no source
-    sentence are left alone. Nothing is matched on particular words: the rule is the shared sentence plus the OR connector.
-    The merged item keeps the first item's id position, its source sentence and its cue; its text is the alternatives joined by
-    " or ", and its alternatives list holds each alternative's own wording."""
-    groups: dict[tuple[str, str], list[int]] = {}
+
+def _mergeable(raw: Any) -> bool:
+    """An item that can be one alternative of a requirement: it has source wording and a stated importance, no structured
+    experience, and either no alternatives or a valid list of its own (it then contributes them)."""
+    if not (isinstance(raw, dict) and not _meaningful_experience(raw.get("experience"))
+            and isinstance(raw.get("source_text"), str) and raw["source_text"].strip()
+            and isinstance(raw.get("importance"), str) and isinstance(raw.get("text"), str) and raw["text"].strip()):
+        return False
+    declared = raw.get("alternatives")
+    return declared in (None, []) or (isinstance(declared, list) and len(declared) >= 2
+                                      and all(isinstance(a, str) and a.strip() for a in declared))
+
+
+def _options(raw: dict) -> list[str]:
+    declared = raw.get("alternatives")
+    if isinstance(declared, list) and declared:
+        return [" ".join(a.split()) for a in declared]
+    return [" ".join(raw["text"].split())]
+
+
+def _overlap_groups(candidates: list[dict]) -> list[list[dict]]:
+    """Candidates whose importance matches and whose source wording overlaps in the job description (or, when a source cannot be
+    located, is the same wording). Sorted so that the groups come out in the order of their first member."""
+    groups: list[list[dict]] = []
+    for candidate in candidates:
+        for group in groups:
+            if group[0]["importance"] != candidate["importance"]:
+                continue
+            if any(_same_region(member, candidate) for member in group):
+                group.append(candidate)
+                break
+        else:
+            groups.append([candidate])
+    return groups
+
+
+def _same_region(a: dict, b: dict) -> bool:
+    if a["span"] is not None and b["span"] is not None:
+        return a["span"][0] < b["span"][1] and b["span"][0] < a["span"][1]
+    return a["span"] is None and b["span"] is None and a["key"] == b["key"]
+
+
+def _chains(group: list[dict], jd: str) -> list[list[dict]]:
+    """Members of one source region that are alternatives of each other: consecutive options joined only by OR ("A or B",
+    "A, B or C"). A member joined by "and", or by nothing, is not in the chain, so "A or B and C" keeps C separate."""
+    located = [m for m in group if m["span"] is not None]
+    if located:
+        lo, hi = min(m["span"][0] for m in located), max(m["span"][1] for m in located)
+        hay = normalize(jd[lo:hi])
+        taken: list[tuple[int, int]] = []
+        for member in sorted(group, key=lambda m: m["index"]):
+            option = normalize(member["raw"]["text"])
+            member["pos"] = None
+            at = hay.find(option) if option else -1
+            while at >= 0:
+                if not any(at < t_end and t_start < at + len(option) for t_start, t_end in taken):
+                    member["pos"] = (at, at + len(option))
+                    taken.append(member["pos"])
+                    break
+                at = hay.find(option, at + 1)
+        if any(not m.get("pos") for m in group):                # some option is worded differently from the source (see below)
+            return _chains_by_wording(group, hay)
+        placed = sorted(group, key=lambda m: m["pos"])
+        links = []
+        for left, right in zip(placed, placed[1:]):
+            gap = hay[left["pos"][1]:right["pos"][0]]
+            links.append("o" if _GAP_OR.fullmatch(gap) else "c" if _GAP_COMMA.fullmatch(gap) else "-")
+        chains: list[list[dict]] = []
+        for match in re.finditer(r"c*o+", "".join(links)):
+            members = placed[match.start():match.end() + 1]
+            if chains and chains[-1][-1] is members[0]:        # "A or B, C or D": the chains share B, so they are one
+                chains[-1] = chains[-1] + members[1:]
+            else:
+                chains.append(members)
+        return chains
+    return _chains_by_wording(group, group[0]["key"])
+
+
+def _chains_by_wording(group: list[dict], wording: str) -> list[list[dict]]:
+    """Options that cannot all be placed one by one inside the source wording ("Python scripting" / "PowerShell scripting" for
+    "Python or PowerShell scripting"): they are alternatives only when the shared wording has an OR and no AND at all."""
+    if len(group) >= 2 and _OR_CONNECTOR.search(wording) and not _AND_CONNECTOR.search(wording):
+        return [sorted(group, key=lambda m: m["index"])]
+    return []
+
+
+def merge_explicit_alternatives(raw_items: list, jd: str = "") -> list:
+    """Merge AI items that are alternatives of ONE requirement into one item with alternatives.
+
+    Two or more items are alternatives when they have the same importance, quote overlapping wording of the job description, and
+    that wording puts their options next to each other joined only by an explicit OR ("Python or PowerShell", "Azure, AWS or GCP",
+    Arabic "أو"). Options joined by "and" stay separate requirements. Items with structured experience are left alone. Nothing is
+    matched on particular words: the rule is position in the job description plus the OR connector.
+
+    The merged item takes the position of its first member, its importance cue, and the widest source wording its members quoted.
+    Its alternatives are the members' own options in the job description's order, and its text is those joined by the connector.
+    An item that already declares alternatives contributes them. Weights are not touched here: the merged item is one item, so it
+    counts once when the weights are set."""
+    candidates = []
     for index, raw in enumerate(raw_items):
-        if not isinstance(raw, dict) or raw.get("alternatives") or raw.get("experience") is not None:
+        if not _mergeable(raw):
             continue
-        source = raw.get("source_text")
-        importance = raw.get("importance")
-        text = raw.get("text")
-        if not (isinstance(source, str) and source.strip() and isinstance(importance, str)
-                and isinstance(text, str) and text.strip()):
-            continue
-        groups.setdefault((" ".join(source.split()).lower(), importance.strip().lower()), []).append(index)
+        source = raw["source_text"]
+        span = locate_span(jd, source) if jd else None
+        candidates.append({"index": index, "raw": raw, "importance": raw["importance"].strip().lower(), "span": span,
+                           "key": " ".join(source.split()).lower()})
 
     merged_at: dict[int, dict] = {}
     absorbed: set[int] = set()
-    for (source_key, _importance), indexes in groups.items():
-        if len(indexes) < 2 or not _OR_CONNECTOR.search(source_key):
+    for group in _overlap_groups(candidates):
+        if len(group) < 2:
             continue
-        members = [raw_items[i] for i in indexes]
-        texts = []
-        for member in members:
-            cleaned = " ".join(member["text"].split())
-            if cleaned.lower() not in {t.lower() for t in texts}:
-                texts.append(cleaned)
-        if len(texts) < 2:
-            continue
-        head = dict(members[0])
-        head["text"] = " or ".join(texts)
-        head["alternatives"] = texts
-        head["importance_cue"] = next((m.get("importance_cue") for m in members if m.get("importance_cue")), None)
-        merged_at[indexes[0]] = head
-        absorbed.update(indexes[1:])
+        for chain in _chains(group, jd):
+            options: list[str] = []
+            for member in chain:
+                for option in _options(member["raw"]):
+                    if option.lower() not in {o.lower() for o in options}:
+                        options.append(option)
+            if len(options) < 2:
+                continue
+            first = min(chain, key=lambda m: m["index"])
+            widest = max(chain, key=lambda m: (m["span"][1] - m["span"][0]) if m["span"] else 0)
+            joined = " ".join(m["key"] for m in chain)
+            arabic = "أو" in joined and not re.search(r"(?<![^\W_])or(?![^\W_])", joined)      # the job description's own connector
+            head = dict(first["raw"])
+            head["text"] = (" أو " if arabic else " or ").join(options)
+            head["alternatives"] = options
+            head["source_text"] = widest["raw"]["source_text"]
+            head["importance_cue"] = next((m["raw"].get("importance_cue") for m in chain if m["raw"].get("importance_cue")), None)
+            merged_at[first["index"]] = head
+            absorbed.update(m["index"] for m in chain if m is not first)
 
-    out: list = []
-    for index, raw in enumerate(raw_items):
-        if index in absorbed:
-            continue
-        out.append(merged_at.get(index, raw))
-    return out
+    return [merged_at.get(index, raw) for index, raw in enumerate(raw_items) if index not in absorbed]
 
 
 # Surface forms that establish a work arrangement in the source wording. The value is a closed vocabulary; nothing else is accepted.
@@ -480,7 +579,7 @@ def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[s
                                 category=category))
             value = []
         if merge_alternatives:
-            value = merge_explicit_alternatives(value)
+            value = merge_explicit_alternatives(value, jd)
         items = [i for pos, raw in enumerate(value)
                  if (i := _convert_item(raw, category, pos, jd, new_id, review, unmapped, classification)) is not None]
         categories[category] = {"weight": 0, "items": items}
@@ -538,6 +637,11 @@ def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[s
 
     conditions = {name: _convert_conditions(ai.get(name), name, jd, review, unmapped) for name in CONDITION_LISTS}
     scoreability = _scoreability(ai.get("scoreability"), doc, review)
+    missed_preferred = missed_preferred_statements(jd, doc, conditions)
+    missed_context = missed_context_statements(jd, doc)
+    review.extend(Issue("preferred_statement_not_extracted",
+                        f"{NEEDS_REVIEW}the job description states a preferred requirement that no item covers: \"{_preview(text)}\"")
+                  for text in missed_preferred)
     ai_warnings = tuple(w for w in ai["warnings"] if isinstance(w, str)) if isinstance(ai.get("warnings"), list) else ()
 
     original = snapshot_original(doc)
@@ -547,6 +651,7 @@ def process_ai_output(ai: Any, jd_text: str, *, id_factory: Callable[[Iterable[s
         review=tuple(review), category_weights=weights_info,
         conditions=conditions, scoreability=scoreability, ai_warnings=ai_warnings,
         unmapped=tuple(unmapped), raw_ai_output=raw_copy,
+        missed_preferred=missed_preferred, missed_context=missed_context,
     )
 
 
