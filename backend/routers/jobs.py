@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, get_current_user
+from auth.roles import REQUIREMENTS_EDITOR_ROLES, RequireManager, RequireRequirementsEditor
 from config import get_settings
 from database import get_db, set_rls_context
 from services.job_description_quality import evaluate_description_quality, validate_job_title
@@ -333,7 +334,7 @@ async def list_jobs(
     return jobs
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[RequireManager])
 async def create_job(
     body: CreateJobRequest,
     current_user: CurrentUserDep,
@@ -740,7 +741,7 @@ async def get_job_details(
     }
 
 
-@router.put("/{job_id}/ingestion")
+@router.put("/{job_id}/ingestion", dependencies=[RequireManager])
 async def update_ingestion_settings(
     job_id: str,
     body: UpdateIngestionRequest,
@@ -795,7 +796,7 @@ async def update_ingestion_settings(
     return {"success": True, "message": "Ingestion settings updated"}
 
 
-@router.put("/{job_id}/settings")
+@router.put("/{job_id}/settings", dependencies=[RequireManager])
 async def update_job_settings(
     job_id: str,
     body: UpdateJobSettingsRequest,
@@ -847,7 +848,7 @@ async def update_job_settings(
     return {"success": True, "message": "Job settings updated"}
 
 
-@router.put("/{job_id}/criteria")
+@router.put("/{job_id}/criteria", dependencies=[RequireRequirementsEditor])
 async def update_criteria(
     job_id: str,
     body: UpdateCriteriaRequest,
@@ -855,10 +856,10 @@ async def update_criteria(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     # Exact match, not lower(): a stored role is always lower case (users.role CHECK), so anything else is refused.
-    if current_user.role not in ("admin", "recruiter"):
+    if current_user.role not in REQUIREMENTS_EDITOR_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only tenant admins and recruiters can edit evaluation criteria",
+            detail="Only tenant admins and HR managers can edit evaluation criteria",
         )
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
@@ -1112,7 +1113,7 @@ async def download_duplicate_cv(
     )
 
 
-@router.put("/{job_id}/criteria/content")
+@router.put("/{job_id}/criteria/content", dependencies=[RequireRequirementsEditor])
 async def update_criteria_content(
     job_id: str,
     body: UpdateCriteriaContentRequest,
@@ -1222,7 +1223,7 @@ async def update_criteria_content(
 
 # Legacy criteria retry. Every statement below is tenant-scoped and carries LEGACY_ONLY_PREDICATE: a requirements-v2 job is never
 # retried or rewritten by this route.
-CRITERIA_RETRY_ROLES = ("admin", "recruiter")
+CRITERIA_RETRY_ROLES = REQUIREMENTS_EDITOR_ROLES
 
 _RECOVER_STALE_SQL = f"""
     UPDATE job_criteria
@@ -1397,7 +1398,7 @@ async def _retry_requirements_v2(job_id: str, description: str, current_user, db
     }
 
 
-@router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{job_id}/criteria/retry", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireRequirementsEditor])
 async def retry_criteria_extraction(
     job_id: str,
     current_user: CurrentUserDep,
@@ -1415,7 +1416,7 @@ async def retry_criteria_extraction(
     # Only these roles may re-run AI extraction (it costs money). Exact match, before any SQL.
     if current_user.role not in CRITERIA_RETRY_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Only tenant admins and recruiters can retry criteria extraction.")
+                            detail="Only tenant admins and HR managers can retry criteria extraction.")
 
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
@@ -1488,7 +1489,7 @@ async def retry_criteria_extraction(
     }
 
 
-@router.put("/{job_id}")
+@router.put("/{job_id}", dependencies=[RequireRequirementsEditor])
 async def update_job_metadata(
     job_id: str,
     body: UpdateJobMetadataRequest,

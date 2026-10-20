@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.roles import REQUIREMENTS_EDITOR_ROLES, RequireAdminOrPlatform, RequireManager, RequireRequirementsEditor
 from config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ async def get_application_tags(
     return {"tags": tags}
 
 
-@app_router.post("/{application_id}/tags")
+@app_router.post("/{application_id}/tags", dependencies=[RequireManager])
 async def add_tags_to_application(
     application_id: str,
     body: TagAddRequest,
@@ -145,7 +146,7 @@ async def add_tags_to_application(
     return {"status": "tags added"}
 
 
-@app_router.delete("/{application_id}/tags/{tag_id}")
+@app_router.delete("/{application_id}/tags/{tag_id}", dependencies=[RequireManager])
 async def remove_tag_from_application(
     application_id: str,
     tag_id: str,
@@ -187,7 +188,7 @@ async def remove_tag_from_application(
 # ── Talent Pool Endpoints ──────────────────────────────────────────────────
 
 
-@app_router.post("/{application_id}/talent-pool")
+@app_router.post("/{application_id}/talent-pool", dependencies=[RequireManager])
 async def toggle_talent_pool(
     application_id: str,
     body: TalentPoolRequest,
@@ -281,10 +282,10 @@ async def list_talent_pool(
 
 
 # Only these roles may copy a candidate's CV to another job. The stored role is lower case, so an exact match is used.
-REUSE_ROLES = ("admin", "recruiter")
+REUSE_ROLES = REQUIREMENTS_EDITOR_ROLES
 
 
-@app_router.post("/{application_id}/reuse-to-job")
+@app_router.post("/{application_id}/reuse-to-job", dependencies=[RequireRequirementsEditor])
 async def reuse_candidate_to_job(
     application_id: str,
     body: ReuseToJobRequest,
@@ -297,7 +298,7 @@ async def reuse_candidate_to_job(
     """
     if current_user.role not in REUSE_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Only tenant admins and recruiters can reuse candidates.")
+                            detail="Only tenant admins and HR managers can reuse candidates.")
     await set_rls_context(db, current_user.tenant_id, current_user.role)
 
     # The service takes the locks and runs every decisive check in the same transaction that writes. These mappings are the only
@@ -358,7 +359,7 @@ async def list_tenant_tags(
     return {"tags": tags}
 
 
-@tag_router.post("/")
+@tag_router.post("/", dependencies=[RequireManager])
 async def create_tag(
     body: TagCreateRequest,
     current_user: CurrentUserDep,
@@ -403,7 +404,7 @@ async def create_tag(
         raise HTTPException(status_code=400, detail="Failed to create tag")
 
 
-@tag_router.delete("/{tag_id}")
+@tag_router.delete("/{tag_id}", dependencies=[RequireAdminOrPlatform])
 async def delete_tag(
     tag_id: str,
     current_user: CurrentUserDep,

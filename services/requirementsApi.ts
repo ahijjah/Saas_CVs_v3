@@ -130,9 +130,5 @@ export function saveRequirementEdits(
   });
 }
 
-// The roles that may edit requirements. Every other role reads the view only; the server refuses edits for them as well.
-export const REQUIREMENTS_EDIT_ROLES: readonly string[] = ['admin', 'recruiter'];
-
-export function canEditRequirements(role: string | null | undefined): boolean {
-  return !!role && REQUIREMENTS_EDIT_ROLES.includes(role);
-}
+// Who may edit and who may read requirements is decided in one place: utils/permissions.ts (mirroring backend/auth/roles.py).
+export { canEditRequirements, canReadRequirements, REQUIREMENTS_EDIT_ROLES } from '../utils/permissions';

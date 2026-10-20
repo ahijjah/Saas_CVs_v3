@@ -43,8 +43,9 @@ const DECISION_LABELS: Record<FindingDecision, string> = {
 
 type Notice = { kind: 'ok' | 'error'; text: string } | null;
 
-// The approved API reads requirements for administrators and recruiters only. Any other role is refused, and sees this fixed text.
-const REFUSED_TEXT = 'The requirements for this job are available to administrators and recruiters only.';
+// The API reads requirements for every tenant role (administrators and HR managers edit; recruiters and viewers read). A role outside
+// those is refused, and sees this fixed text.
+const REFUSED_TEXT = 'The requirements for this job are not available to your role.';
 
 interface Props {
   jobId: string;
@@ -510,7 +511,7 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
           </button>
         </div>
       ) : (
-        <p className="text-xs text-slate-500 border-t border-slate-200 pt-4">Only administrators and recruiters can edit requirements.</p>
+        <p className="text-xs text-slate-500 border-t border-slate-200 pt-4">Only administrators and HR managers can edit requirements. You can view the weights here.</p>
       )}
     </section>
   );

@@ -146,9 +146,11 @@ async def test_an_admin_and_a_recruiter_can_load_the_document(built, engines, se
         assert set(view.document) == {"schema_version", "categories"}
 
 
-async def test_a_viewer_is_refused_before_any_sql(built, engines, seeded):
+@pytest.mark.parametrize("role", ["super_admin", "owner", "Admin", "", None])
+async def test_a_role_that_may_not_read_is_refused_before_any_sql(built, engines, seeded, role):
     with pytest.raises(E.PermissionDenied):
-        await E.load_for_edit(_NoDatabase(), _user(seeded, "a", "viewer"), seeded["a"]["job"])
+        await E.load_for_edit(_NoDatabase(), E.EditingUser(
+            user_id=seeded["a"]["users"]["admin"], tenant_id=seeded["a"]["tenant"], role=role, email="x@example.test"), seeded["a"]["job"])
 
 
 async def test_a_missing_job_and_another_tenants_job_are_indistinguishable(built, engines, seeded):

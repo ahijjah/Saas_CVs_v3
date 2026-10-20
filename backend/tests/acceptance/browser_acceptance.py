@@ -304,16 +304,14 @@ def run_conflict_and_validation(browser, backend, token, user, jobs):
 
 
 def run_viewer(browser, backend, jobs):
-    """The approved API refuses requirement reads to viewers (existing authorization). The page shows the fixed refusal, no document
-    and no edit control."""
+    """A viewer reads the requirements, weights included, and is given no way to change them."""
     context, page = open_as(browser, backend, "viewer", jobs["english"])
-    refusal = page.get_by_test_id("requirements-unavailable")
-    expect(refusal).to_be_visible(timeout=20000)
-    expect(refusal).to_contain_text("available to administrators and recruiters only")
-    check("Viewer: requirements are refused by the approved API and the page says so")
+    expect(panel(page)).to_be_visible(timeout=20000)
+    expect(page.get_by_text("Only administrators and HR managers can edit requirements")).to_be_visible()
+    check("Viewer: requirements are readable and the page says they are read-only")
     expect(page.get_by_role("button", name="Save requirements")).to_have_count(0)
-    expect(page.get_by_role("textbox", name="Requirement text")).to_have_count(0)
-    check("Viewer: no requirement text and no edit control is rendered")
+    expect(page.get_by_role("textbox", name="Requirement text").first).to_be_disabled()
+    check("Viewer: no edit control is offered and the fields are disabled")
     context.close()
 
 

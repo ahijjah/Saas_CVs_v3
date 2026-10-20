@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
+from auth.roles import RequireTenantAdmin
 from database import get_db
 
 router = APIRouter(tags=["subscription-plans"])
@@ -365,7 +366,7 @@ async def list_public_plans(
     }
 
 
-@router.post("/subscription/subscribe")
+@router.post("/subscription/subscribe", dependencies=[RequireTenantAdmin])
 async def subscribe_to_plan(
     body: SubscribeRequest,
     current_user: CurrentUserDep,

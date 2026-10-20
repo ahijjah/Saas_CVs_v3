@@ -6,6 +6,7 @@ import { WEBHOOK_CONFIG } from '../config';
 import { AuthState, Campaign, CampaignJobRef, CampaignStatus, ClientOrganization, Job } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { AddJobModal } from '../components/AddJobModal';
+import { canManageCampaigns } from '../utils/permissions';
 
 // ── Translations ──────────────────────────────────────────────────────────────
 const T = {
@@ -318,7 +319,7 @@ export const CampaignDetailPage: React.FC<CampaignDetailProps> = ({ auth, addToa
   const token = auth.token!;
 
   const role = (auth.user?.role || '').toLowerCase();
-  const canWrite = ['admin', 'hr_manager', 'super_admin'].includes(role);
+  const canWrite = canManageCampaigns(role);
   const tenantType = auth.user?.tenant_type ?? 'organization';
   const isAgency = tenantType === 'agency' || tenantType === 'individual_recruiter';
 

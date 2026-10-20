@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.roles import RequireAdminOrPlatform, RequireManager
 from database import get_db, set_rls_context
 
 router = APIRouter(tags=["comments"])
@@ -80,7 +81,7 @@ async def list_comments(
     return {"comments": comments}
 
 
-@router.post("/applications/{application_id}/comments", status_code=status.HTTP_201_CREATED)
+@router.post("/applications/{application_id}/comments", status_code=status.HTTP_201_CREATED, dependencies=[RequireManager])
 async def create_comment(
     application_id: str,
     body: CreateCommentRequest,
@@ -128,7 +129,7 @@ async def create_comment(
     return {"success": True, "comment": comment}
 
 
-@router.patch("/applications/{application_id}/comments/{comment_id}")
+@router.patch("/applications/{application_id}/comments/{comment_id}", dependencies=[RequireManager])
 async def update_comment(
     application_id: str,
     comment_id: str,
@@ -179,7 +180,7 @@ async def update_comment(
     return {"success": True, "comment": comment}
 
 
-@router.delete("/applications/{application_id}/comments/{comment_id}")
+@router.delete("/applications/{application_id}/comments/{comment_id}", dependencies=[RequireAdminOrPlatform])
 async def delete_comment(
     application_id: str,
     comment_id: str,

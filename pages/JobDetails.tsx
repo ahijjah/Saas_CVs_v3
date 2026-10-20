@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
+import { canMutateApplications } from '../utils/permissions';
 import RequirementsPanel from '../components/RequirementsPanel';
 import { scoringBlockedByRequirements } from '../services/requirementsEdits';
 import { WEBHOOK_CONFIG } from '../config';
@@ -489,6 +490,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   const isSuperAdmin = (auth.user?.role || '').toLowerCase() === 'super_admin';
   const role = (auth.user?.role || '').toLowerCase();
   const canEdit = role === 'admin' || role === 'hr_manager';
+  // Uploading, scoring and deleting CVs is application management: Recruiter and Viewer see the job read-only.
+  const canManageApplications = canMutateApplications(role);
   const tenantType = auth.user?.tenant_type ?? '';
   const isAgencyTenant = tenantType === 'agency' || tenantType === 'individual_recruiter';
 
@@ -2129,7 +2132,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             { key: 'email-alias'     as const, label: t.tabEmailAlias,    badge: details.receive_cv_via_platform_email   ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_platform_email   ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
             { key: 'email-forwarding'as const, label: t.tabEmailFwd,      badge: details.receive_cv_via_forwarding_email ? t.enabled : t.disabled,          badgeColor: details.receive_cv_via_forwarding_email ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500' },
             { key: 'manual-upload'   as const, label: t.tabManualUpload,  badge: t.badgeInternal,                                                          badgeColor: 'bg-indigo-100 text-indigo-700'                                           },
-          ]).map(tab => (
+          ]).filter(tab => tab.key !== 'manual-upload' || canManageApplications).map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveIntakeTab(tab.key)}
@@ -2269,7 +2272,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           )}
 
           {/* Manual Upload tab */}
-          {activeIntakeTab === 'manual-upload' && (
+          {activeIntakeTab === 'manual-upload' && canManageApplications && (
             <div className="rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/30 p-5">
               <div className="flex items-start gap-3 mb-4">
                 <div className="shrink-0 w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center">

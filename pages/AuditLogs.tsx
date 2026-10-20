@@ -6,6 +6,7 @@ const T = {
   en: {
     title: 'Audit Logs',
     subtitle: 'Full audit trail of all admin and system actions',
+    tenantSubtitle: 'Audit trail of actions in your organization',
     search: 'Filter by action…',
     searchEmail: 'Filter by user email…',
     resourceType: 'Resource type',
@@ -37,7 +38,9 @@ const RESOURCE_TYPES = [
   'platform_secret', 'ai_prompt', 'subscription',
 ];
 
-export default function AuditLogs() {
+// A tenant admin sees only their own organization (the server enforces it); a super admin sees every tenant.
+export default function AuditLogs({ scope = 'platform' }: { scope?: 'platform' | 'tenant' }) {
+  const platform = scope === 'platform';
   const lang = 'en';
   const t = T[lang];
 
@@ -103,7 +106,7 @@ export default function AuditLogs() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{t.title}</h1>
-        <p className="text-sm text-gray-500 mt-1">{t.subtitle}</p>
+        <p className="text-sm text-gray-500 mt-1">{platform ? t.subtitle : t.tenantSubtitle}</p>
       </div>
 
       {/* Filters */}
@@ -165,7 +168,7 @@ export default function AuditLogs() {
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">{t.action}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">{t.user}</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">{t.tenant}</th>
+                  {platform && <th className="text-left px-4 py-3 font-medium text-gray-600">{t.tenant}</th>}
                   <th className="text-left px-4 py-3 font-medium text-gray-600">{t.resource}</th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">{t.when}</th>
                   <th className="px-4 py-3"></th>
@@ -182,9 +185,11 @@ export default function AuditLogs() {
                     <td className="px-4 py-3 text-gray-700">
                       {log.user_email || <span className="text-gray-400">system</span>}
                     </td>
-                    <td className="px-4 py-3 text-gray-600 text-xs">
-                      {log.tenant_name || <span className="text-gray-400">—</span>}
-                    </td>
+                    {platform && (
+                      <td className="px-4 py-3 text-gray-600 text-xs">
+                        {log.tenant_name || <span className="text-gray-400">—</span>}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-gray-600 text-xs">
                       {log.resource_type && (
                         <span className="font-medium text-gray-700">{log.resource_type}</span>
@@ -254,7 +259,7 @@ export default function AuditLogs() {
               <Row label={t.logId}    value={selected.log_id} mono />
               <Row label={t.action}   value={formatAction(selected.action)} />
               <Row label={t.user}     value={selected.user_email || 'system'} />
-              <Row label={t.tenant}   value={selected.tenant_name || selected.tenant_id || '—'} />
+              {platform && <Row label={t.tenant}   value={selected.tenant_name || selected.tenant_id || '—'} />}
               <Row label={t.resource} value={`${selected.resource_type || '—'} / ${selected.resource_id || '—'}`} />
               <Row label={t.ip}       value={selected.ip_address || '—'} />
               <Row label={t.when}     value={formatDate(selected.created_at)} />

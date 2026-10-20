@@ -54,7 +54,9 @@ from services.requirements_v2.validation import validate_final, validate_structu
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-EDITOR_ROLES = frozenset({"admin", "recruiter"})
+# Admin and HR manager edit; every tenant role reads (Recruiter and Viewer see the weights read-only). See auth/roles.py.
+EDITOR_ROLES = frozenset({"admin", "hr_manager"})
+READER_ROLES = frozenset({"admin", "hr_manager", "recruiter", "viewer"})
 REQUIREMENTS_SCHEMA_VERSION = 2
 REQUIREMENTS_KEY = "requirements"
 MAX_OPERATIONS = 100
@@ -280,9 +282,15 @@ OPERATION_NAMES: dict[type, str] = {
 # ---- who may edit ----
 
 def check_editor(role: Any) -> None:
-    """Only admin and recruiter may edit. Every other role, including a missing one, is refused."""
+    """Only admin and hr_manager may edit. Every other role, including a missing one, is refused."""
     if role not in EDITOR_ROLES:
-        raise PermissionDenied("Only an admin or a recruiter can edit requirements.")
+        raise PermissionDenied("Only an admin or an HR manager can edit requirements.")
+
+
+def check_reader(role: Any) -> None:
+    """Every tenant role may read the requirements. A missing or unknown role (and super_admin) is refused."""
+    if role not in READER_ROLES:
+        raise PermissionDenied("This role cannot view requirements.")
 
 
 # ---- parsing ----
@@ -922,7 +930,7 @@ def _check_ids(job_id: str, tenant_id: str) -> None:
 async def load_for_edit(db: AsyncSession, user: EditingUser, job_id: str) -> EditView:
     """Read a v2 document for editing. Caller-owned transaction; one statement, no row lock. A missing job and another
     tenant's job are indistinguishable (both return no row)."""
-    check_editor(user.role)
+    check_reader(user.role)
     _check_ids(job_id, user.tenant_id)
     await db.execute(_SET_CONTEXT, {"tid": user.tenant_id, "role": user.role})
     row = (await db.execute(_LOAD_FOR_EDIT, {"jid": job_id, "tid": user.tenant_id})).first()

@@ -1,17 +1,24 @@
 """
-Audit Logs — Super Admin only.
+Audit Logs — a tenant admin reads their own tenant's records; a super admin reads across tenants.
 
 Provides paginated, filterable access to the audit_logs table.
 Read-only endpoint: no mutation operations.
+
+The runtime tenant login (cv_app) has no SELECT on audit_logs, so both callers read through the administration session. That session
+is opened only after the caller's role is verified (admin or super_admin), and for an admin the tenant is taken from the verified
+user, never from the request: the query always carries `al.tenant_id = <the caller's tenant>`, and a tenant_id query parameter that
+names another tenant is refused with 403 instead of being used.
 """
 import logging
-from typing import Annotated
+from typing import Annotated, AsyncGenerator
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth.dependencies import CurrentUserDep, RequireSuperAdmin, get_platform_db
+from auth.dependencies import CurrentUser
+from auth.roles import ADMIN_OR_PLATFORM_ROLES, SUPER_ADMIN, require_roles
+from database import AdminSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +27,18 @@ router = APIRouter(prefix="/admin/audit-logs", tags=["audit-logs"])
 _PAGE_SIZE = 50
 
 
-@router.get("", dependencies=[RequireSuperAdmin])
+async def get_audit_db(
+    current_user: Annotated[CurrentUser, Depends(require_roles(ADMIN_OR_PLATFORM_ROLES))],
+) -> AsyncGenerator[AsyncSession, None]:
+    """The administration session for the audit log, opened only for a verified tenant admin or super admin."""
+    async with AdminSessionLocal() as session:
+        yield session
+
+
+@router.get("")
 async def list_audit_logs(
-    current_user: CurrentUserDep,
-    db: Annotated[AsyncSession, Depends(get_platform_db)],
+    current_user: Annotated[CurrentUser, Depends(require_roles(ADMIN_OR_PLATFORM_ROLES))],
+    db: Annotated[AsyncSession, Depends(get_audit_db)],
     page: int = Query(1, ge=1),
     action: str | None = Query(None),
     resource_type: str | None = Query(None),
@@ -33,6 +48,12 @@ async def list_audit_logs(
 
     filters: list[str] = []
     params: dict = {"limit": _PAGE_SIZE, "offset": (page - 1) * _PAGE_SIZE}
+
+    if current_user.role != SUPER_ADMIN:
+        # A tenant admin: the scope is the verified user's own tenant. A different tenant_id is refused, not honoured.
+        if tenant_id and str(tenant_id).strip().lower() != str(current_user.tenant_id).lower():
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        tenant_id = str(current_user.tenant_id)
 
     if action:
         filters.append("al.action ILIKE :action")

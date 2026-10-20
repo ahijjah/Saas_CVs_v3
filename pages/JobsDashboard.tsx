@@ -6,6 +6,7 @@ import { WEBHOOK_CONFIG } from '../config';
 import { Job, AuthState } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
+import { canManageJobs } from '../utils/permissions';
 
 interface JobsDashboardProps {
   auth: AuthState;
@@ -294,8 +295,10 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
             </svg>
             {t.refresh}
           </button>
+          {canManageJobs(auth.user?.role) && (
           <button
             onClick={onAddJob}
+            data-testid="add-job"
             className="sm:w-auto bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-xl font-bold flex items-center justify-center transition-all shadow-lg shadow-primary/20 gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -303,6 +306,7 @@ export const JobsDashboard: React.FC<JobsDashboardProps> = ({
             </svg>
             {t.addJob}
           </button>
+          )}
         </div>
       </div>
 

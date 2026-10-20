@@ -357,11 +357,11 @@ async def test_a_duplicate_candidate_on_the_target_is_still_refused(built, engin
     assert response.status_code == 409
 
 
-# ---- authorization on copy-to-job: admin and recruiter only, before any SQL ----
+# ---- authorization on copy-to-job: admin and hr_manager only, before any SQL ----
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["admin", "recruiter"])
-async def test_the_copy_route_allows_admin_and_recruiter(built, engine, files_root, scored, role):
+@pytest.mark.parametrize("role", ["admin", "hr_manager"])
+async def test_the_copy_route_allows_admin_and_hr_manager(built, engine, files_root, scored, role):
     tenant = _tenant(built)
     source = _application(built, tenant, _job(built, tenant), email=f"ok{uuid.uuid4().hex[:6]}@example.test",
                           files_root=files_root)
@@ -372,7 +372,7 @@ async def test_the_copy_route_allows_admin_and_recruiter(built, engine, files_ro
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", [None, "", "owner", "Admin", "ADMIN", "Recruiter", "viewer", "super_admin", "hr_manager"])
+@pytest.mark.parametrize("role", [None, "", "owner", "Admin", "ADMIN", "Recruiter", "recruiter", "viewer", "super_admin"])
 async def test_the_copy_route_refuses_every_other_role_before_any_sql(built, engine, files_root, scored, role):
     tenant = _tenant(built)
     source = _application(built, tenant, _job(built, tenant), email=f"no{uuid.uuid4().hex[:6]}@example.test",

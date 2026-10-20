@@ -183,5 +183,5 @@ async def test_another_tenant_and_a_read_only_role_are_refused_without_revealing
         missing = await client.post(f"/jobs/{uuid.uuid4()}/requirements/edits", json=body)
     assert other.status_code == missing.status_code == 404
     assert other.json() == missing.json()                       # another tenant's job looks like a job that does not exist
-    assert read_only.status_code == 403 and read_only.json()["detail"]["code"] == "permission_denied"
+    assert read_only.status_code == 403
     assert _stored(built, job)[1] == 1
