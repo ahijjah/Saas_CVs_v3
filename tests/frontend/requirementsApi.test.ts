@@ -51,10 +51,10 @@ describe('requirements API client', () => {
 });
 
 describe('edit permission on the client', () => {
-  it('allows only administrators and recruiters', () => {
+  it('allows only administrators and HR managers', () => {
     expect(canEditRequirements('admin')).toBe(true);
-    expect(canEditRequirements('recruiter')).toBe(true);
-    for (const role of ['viewer', 'hr_manager', 'super_admin', 'unknown', '', null, undefined]) {
+    expect(canEditRequirements('hr_manager')).toBe(true);
+    for (const role of ['viewer', 'recruiter', 'super_admin', 'unknown', '', null, undefined]) {
       expect(canEditRequirements(role as string | null | undefined)).toBe(false);
     }
   });

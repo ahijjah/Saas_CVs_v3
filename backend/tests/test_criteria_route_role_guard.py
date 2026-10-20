@@ -1,4 +1,4 @@
-"""PUT /jobs/{job_id}/criteria (the legacy criteria route): only admin and recruiter may write.
+"""PUT /jobs/{job_id}/criteria (the legacy criteria route): only admin and hr_manager may write.
 
 The real route runs against a disposable PostgreSQL 16 built from the full migration chain, through a real async session. Only the
 authenticated user and the session factory are overridden. A refused role is refused before any SQL runs, so nothing changes.
@@ -30,7 +30,7 @@ JD = "A job description."
 BODY = {"weight_skills": 40, "weight_experience": 20, "weight_education": 10, "weight_certifications": 10,
         "weight_soft_skills": 10, "weight_domain_knowledge": 5, "weight_other": 5}           # totals 100
 DEFAULT_WEIGHTS = (30, 25, 15, 10, 10, 5, 5)
-REFUSED_ROLES = [None, "", "owner", "Admin", "ADMIN", "viewer", "super_admin", "hr_manager"]
+REFUSED_ROLES = [None, "", "owner", "Admin", "ADMIN", "viewer", "super_admin", "recruiter"]
 
 
 @pytest.fixture(scope="module")
@@ -57,7 +57,7 @@ def seeded(built):
                     (f"tenant {label} {tag}", f"{label}-{tag}.example"))
         tenant = str(cur.fetchone()[0])
         users = {}
-        for role in (("admin", "recruiter", "viewer") if label == "a" else ("admin",)):
+        for role in (("admin", "hr_manager", "recruiter", "viewer") if label == "a" else ("admin",)):
             cur.execute("INSERT INTO users (tenant_id, email, password_hash, full_name, role) "
                         "VALUES (%s, %s, 'x', 'u', %s) RETURNING user_id",
                         (tenant, f"{label}-{role}-{tag}@example.test", role))
@@ -147,10 +147,10 @@ async def test_an_admin_can_update_the_criteria(built, engines, seeded):
     assert str(row[8]) == admin
 
 
-async def test_a_recruiter_can_update_the_criteria(built, engines, seeded):
-    job, recruiter = seeded["a"]["job"], seeded["a"]["users"]["recruiter"]
+async def test_an_hr_manager_can_update_the_criteria(built, engines, seeded):
+    job, recruiter = seeded["a"]["job"], seeded["a"]["users"]["hr_manager"]
     engine = engines()
-    response = await _put(_app(_user("recruiter", seeded["a"]["tenant"], recruiter), engine), job)
+    response = await _put(_app(_user("hr_manager", seeded["a"]["tenant"], recruiter), engine), job)
     assert response.status_code == 200, response.text
     row = _snapshot(built, job)
     assert row[:7] == (40, 20, 10, 10, 10, 5, 5)
@@ -167,7 +167,7 @@ async def test_every_other_role_is_refused_and_changes_nothing(built, engines, s
     statements = _statements(engine)
     response = await _put(_app(_user(role, seeded["a"]["tenant"], seeded["a"]["users"]["admin"]), engine), job)
     assert response.status_code == 403, response.text
-    assert response.json()["detail"] == "Only tenant admins and recruiters can edit evaluation criteria"
+    assert response.json()["detail"] == "Insufficient permissions"
     assert statements == [], "the role must be checked before any SQL runs"
     assert _snapshot(built, job) == before
 

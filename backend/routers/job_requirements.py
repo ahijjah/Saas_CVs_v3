@@ -1,6 +1,6 @@
 """Authenticated requirements-v2 editing API: GET a document for editing, and POST a list of typed operations to save it.
 
-Only admin and recruiter may use either route. Every decision that touches requirements data is made by services/requirements_edit.py,
+Admin and HR manager edit; every tenant role reads. Every decision that touches requirements data is made by services/requirements_edit.py,
 which checks the role before any SQL. This module maps the service's typed errors to stable `detail.code` responses, builds the
 read response from the approved whitelist, and owns the transaction: a read ends with a rollback, and a save commits only after the
 save and its audit row have both succeeded.
@@ -17,6 +17,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.roles import RequireRequirementsEditor, RequireRequirementsReader
 from database import get_db
 from services import requirements_edit as E
 
@@ -192,7 +193,7 @@ def _detail(status_code: int, code: str, message: str, **extra: Any) -> HTTPExce
 def _service_error(exc: E.RequirementsEditError) -> HTTPException:
     if isinstance(exc, E.PermissionDenied):
         return _detail(status.HTTP_403_FORBIDDEN, "permission_denied",
-                       "Only tenant admins and recruiters can edit requirements.")
+                       "Your role cannot use this requirements action.")
     if isinstance(exc, E.JobNotFound):
         return _detail(status.HTTP_404_NOT_FOUND, "job_not_found", "Job not found.")
     if isinstance(exc, E.NotRequirementsV2):
@@ -229,7 +230,7 @@ def _now() -> str:
 
 # ---- routes ----
 
-@router.get("/{job_id}/requirements", response_model=EditResponse)
+@router.get("/{job_id}/requirements", response_model=EditResponse, dependencies=[RequireRequirementsReader])
 async def get_requirements(job_id: str, current_user: CurrentUserDep,
                            db: Annotated[AsyncSession, Depends(get_db)]):
     """Read the requirements document and its read-only review for editing. Never locks the row and never commits."""
@@ -243,7 +244,7 @@ async def get_requirements(job_id: str, current_user: CurrentUserDep,
     return body
 
 
-@router.post("/{job_id}/requirements/edits", response_model=SaveResponse)
+@router.post("/{job_id}/requirements/edits", response_model=SaveResponse, dependencies=[RequireRequirementsEditor])
 async def save_requirements_edits(job_id: str, body: SaveEditsRequest, current_user: CurrentUserDep,
                                   db: Annotated[AsyncSession, Depends(get_db)]):
     """Save typed operations. The edit and its audit row share one transaction; it commits only after both succeed."""

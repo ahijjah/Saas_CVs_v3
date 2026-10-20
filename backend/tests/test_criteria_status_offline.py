@@ -147,7 +147,7 @@ def test_the_copy_route_names_candidate_reuse_and_the_criteria_gate():
     assert 'target["status"] != "active"' in service
     assert "CRITERIA_BLOCKING_STATUSES" in service
     assert "FOR UPDATE" in service and "FOR SHARE" in service
-    assert 'REUSE_ROLES = ("admin", "recruiter")' in route
+    assert 'REUSE_ROLES = REQUIREMENTS_EDITOR_ROLES' in route
 
 
 def test_the_retry_route_checks_the_exact_role_before_any_sql():
@@ -156,7 +156,7 @@ def test_the_retry_route_checks_the_exact_role_before_any_sql():
     guard = body.index("current_user.role not in CRITERIA_RETRY_ROLES")
     assert guard < body.index("set_rls_context")
     assert guard < body.index("text(f\"\"\"")
-    assert 'CRITERIA_RETRY_ROLES = ("admin", "recruiter")' in source
+    assert 'CRITERIA_RETRY_ROLES = REQUIREMENTS_EDITOR_ROLES' in source
 
 
 # ---- the migration text ----

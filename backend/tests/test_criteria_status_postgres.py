@@ -582,7 +582,7 @@ async def test_the_job_list_and_details_report_the_derived_status(built, stored,
     assert details.json()["details"]["criteria_extraction_status"] == expected
 
 
-# ---- authorization: only admin and recruiter (exact match), before any SQL ----
+# ---- authorization: only admin and hr_manager (exact match), before any SQL ----
 
 def _count_sql(engine):
     """Every statement the engine runs is recorded. A refused request must record none."""
@@ -596,8 +596,8 @@ def _count_sql(engine):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", ["admin", "recruiter"])
-async def test_the_retry_route_allows_admin_and_recruiter(built, engine, enqueued, role):
+@pytest.mark.parametrize("role", ["admin", "hr_manager"])
+async def test_the_retry_route_allows_admin_and_hr_manager(built, engine, enqueued, role):
     tenant = _tenant(built)
     job = _job(built, tenant, status="failed", error=CS.WORKER_FAILED_MESSAGE, retry=0)
     async with _client(_app(_user(tenant, role), engine)) as client:
@@ -607,7 +607,7 @@ async def test_the_retry_route_allows_admin_and_recruiter(built, engine, enqueue
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("role", [None, "", "owner", "Admin", "ADMIN", "Recruiter", "viewer", "super_admin", "hr_manager"])
+@pytest.mark.parametrize("role", [None, "", "owner", "Admin", "ADMIN", "Recruiter", "recruiter", "viewer", "super_admin"])
 async def test_the_retry_route_refuses_every_other_role_before_any_sql(built, engine, enqueued, role):
     tenant = _tenant(built)
     job = _job(built, tenant, status="failed", error=CS.WORKER_FAILED_MESSAGE, retry=0)

@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep, get_current_user
+from auth.roles import RequireExport, RequireManager
 from config import get_settings
 from database import get_db, set_rls_context
 from services.application_intake_service import (
@@ -966,7 +967,7 @@ def _summary_table_style():
     ])
 
 
-@router.get("/export")
+@router.get("/export", dependencies=[RequireExport])
 async def export_applications(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -1450,7 +1451,7 @@ async def get_application_details(
     }
 
 
-@router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/upload", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireManager])
 async def upload_cv(
     job_id: Annotated[str, Form()],
     candidate_name: Annotated[str, Form()],
@@ -1587,7 +1588,7 @@ async def list_uploaded_cvs(
     return uploads
 
 
-@router.post("/score-pending", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/score-pending", status_code=status.HTTP_202_ACCEPTED, dependencies=[RequireManager])
 async def score_pending_uploads(
     body: ScorePendingRequest,
     current_user: CurrentUserDep,
@@ -1738,7 +1739,7 @@ async def get_queue_status(
     }
 
 
-@router.post("/reset-stuck", status_code=status.HTTP_200_OK)
+@router.post("/reset-stuck", status_code=status.HTTP_200_OK, dependencies=[RequireManager])
 async def reset_stuck_cvs(
     body: ResetStuckRequest,
     current_user: CurrentUserDep,
@@ -1780,7 +1781,7 @@ async def reset_stuck_cvs(
     }
 
 
-@router.patch("/{application_id}/workflow-status")
+@router.patch("/{application_id}/workflow-status", dependencies=[RequireManager])
 async def update_workflow_status(
     application_id: str,
     body: WorkflowStatusRequest,
@@ -2015,7 +2016,7 @@ async def update_workflow_status(
     return {"workflow_status": new_status}
 
 
-@router.patch("/{application_id}/recruiter-notes")
+@router.patch("/{application_id}/recruiter-notes", dependencies=[RequireManager])
 async def update_recruiter_notes(
     application_id: str,
     body: RecruiterNotesRequest,
@@ -2064,7 +2065,7 @@ async def update_recruiter_notes(
     return {"recruiter_notes": body.recruiter_notes}
 
 
-@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK)
+@router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK, dependencies=[RequireManager])
 async def update_knockout_answer(
     application_id: str,
     body: KnockoutAnswerRequest,
@@ -2099,7 +2100,7 @@ async def update_knockout_answer(
     return {"status": "ok"}
 
 
-@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK)
+@router.post("/{application_id}/knockout-analysis", status_code=status.HTTP_200_OK, dependencies=[RequireManager])
 async def trigger_knockout_analysis(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2162,7 +2163,7 @@ async def trigger_knockout_analysis(
     }
 
 
-@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK)
+@router.post("/{application_id}/screening-validation", status_code=status.HTTP_200_OK, dependencies=[RequireManager])
 async def trigger_screening_validation(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2244,7 +2245,7 @@ async def trigger_screening_validation(
     }
 
 
-@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK)
+@router.patch("/{application_id}/knockout-suggestions/accept", status_code=status.HTTP_200_OK, dependencies=[RequireManager])
 async def accept_knockout_suggestion_endpoint(
     application_id: str,
     body: KnockoutAcceptRequest,
@@ -2281,7 +2282,7 @@ async def accept_knockout_suggestion_endpoint(
     return {"status": "ok"}
 
 
-@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK)
+@router.patch("/{application_id}/knockout-suggestions/ignore", status_code=status.HTTP_200_OK, dependencies=[RequireManager])
 async def ignore_knockout_suggestion_endpoint(
     application_id: str,
     body: KnockoutAnswerRequest,   # reuse: only question_id matters, answer_value ignored
@@ -2306,7 +2307,7 @@ async def ignore_knockout_suggestion_endpoint(
     return {"status": "ok"}
 
 
-@router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[RequireManager])
 async def delete_uploaded_cv(
     application_id: str,
     current_user: CurrentUserDep,
@@ -2411,7 +2412,7 @@ async def download_cv(
     )
 
 
-@router.patch("/bulk-assignment")
+@router.patch("/bulk-assignment", dependencies=[RequireManager])
 async def bulk_update_assignment(
     body: BulkAssignmentRequest,
     current_user: CurrentUserDep,
@@ -2472,7 +2473,7 @@ async def bulk_update_assignment(
     return {"success": True, "updated_count": len(body.application_ids)}
 
 
-@router.patch("/{application_id}/assignment")
+@router.patch("/{application_id}/assignment", dependencies=[RequireManager])
 async def update_assignment(
     application_id: str,
     body: AssignmentRequest,
@@ -2548,7 +2549,7 @@ async def update_assignment(
     }
 
 
-@router.patch("/bulk-workflow-status")
+@router.patch("/bulk-workflow-status", dependencies=[RequireManager])
 async def bulk_update_workflow_status(
     body: WorkflowStatusRequest,
     current_user: CurrentUserDep,

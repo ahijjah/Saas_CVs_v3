@@ -26,22 +26,31 @@ beforeEach(() => {
 });
 
 describe('who may edit', () => {
-  it.each(['admin', 'recruiter'])('lets %s edit and save', async (role) => {
+  it.each(['admin', 'hr_manager'])('lets %s edit and save', async (role) => {
     renderPanel(role);
     await screen.findByRole('heading', { name: 'Requirements' });
     expect(screen.getByRole('button', { name: 'Save requirements' })).toBeDisabled();
     expect(screen.getAllByRole('button', { name: /Move .* up/ }).length).toBeGreaterThan(0);
   });
 
-  it.each(['viewer', 'hr_manager', 'super_admin', 'something_else'])('renders %s read-only', async (role) => {
+  it.each(['viewer', 'recruiter', 'super_admin', 'something_else'])('renders %s read-only', async (role) => {
     renderPanel(role);
     await screen.findByRole('heading', { name: 'Requirements' });
     expect(screen.queryByRole('button', { name: 'Save requirements' })).toBeNull();
     expect(screen.queryAllByRole('button', { name: /Move .* up/ })).toHaveLength(0);
-    expect(screen.getByText('Only administrators and recruiters can edit requirements.')).toBeInTheDocument();
+    expect(screen.getByText(/Only administrators and HR managers can edit requirements/)).toBeInTheDocument();
     for (const field of screen.getAllByRole('textbox', { name: 'Requirement text' })) {
       expect(field).toBeDisabled();
     }
+  });
+
+  it.each(['viewer', 'recruiter'])('shows %s the category and item weights, read-only', async (role) => {
+    renderPanel(role);
+    await screen.findByRole('heading', { name: 'Requirements' });
+    const spin = screen.getAllByRole('spinbutton');
+    expect(spin.length).toBeGreaterThan(0);                                 // the weights are on screen
+    for (const input of spin) expect(input).toBeDisabled();                  // and cannot be changed
+    expect(screen.queryByRole('button', { name: 'Add requirement' })).toBeNull();
   });
 });
 
@@ -49,7 +58,7 @@ describe('edits and review actions', () => {
   it('sends a text edit with the loaded revision', async () => {
     const user = userEvent.setup();
     saveMock.mockResolvedValue({ requirements_revision: 4 });
-    renderPanel('recruiter');
+    renderPanel('hr_manager');
     const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
@@ -112,7 +121,7 @@ describe('errors keep the local work', () => {
   it('shows a revision conflict, keeps the unsaved text, and offers reload or reapply', async () => {
     const user = userEvent.setup();
     saveMock.mockRejectedValueOnce(new RequirementsApiError(409, 'revision_conflict', 'changed', 5));
-    renderPanel('recruiter');
+    renderPanel('hr_manager');
     const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
@@ -131,7 +140,7 @@ describe('errors keep the local work', () => {
   it('can reload instead of reapplying after a conflict', async () => {
     const user = userEvent.setup();
     saveMock.mockRejectedValueOnce(new RequirementsApiError(409, 'revision_conflict', 'changed', 5));
-    renderPanel('recruiter');
+    renderPanel('hr_manager');
     const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
@@ -145,7 +154,7 @@ describe('errors keep the local work', () => {
   it('keeps the edits when the document is rejected by validation', async () => {
     const user = userEvent.setup();
     saveMock.mockRejectedValueOnce(new RequirementsApiError(422, 'invalid_requirements', 'The requirements do not pass the saving rules.', null));
-    renderPanel('recruiter');
+    renderPanel('hr_manager');
     const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
@@ -202,10 +211,10 @@ describe('language and private fields', () => {
 
 describe('refused reads', () => {
   it('shows a fixed refusal, and no document, when the API refuses the role', async () => {
-    getMock.mockRejectedValue(new RequirementsApiError(403, 'permission_denied', 'Only tenant admins and recruiters can edit requirements.', null));
-    render(<RequirementsPanel jobId="job-1" userRole="viewer" />);
+    getMock.mockRejectedValue(new RequirementsApiError(403, 'permission_denied', 'Your role cannot use this requirements action.', null));
+    render(<RequirementsPanel jobId="job-1" userRole="super_admin" />);
     const notice = await screen.findByTestId('requirements-unavailable');
-    expect(notice).toHaveTextContent('available to administrators and recruiters only');
+    expect(notice).toHaveTextContent('not available to your role');
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.queryByText('Python')).toBeNull();
   });

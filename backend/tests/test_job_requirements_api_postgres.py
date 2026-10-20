@@ -31,7 +31,8 @@ JD = "We need Python and SQL. Five years of backend work is preferred."
 CANARY = "CANARY"
 WRITER = "cv_app"           # may read and update the criteria, and insert audit rows (non-owner: RLS applies)
 NO_AUDIT = "cv_admin"        # like the writer, but no INSERT on audit_logs
-REFUSED_ROLES = [None, "", "owner", "Admin", "ADMIN", "viewer", "super_admin", "hr_manager"]
+REFUSED_ROLES = [None, "", "owner", "Admin", "ADMIN", "super_admin"]               # neither route
+READ_ONLY_ROLES = ["recruiter", "viewer"]                                          # may read, may not edit
 SAVE_TEXT = {"client_revision": 0, "operations": [{"op": "set_text", "item_id": "req_sql", "text": "SQL (PostgreSQL)"}]}
 
 
@@ -93,7 +94,7 @@ def seeded(built):
                     (f"tenant {label} {tag}", f"{label}-{tag}.example"))
         tenant = str(cur.fetchone()[0])
         users = {}
-        for role in ("admin", "recruiter", "viewer"):
+        for role in ("admin", "hr_manager", "recruiter", "viewer"):
             cur.execute("INSERT INTO users (tenant_id, email, password_hash, full_name, role) "
                         "VALUES (%s, %s, 'x', 'u', %s) RETURNING user_id",
                         (tenant, f"{label}-{role}-{tag}@example.test", role))
@@ -170,9 +171,9 @@ def _statements(engine):
 
 # ---- reads ----
 
-async def test_an_admin_and_a_recruiter_can_read(built, engines, seeded):
+async def test_every_tenant_role_can_read(built, engines, seeded):
     job = seeded["a"]["job"]
-    for role in ("admin", "recruiter"):
+    for role in ("admin", "hr_manager", "recruiter", "viewer"):
         response = await _get(_app(_user(seeded, "a", role), engines()), job)
         assert response.status_code == 200, response.text
         body = response.json()
@@ -195,8 +196,8 @@ async def test_the_read_never_locks_the_criteria_row(built, engines, seeded):
 
 # ---- writes ----
 
-async def test_an_admin_and_a_recruiter_can_save_and_the_response_is_only_the_revision(built, engines, seeded):
-    for label_role, expected in (("admin", 1), ("recruiter", 2)):
+async def test_an_admin_and_an_hr_manager_can_save_and_the_response_is_only_the_revision(built, engines, seeded):
+    for label_role, expected in (("admin", 1), ("hr_manager", 2)):
         job = seeded["a"]["job"]
         body = {"client_revision": expected - 1, "operations": [{"op": "set_text", "item_id": "req_sql", "text": f"v{expected}"}]}
         response = await _post(_app(_user(seeded, "a", label_role), engines(WRITER)), job, body)
@@ -294,8 +295,21 @@ async def test_every_other_role_is_refused_on_both_routes_before_any_sql(built, 
     read, write = await _get(app, job), await _post(app, job)
     for response in (read, write):
         assert response.status_code == 403, response.text
-        assert response.json()["detail"]["code"] == "permission_denied"
     assert statements == [], "a refused role must not run any SQL"
+    assert _snapshot(built, job) == before and _audit(built, job) == []
+
+
+@pytest.mark.parametrize("role", READ_ONLY_ROLES)
+async def test_a_recruiter_and_a_viewer_cannot_edit_and_the_refusal_runs_no_sql(built, engines, seeded, role):
+    job = seeded["a"]["job"]
+    before = _snapshot(built, job)
+    engine = engines(WRITER)
+    statements = _statements(engine)
+    # An invalid body is still a 403: the role is checked before the body is validated.
+    for body in ({}, SAVE_TEXT):
+        response = await _post(_app(_user(seeded, "a", role), engine), job, body)
+        assert response.status_code == 403, response.text
+    assert statements == []
     assert _snapshot(built, job) == before and _audit(built, job) == []
 
 

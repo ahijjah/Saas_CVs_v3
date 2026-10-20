@@ -1,6 +1,6 @@
 """Offline tests for the requirements-v2 editing service: operations, planning and validation order. No database, route or model.
 
-The service must refuse every role except admin and recruiter, parse strictly, apply only trusted operations through
+The service must refuse every role except admin and hr_manager (every tenant role may read), parse strictly, apply only trusted operations through
 editing.py, never mutate its inputs, keep server-owned blocks from the TRUSTED stored document, record structured-field
 edits, refuse documents that fail validate_final, and fail closed on a structural review that does not match the
 trusted job description."""
@@ -69,15 +69,26 @@ def _item_of(doc: dict, item_id: str) -> dict:
 
 # ---- who may edit ----
 
-@pytest.mark.parametrize("role", ["admin", "recruiter"])
-def test_admin_and_recruiter_may_edit(role):
+@pytest.mark.parametrize("role", ["admin", "hr_manager"])
+def test_admin_and_hr_manager_may_edit(role):
     E.check_editor(role)
 
 
-@pytest.mark.parametrize("role", ["viewer", "super_admin", "hr_manager", "", "owner", None])
+@pytest.mark.parametrize("role", ["recruiter", "viewer", "super_admin", "", "owner", "Admin", None])
 def test_every_other_role_is_refused(role):
     with pytest.raises(E.PermissionDenied):
         E.check_editor(role)
+
+
+@pytest.mark.parametrize("role", ["admin", "hr_manager", "recruiter", "viewer"])
+def test_every_tenant_role_may_read(role):
+    E.check_reader(role)
+
+
+@pytest.mark.parametrize("role", ["super_admin", "", "owner", "Admin", None])
+def test_any_other_role_may_not_read(role):
+    with pytest.raises(E.PermissionDenied):
+        E.check_reader(role)
 
 
 # ---- strict parsing ----

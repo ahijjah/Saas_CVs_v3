@@ -9,6 +9,7 @@ import {
   WORKFLOW_STATUS_LABELS_AR,
 } from '../constants/workflow';
 import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
+import { canMutateApplications } from '../utils/permissions';
 
 interface JobMetaStrip {
   job_title: string;
@@ -538,6 +539,8 @@ const LANG_LABELS: Record<string, { en: string; ar: string }> = {
 };
 
 export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV, token, userRole, advancedMoveEnabled, onWorkflowStatusChange, onRecruiterNotesChange }) => {
+  // Recruiter and Viewer read an application; only admin and HR manager change it. The server enforces it too.
+  const canMutate = canMutateApplications(userRole);
   const { lang, isAr } = useLanguage() as { lang: 'en' | 'ar'; isAr: boolean };
   const t = T[lang];
 
@@ -1732,7 +1735,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
               ) : (
                 <p className="text-sm text-slate-400 italic">{kt.knockoutNotAnswered}</p>
               )}
-              {token && (
+              {token && canMutate && (
                 <button
                   onClick={() => handleStartEdit(qa)}
                   className="ml-auto flex-shrink-0 text-[10px] text-indigo-500 hover:text-indigo-700 font-semibold underline"
@@ -1751,7 +1754,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <h4 className="text-[10px] font-black text-textMuted uppercase tracking-widest">{kt.knockoutSectionTitle}</h4>
-              {token && data.submission_source !== 'public_apply' && (
+              {token && canMutate && data.submission_source !== 'public_apply' && (
                 isValidationFresh ? (
                   <button
                     disabled
@@ -1942,7 +1945,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                             return (
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-semibold text-indigo-700">{kt.knockoutAISuggested}: <span className="capitalize">{validation.suggested_answer}</span></span>
-                                {!isEditingThis ? (
+                                {!canMutate ? null : !isEditingThis ? (
                                   <>
                                     <button onClick={() => handleAcceptSuggestion(qa.question_id)} className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-semibold rounded-lg hover:bg-indigo-700">{kt.knockoutSuggestionAccept}</button>
                                     <button onClick={() => { setEditingSuggestionQid(qa.question_id); setEditingSuggestionValue(validation.suggested_answer ?? ''); }} className="px-2.5 py-1 bg-white border border-indigo-300 text-indigo-700 text-[11px] font-semibold rounded-lg hover:bg-indigo-50">{kt.knockoutSuggestionEditAccept}</button>
@@ -2361,7 +2364,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
       )}
 
       {/* Recruiter Workflow Panel */}
-      {onWorkflowStatusChange && (
+      {canMutate && onWorkflowStatusChange && (
         <section className="bg-white rounded-3xl border border-border overflow-hidden">
           <div className="px-8 py-5 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center">
@@ -2427,10 +2430,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             <textarea
               value={recruiterNotesText}
               onChange={e => { setRecruiterNotesText(e.target.value); setNotesDirty(true); }}
-              placeholder="Add private recruiter notes about this candidate..."
+              placeholder={canMutate ? 'Add private recruiter notes about this candidate...' : ''}
+              readOnly={!canMutate}
               className="w-full text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
               rows={4}
             />
+            {canMutate && (
             <div className="flex justify-end">
               <button
                 onClick={handleSaveNotes}
@@ -2440,6 +2445,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                 Save Notes
               </button>
             </div>
+            )}
           </div>
         </section>
       )}

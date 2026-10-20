@@ -42,6 +42,7 @@ import {
 } from '../constants/workflow';
 import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
 import { TagChip } from '../components/TagChip';
+import { canExportApplications, canMutateApplications } from '../utils/permissions';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1130,6 +1131,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 }) => {
   const wfLabels = lang === 'ar' ? WORKFLOW_STATUS_LABELS_AR : WORKFLOW_STATUS_LABELS_EN;
   const t = T[lang];
+  // Recruiter and Viewer read an application; only admin and HR manager change it (the server enforces this too).
+  const canMutate = canMutateApplications(userRole);
   const addToastRef = useRef(addToast);
   useEffect(() => { addToastRef.current = addToast; });
 
@@ -1977,7 +1980,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             {renderCommentText(comment.comment_text)}
                           </div>
                         )}
-                        {(comment.is_own || isAdmin) && editingCommentId !== comment.comment_id && (
+                        {canMutate && (comment.is_own || isAdmin) && editingCommentId !== comment.comment_id && (
                           <div className="flex gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             {comment.is_own && (
                               <button
@@ -1999,7 +2002,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             )}
 
             {/* Add comment with @mention autocomplete */}
-            <div className="border-t border-slate-200 pt-4 space-y-2 relative">
+            {canMutate && (
+            <div className="border-t border-slate-200 pt-4 space-y-2 relative" data-testid="comment-composer">
               <div className="relative">
                 <textarea
                   value={newComment}
@@ -2049,6 +2053,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 </button>
               </div>
             </div>
+            )}
           </div>
         )}
 
@@ -2082,6 +2087,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
+                        {canMutate && isAdmin && (
                         <button
                           onClick={() => {
                             setEditingInterviewId(iv.interview_id);
@@ -2103,7 +2109,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                           </svg>
                         </button>
-                        {isAdmin && (
+                        )}
+                        {canMutate && isAdmin && (
                           <button
                             onClick={() => handleDeleteInterview(iv.interview_id)}
                             className="text-slate-400 hover:text-red-500 p-1"
@@ -2192,7 +2199,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                               {fb.notes && <p className="mt-1.5 text-slate-600">{fb.notes}</p>}
                             </div>
                           ))}
-                          {showFeedbackForm === iv.interview_id ? (
+                          {canMutate && (showFeedbackForm === iv.interview_id ? (
                             <div className="space-y-2">
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-slate-500 w-24">{t.feedbackRating}:</span>
@@ -2253,7 +2260,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                             >
                               + {t.addFeedback}
                             </button>
-                          )}
+                          ))}
                         </div>
                       )}
                     </div>
@@ -2361,7 +2368,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   </div>
                 )}
 
-                {!showInterviewForm && (
+                {canMutate && !showInterviewForm && (
                   <button
                     onClick={() => {
                       setEditingInterviewId(null);
@@ -2441,7 +2448,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                         </div>
                       )}
                       {/* Decision action for this stage */}
-                      {decidingApprovalId === ap.approval_id ? (
+                      {!(canMutate && isAdmin) ? null : decidingApprovalId === ap.approval_id ? (
                         <div className="px-4 pb-3 pt-1 space-y-2 border-t border-slate-100">
                           <select
                             value={approvalDecision.decision}
@@ -2524,6 +2531,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 )}
 
                 {/* Initiate chain from policy */}
+                {canMutate && (
                 <button
                   onClick={handleInitiateApprovals}
                   disabled={initiatingApprovals}
@@ -2531,6 +2539,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 >
                   {initiatingApprovals ? '…' : t.initiateApprovals}
                 </button>
+                )}
               </>
             )}
           </div>
@@ -2578,12 +2587,14 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Preferred Contact Email</p>
+                {canMutate && (
                 <button
                   onClick={() => { setPrefContactEmailInput(effectivePreferred.email || ''); setShowPrefContactEdit(v => !v); }}
                   className="text-xs text-indigo-600 hover:underline"
                 >
                   {showPrefContactEdit ? 'Cancel' : 'Edit'}
                 </button>
+                )}
               </div>
               {!showPrefContactEdit && (
                 effectivePreferred.email ? (
@@ -2646,7 +2657,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             </div>
 
             {/* New communication button */}
-            {!showCommForm && (
+            {canMutate && !showCommForm && (
               <button
                 onClick={() => {
                   setEditingCommId(null);
@@ -2976,7 +2987,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                         <p className="text-[10px] text-slate-400 mt-2">by {comm.created_by_name}</p>
                       )}
                       {/* Action buttons for draft and failed records */}
-                      {isActionable && (
+                      {canMutate && isActionable && (
                         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
                           {/* Edit (draft only) */}
                           {isDraft && (
@@ -3159,7 +3170,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               return (
                 <div>
                   {/* Section header: Run button with freshness state */}
-                  {!isPublicApply && (
+                  {canMutate && !isPublicApply && (
                     <div className="flex items-center justify-end mb-3">
                       {isWsValidationFresh ? (
                         <button disabled className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-lg opacity-80 cursor-default">
@@ -3304,7 +3315,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                                   return (
                                     <>
                                       <p className="text-sm font-semibold text-indigo-800 capitalize">{wsValidation.suggested_answer}</p>
-                                      {isEditingThis ? (
+                                      {!canMutate ? null : isEditingThis ? (
                                         <div className="space-y-1.5">
                                           <input
                                             type="text"
@@ -3422,7 +3433,8 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-medium text-slate-500 uppercase">{t.assignedTo}</label>
-              <div className="relative">
+              {canMutate && (
+              <div className="relative" data-testid="assign-control">
                 <button
                   onClick={() => setAssignDropdownOpen(v => !v)}
                   className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
@@ -3469,6 +3481,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   </div>
                 )}
               </div>
+              )}
             </div>
             {candidate.assigned_user_name ? (
               <div className="flex items-center gap-2">
@@ -3513,12 +3526,14 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           <div className="mt-6 pt-6 border-t">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-gray-900 text-sm">Tags</h3>
+              {canMutate && (
               <button
                 onClick={() => setShowTagCreator(!showTagCreator)}
                 className="text-xs text-blue-600 hover:underline"
               >
                 {showTagCreator ? 'Cancel' : '+ Add'}
               </button>
+              )}
             </div>
 
             {/* Tag Chips */}
@@ -3528,7 +3543,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   <TagChip
                     key={tag.tag_id}
                     tag={tag}
-                    onRemove={onRemoveTag}
+                    onRemove={canMutate ? onRemoveTag : undefined}
                   />
                 ))}
               </div>
@@ -3539,7 +3554,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
             )}
 
             {/* Tag Creator */}
-            {showTagCreator && (
+            {canMutate && showTagCreator && (
               <div className="p-3 bg-gray-50 rounded-lg mb-3">
                 <input
                   type="text"
@@ -3603,6 +3618,7 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           <div className="mt-6 pt-6 border-t">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-gray-900 text-sm">Talent Pool</h3>
+              {canMutate ? (
               <button
                 onClick={onToggleTalentPool}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
@@ -3613,9 +3629,14 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
               >
                 {candidate.is_talent_pool ? '✓ In Pool' : 'Add to Pool'}
               </button>
+              ) : (
+              <span className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                {candidate.is_talent_pool ? '✓ In Pool' : 'Not in pool'}
+              </span>
+              )}
             </div>
 
-            {candidate.is_talent_pool && (
+            {canMutate && candidate.is_talent_pool && (
               <button
                 onClick={() => setShowReuseModal(true)}
                 className="mt-3 text-xs text-blue-600 hover:underline font-medium"
@@ -3822,8 +3843,9 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           {/* Recruiter Workflow Actions */}
           {candidate.processing_status === 'ai_scored' && (
             <div className="space-y-3">
+              {canMutate && (<>
               <h3 className="text-sm font-semibold text-slate-900">Workflow Actions</h3>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2" data-testid="workflow-actions">
                 <WorkflowActionMenu
                   applicationId={candidate.application_id}
                   currentStatus={candidate.workflow_status}
@@ -3836,10 +3858,11 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                   onTransition={onWorkflowUpdate}
                 />
               </div>
+              </>)}
               <div className="mt-3 pt-3 border-t border-slate-200">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-medium text-slate-600 uppercase">Recruiter Notes</label>
-                  {notesChanged && (
+                  {canMutate && notesChanged && (
                     <button
                       onClick={handleSaveNotes}
                       disabled={savingNotes}
@@ -3859,11 +3882,12 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
                 <textarea
                   value={notesText}
                   onChange={e => handleNotesChange(e.target.value)}
-                  placeholder="Add recruiter notes..."
+                  placeholder={canMutate ? 'Add recruiter notes...' : ''}
+                  readOnly={!canMutate}
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-transparent resize-vertical min-h-[80px]"
                 />
                 {notesText.length === 0 ? (
-                  <p className="mt-2 text-xs text-slate-500 italic">No notes yet. Add internal recruiter notes for this candidate.</p>
+                  <p className="mt-2 text-xs text-slate-500 italic">{canMutate ? 'No notes yet. Add internal recruiter notes for this candidate.' : 'No notes yet.'}</p>
                 ) : (
                   <p className="mt-1 text-xs text-slate-400">{notesText.length} characters</p>
                 )}
@@ -4222,6 +4246,8 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
   // Check if user is agency/freelancer
   const isAgency = auth.user?.tenant_type === 'agency' || auth.user?.tenant_type === 'individual_recruiter';
   const isAdmin = auth.user?.role === 'admin' || auth.user?.role === 'super_admin';
+  // Recruiter and Viewer read candidates; only admin and HR manager change them (bulk actions, workflow moves). The server enforces it too.
+  const canMutate = canMutateApplications(auth.user?.role);
 
   useEffect(() => {
     setPageTitle(t.pageTitle);
@@ -5390,8 +5416,9 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           </button>
         )}
 
-        {/* Export (CSV / Excel) — exports ALL candidates matching current filters */}
-        <div className="relative">
+        {/* Export (CSV / Excel) — exports ALL candidates matching current filters. Not offered to a Viewer. */}
+        {canExportApplications(auth.user?.role) && (
+        <div className="relative" data-testid="export-menu">
           <button
             onClick={() => setShowExportMenu(v => !v)}
             disabled={exporting}
@@ -5427,6 +5454,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
             </>
           )}
         </div>
+        )}
 
         {/* Result count */}
         {pagination && (
@@ -5437,7 +5465,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
       </div>
 
       {/* Bulk Action Bar */}
-      {selectedIds.size > 0 && (
+      {canMutate && selectedIds.size > 0 && (
         <div className="sticky top-0 z-20 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex flex-wrap gap-3 items-center shadow-sm">
           <span className="text-sm font-semibold text-indigo-900">
             {t.bulkSelect.replace('{count}', String(selectedIds.size))}
@@ -5821,6 +5849,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                {canMutate && (
                 <th className="px-3 py-3 text-center w-10">
                   {(() => {
                     const eligibleCount = candidates.filter(c => c.processing_status === 'ai_scored').length;
@@ -5836,6 +5865,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                     );
                   })()}
                 </th>
+                )}
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colCandidate}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colJob}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t.colAiScore}</th>
@@ -5898,6 +5928,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                     className={`hover:bg-slate-50 transition-colors ${isUpdating ? 'opacity-70' : ''} ${selectedIds.has(c.application_id) ? 'bg-indigo-50' : ''} ${isRed ? 'border-l-2 border-l-red-400' : ''}`}
                   >
                     {/* Checkbox — disabled for system-managed (non-ai_scored) rows */}
+                    {canMutate && (
                     <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                       <input
                         type="checkbox"
@@ -5908,6 +5939,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                         className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-2 focus:ring-indigo-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                       />
                     </td>
+                    )}
                     {/* Candidate name — click navigates to detail */}
                     <td className="px-4 py-3 cursor-pointer" onClick={() => openCandidate(c)}>
                       <div className="flex items-center gap-1.5">
@@ -5987,6 +6019,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                     {/* Actions: workflow move dropdown + view link */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                        {canMutate && (
                         <WorkflowActionMenu
                           applicationId={c.application_id}
                           currentStatus={c.workflow_status}
@@ -5998,6 +6031,7 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
                           advancedMoveEnabled={auth.user?.allow_advanced_workflow_move && c.job_allow_advanced_workflow_move}
                           onTransition={handleWorkflowUpdate}
                         />
+                        )}
                         <button
                           onClick={() => openCandidate(c)}
                           className="text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"

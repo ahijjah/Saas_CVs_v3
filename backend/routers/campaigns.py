@@ -29,6 +29,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.roles import RequireAdminOrPlatform, RequireManager
 from database import get_db, set_rls_context
 from services.campaign_service import (
     CAMPAIGN_STATUSES,
@@ -277,7 +278,7 @@ async def list_campaigns(
 
 # ── Create ────────────────────────────────────────────────────────────────────
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[RequireManager])
 async def create_campaign(
     body: CreateCampaignRequest,
     current_user: CurrentUserDep,
@@ -442,7 +443,7 @@ async def get_campaign(
 
 # ── Update metadata ───────────────────────────────────────────────────────────
 
-@router.patch("/{campaign_id}")
+@router.patch("/{campaign_id}", dependencies=[RequireManager])
 async def update_campaign(
     campaign_id: str,
     body: UpdateCampaignRequest,
@@ -541,7 +542,7 @@ async def update_campaign(
 
 # ── Status transition ─────────────────────────────────────────────────────────
 
-@router.post("/{campaign_id}/status")
+@router.post("/{campaign_id}/status", dependencies=[RequireManager])
 async def transition_campaign_status(
     campaign_id: str,
     body: CampaignStatusRequest,
@@ -774,7 +775,7 @@ async def get_campaign_candidates(
 
 # ── Delete (admin only — not a normal UI action) ──────────────────────────────
 
-@router.delete("/{campaign_id}", status_code=status.HTTP_200_OK)
+@router.delete("/{campaign_id}", status_code=status.HTTP_200_OK, dependencies=[RequireAdminOrPlatform])
 async def delete_campaign(
     campaign_id: str,
     current_user: CurrentUserDep,

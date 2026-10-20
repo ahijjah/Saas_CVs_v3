@@ -157,7 +157,7 @@ def _seed(db) -> dict[str, dict]:
     cur.execute("INSERT INTO tenants (name, email_domain) VALUES (%s, %s) RETURNING tenant_id", (f"E2E {tag}", f"{tag}.example"))
     tenant = str(cur.fetchone()[0])
     users = {"tenant": tenant}
-    for role in ("admin", "recruiter", "viewer"):
+    for role in ("admin", "hr_manager", "recruiter", "viewer"):
         email = f"{role}-{tag}@e2e-{tag}.com"
         password = secrets.token_urlsafe(18)
         cur.execute("INSERT INTO users (tenant_id, email, password_hash, full_name, role, status, must_change_password)"

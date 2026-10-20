@@ -5,6 +5,7 @@ import { WEBHOOK_CONFIG } from '../config';
 import { AuthState, Campaign, CampaignStatus, ClientOrganization } from '../types';
 import { useLanguage } from '../context/LanguageContext';
 import { usePageTitle } from '../context/PageTitleContext';
+import { canManageCampaigns } from '../utils/permissions';
 
 interface CampaignsProps {
   auth: AuthState;
@@ -156,7 +157,7 @@ export const CampaignsPage: React.FC<CampaignsProps> = ({ auth, addToast }) => {
   const tenantType = auth.user?.tenant_type ?? 'organization';
   const isAgency = tenantType === 'agency' || tenantType === 'individual_recruiter';
   const role = (auth.user?.role || '').toLowerCase();
-  const canWrite = ['admin', 'hr_manager', 'super_admin'].includes(role);
+  const canWrite = canManageCampaigns(role);
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [clientOrgs, setClientOrgs] = useState<ClientOrganization[]>([]);

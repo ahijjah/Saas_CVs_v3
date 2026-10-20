@@ -14,6 +14,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.dependencies import CurrentUserDep
+from auth.roles import RequireTenantAdmin, RequireUsage
 from auth.password import hash_password
 from database import get_db, set_rls_context
 
@@ -99,7 +100,7 @@ async def _get_active_count_and_limit(tenant_id: str, db) -> tuple[int, int]:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-@router.get("/users")
+@router.get("/users", dependencies=[RequireTenantAdmin])
 async def list_tenant_users(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -140,7 +141,7 @@ async def list_tenant_users(
     }
 
 
-@router.post("/users", status_code=status.HTTP_201_CREATED)
+@router.post("/users", status_code=status.HTTP_201_CREATED, dependencies=[RequireTenantAdmin])
 async def create_tenant_user(
     body: CreateTenantUserRequest,
     current_user: CurrentUserDep,
@@ -240,7 +241,7 @@ async def create_tenant_user(
     }
 
 
-@router.patch("/users/{user_id}/status")
+@router.patch("/users/{user_id}/status", dependencies=[RequireTenantAdmin])
 async def update_tenant_user_status(
     user_id: str,
     body: UpdateUserStatusRequest,
@@ -291,7 +292,7 @@ async def update_tenant_user_status(
     return {"success": True, "message": f"User {action} successfully."}
 
 
-@router.patch("/users/{user_id}")
+@router.patch("/users/{user_id}", dependencies=[RequireTenantAdmin])
 async def update_tenant_user_profile(
     user_id: str,
     body: UpdateUserProfileRequest,
@@ -343,7 +344,7 @@ async def update_tenant_user_profile(
 
 # ── Tenant self-service: usage & plan info ────────────────────────────────────
 
-@router.get("/usage")
+@router.get("/usage", dependencies=[RequireUsage])
 async def get_tenant_usage(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -499,7 +500,7 @@ _PLAN_LIMITS: dict[str, dict] = {
 }
 
 
-@router.post("/subscription/activate-trial")
+@router.post("/subscription/activate-trial", dependencies=[RequireTenantAdmin])
 async def activate_trial(
     current_user: CurrentUserDep,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -579,7 +580,7 @@ class SelectPlanRequest(BaseModel):
         return v
 
 
-@router.post("/subscription/select-plan")
+@router.post("/subscription/select-plan", dependencies=[RequireTenantAdmin])
 async def select_plan(
     body: SelectPlanRequest,
     current_user: CurrentUserDep,
@@ -648,7 +649,7 @@ class SimulatePaymentRequest(BaseModel):
         return v
 
 
-@router.post("/subscription/simulate-payment")
+@router.post("/subscription/simulate-payment", dependencies=[RequireTenantAdmin])
 async def simulate_payment(
     body: SimulatePaymentRequest,
     current_user: CurrentUserDep,

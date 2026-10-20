@@ -33,6 +33,7 @@ import { PlanUsagePage } from './pages/PlanUsage';
 import { PlatformSecretsPage } from './pages/PlatformSecrets';
 import { AIPromptsPage } from './pages/AIPrompts';
 import AuditLogs from './pages/AuditLogs';
+import { canViewAuditLogs } from './utils/permissions';
 import { AIUsagePage } from './pages/AIUsage';
 import { AIModelsPage } from './pages/AIModels';
 import { PublicJobApply } from './pages/PublicJobApply';
@@ -414,6 +415,12 @@ const AppInner: React.FC = () => {
           />
           </Route>
 
+          {/* Audit logs: a tenant admin reads their own organization's; a super admin reads every tenant's (the server scopes it) */}
+          <Route
+            path="/admin/audit-logs"
+            element={canViewAuditLogs(role) ? <AuditLogs scope={isSuperAdmin ? 'platform' : 'tenant'} /> : <Navigate to="/jobs" replace />}
+          />
+
           {/* Super-admin only routes */}
           <Route element={<SuperAdminGuard isSuperAdmin={isSuperAdmin} />}>
             <Route path="/admin/dashboard" element={<AdminDashboard {...sharedAuth} />} />
@@ -423,7 +430,6 @@ const AppInner: React.FC = () => {
             <Route path="/admin/platform-config" element={<PlatformConfigPage {...sharedAuth} />} />
             <Route path="/admin/platform-secrets" element={<PlatformSecretsPage {...sharedAuth} />} />
             <Route path="/admin/ai-prompts" element={<AIPromptsPage {...sharedAuth} />} />
-            <Route path="/admin/audit-logs" element={<AuditLogs />} />
             <Route path="/admin/ai-usage" element={<AIUsagePage {...sharedAuth} />} />
             <Route path="/admin/ai-models" element={<AIModelsPage {...sharedAuth} />} />
           </Route>

@@ -3,7 +3,7 @@
 A consumer is a production module that a login's code path can reach by import and that refers to the object. The entry points are:
 
   * cv_app: every router that does not use a platform dependency, and main (the API process);
-  * cv_admin: every router that declares get_platform_db or get_admin_db (platform administration and unauthenticated platform flows);
+  * cv_admin: every router that declares get_platform_db, get_admin_db or get_audit_db (platform administration, the audit-log read, and unauthenticated platform flows);
   * cv_worker: every module under workers/;
   * cv_secrets: services/runtime_config.py, the only module that reads secret values.
 
@@ -23,12 +23,12 @@ import sys
 from db import runtime_grants as G
 
 BACKEND = pathlib.Path(__file__).resolve().parents[1]
-PLATFORM_DEPENDENCIES = ("get_platform_db", "get_admin_db")
+PLATFORM_DEPENDENCIES = ("get_platform_db", "get_admin_db", "get_audit_db")
 SECRET_READER_MODULE = "services.runtime_config"
 PATH_BY_ROLE = {
     G.APP: "request",
     G.WORKER: "worker",
-    G.ADMIN: "platform administration (verified super_admin) or an unauthenticated platform flow",
+    G.ADMIN: "platform administration (verified super_admin), the audit-log read (verified admin, own tenant only) or an unauthenticated platform flow",
     G.SECRETS: "secret reader (runtime configuration)",
 }
 
