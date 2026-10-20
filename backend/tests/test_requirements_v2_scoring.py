@@ -24,9 +24,11 @@ from services.requirements_v2.extraction import parse_response
 from workers import requirements_v2_worker as worker
 
 JD = "Senior Python developer.\nPython and SQL are required.\nFive years of backend experience is preferred."
+# A Preferred item the description does not mark as optional ("valued" is not optional wording): the classification-warning fixture.
+JD_UNCLEAR = JD.replace("is preferred", "is valued")
 
 
-def _document(*, cue="preferred", extra_required=()):
+def _document(*, cue="preferred", extra_required=(), jd=JD):
     """A finalised document from the real parser and finaliser, for the job description above."""
     cats = {c: [] for c in C.CATEGORIES}
     cats["skills"] = [
@@ -35,11 +37,11 @@ def _document(*, cue="preferred", extra_required=()):
         *extra_required,
     ]
     cats["experience"] = [{"text": "Backend experience", "importance": "preferred", "importance_cue": cue, "origin": "stated",
-                           "source_text": "Five years of backend experience is preferred",
+                           "source_text": "Five years of backend experience " + ("is preferred" if jd == JD else "is valued"),
                            "experience": {"subject": "backend experience", "min_years": 5}}]
     raw = {"categories": cats, "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
-    result = parse_response(json.dumps(raw), JD, "stop", id_factory=worker.stable_id_factory(JD))
-    doc, _ = worker.finalise_document(worker.checked_document(result), JD)
+    result = parse_response(json.dumps(raw), jd, "stop", id_factory=worker.stable_id_factory(jd))
+    doc, _ = worker.finalise_document(worker.checked_document(result), jd)
     return doc, result.original
 
 
@@ -107,9 +109,9 @@ def test_a_ready_document_is_scored():
 
 
 def test_a_document_with_an_unacknowledged_classification_warning_is_refused():
-    doc, original = _document(cue="nice to have")
+    doc, original = _document(cue="nice to have", jd=JD_UNCLEAR)
     with pytest.raises(ScoringNotReady) as refused:
-        scoring_inputs(_row_json(doc), _row_json(original), JD, 1)
+        scoring_inputs(_row_json(doc), _row_json(original), JD_UNCLEAR, 1)
     assert refused.value.state == "needs_classification_review"
 
 

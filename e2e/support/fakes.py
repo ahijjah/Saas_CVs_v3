@@ -46,8 +46,8 @@ def scripted_response(description: str) -> str:
                                                cue="preferred")]}, {})
     if "SCENARIO-CLASSIFICATION" in description:
         return _response({"skills": [_item("Python", "required", "Python is required")],
-                          "experience": [_item("Backend experience", "preferred", "Five years of backend experience is preferred",
-                                               cue="nice to have")]}, {"skills": 100})
+                          "experience": [_item("Backend experience", "preferred", "Five years of backend experience is valued",
+                                               cue="nice to have")]}, {"skills": 100})   # "valued" is not optional wording: a real warning
     if "SCENARIO-SPLIT" in description:
         return _response({"skills": [_item("Python", "required", "Python or Java is required", alternatives=["Python", "Java"]),
                                      _item("Java", "required", "Python or Java is required", alternatives=["Python", "Java"])],

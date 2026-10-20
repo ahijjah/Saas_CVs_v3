@@ -30,6 +30,8 @@ SEC_COMMAND = [*PYTEST, "tests/test_security_revalidation_postgres.py", "tests/t
 RETRY_COMMAND = [*PYTEST, "tests/test_retry_hash_proof_postgres.py", "tests/test_requirements_v2_worker_postgres.py"]
 JOBS_COMMAND = [*PYTEST, "tests/test_job_code_sequence_postgres.py"]
 FOLLOWUP_COMMAND = [*PYTEST, "tests/test_requirements_v2_staging_followup.py"]
+PREFERRED_COMMAND = [*PYTEST, "tests/test_requirements_v2_preferred_classification.py"]
+JOB_ACCESS_COMMAND = ["npx", "vitest", "run", "tests/frontend/jobDetailsAccess.test.tsx"]
 REUSE_COMMAND = [*PYTEST, "tests/test_candidate_reuse_postgres.py", "-k", "one_file_reuse or multi_file"]
 _COMMAND_BY_TEST_PREFIX = (
     ("test_a_rejected_extraction", RETRY_COMMAND),
@@ -504,6 +506,49 @@ MUTANTS: tuple[Mutant, ...] = (
         new="    if False and result.missed_preferred:\n        logger.error",
         command=FOLLOWUP_COMMAND, surface="backend",
         expect="test_an_extraction_that_keeps_dropping_a_stated_preferred_sentence_fails_instead_of_succeeding",
+    ),
+    Mutant(
+        key="preferred-sentence-still-warns",
+        description="UAT closure: an explicit 'is preferred' sentence no longer establishes the classification (the false ITIL warning)",
+        file="services/requirements_v2/extraction/parser.py",
+        old="    if problem is not None and jd_marks_preferred(jd, span):",
+        new="    if False and problem is not None and jd_marks_preferred(jd, span):",
+        command=PREFERRED_COMMAND, surface="backend",
+        expect="test_itil_certification_is_preferred_needs_no_acknowledgment",
+    ),
+    Mutant(
+        key="ambiguous-preferred-no-longer-fails-closed",
+        description="UAT closure: a sentence that also calls the requirement required is accepted as an explicit Preferred",
+        file="services/requirements_v2/extraction/cues.py",
+        old="    if states_required(sentence):\n        return False",
+        new="    if False:\n        return False",
+        command=PREFERRED_COMMAND, surface="backend",
+        expect="test_an_unclear_or_unsupported_preferred_classification_still_requires_acknowledgment",
+    ),
+    Mutant(
+        key="unsupported-preferred-always-accepted",
+        description="UAT closure: any sentence is accepted as marking a requirement Preferred",
+        file="services/requirements_v2/extraction/cues.py",
+        old="    return heading is not None and bool(PREFERRED_RE.search(normalize(heading)))",
+        new="    return True",
+        command=PREFERRED_COMMAND, surface="backend",
+        expect="test_an_unclear_or_unsupported_preferred_classification_still_requires_acknowledgment",
+    ),
+    Mutant(
+        key="refused-poll-keeps-job-data",
+        description="UAT closure: a 403/404 on the extraction poll leaves the previously loaded job on screen",
+        file="pages/JobDetails.tsx",
+        old="        if (refuseAccess(err)) return;                  // access is gone: nothing is shown and polling ends with the data",
+        new="        if (false && refuseAccess(err)) return;",
+        command=JOB_ACCESS_COMMAND, surface="frontend",
+    ),
+    Mutant(
+        key="refused-job-tells-403-from-404",
+        description="UAT closure: the 404 state names the missing job, so it differs from the refused state",
+        file="pages/JobDetails.tsx",
+        old='          <p className="font-bold mb-2">Job not available</p>',
+        new='          <p className="font-bold mb-2">{accessError === 404 ? \'Job not found\' : \'Job not available\'}</p>',
+        command=JOB_ACCESS_COMMAND, surface="frontend",
     ),
 )
 

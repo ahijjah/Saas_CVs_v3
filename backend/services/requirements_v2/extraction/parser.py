@@ -46,6 +46,7 @@ from services.requirements_v2.contract import (
     CATEGORIES, EXPERIENCE_CATEGORY, IMPORTANCE_PREFERRED, IMPORTANCE_REQUIRED, MAX_REQUIRED_PER_CATEGORY,
     ORIGIN_FROM_RESPONSIBILITIES, ORIGIN_STATED, SCHEMA_VERSION, Issue, is_int, make_item, new_item_id,
 )
+from services.requirements_v2.extraction.cues import jd_marks_preferred
 from services.requirements_v2.extraction.completeness import missed_context_statements, missed_preferred_statements
 from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA256, PROMPT_VERSION
 from services.requirements_v2.extraction.text import (
@@ -245,7 +246,20 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
 
 
 def _cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:
-    """Why a Preferred classification is not established by the job description, or None when it is."""
+    """Why a Preferred classification is not established by the job description, or None when it is.
+
+    Established means either the model's cue is tied to the item (see _model_cue_problem), or the job description marks the item as
+    optional in its own words: the approved optional wording sits in the item's own sentence, before or after the quoted words, or in
+    its heading, and the sentence does not also call it required. The second path does not depend on the model's cue at all, so a
+    short quotation or a missing cue cannot raise a warning for a sentence that plainly says "preferred"."""
+    problem = _model_cue_problem(cue, jd, span)
+    if problem is not None and jd_marks_preferred(jd, span):
+        return None
+    return problem
+
+
+def _model_cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:
+    """Why the model's cue does not establish a Preferred classification, or None when it does."""
     if not isinstance(cue, str) or not cue.strip():
         return (CUE_MISSING, "classified Preferred by the AI but no cue (the job description's own optional / "
                              "advantage wording) was given; confirm it is Preferred or change it to Required")

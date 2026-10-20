@@ -124,6 +124,15 @@ def cue_relationship(jd_text: str, span: tuple[int, int], cue: str) -> str | Non
     same_sentence = _SENTENCE_BREAK_RE.split(jd_text[line_start:start])[-1]
     if contains_phrase(same_sentence, cue):
         return "heading"
+    heading = heading_above(jd_text, span)
+    return "heading" if heading is not None and contains_phrase(heading, cue) else None
+
+
+def heading_above(jd_text: str, span: tuple[int, int]) -> str | None:
+    """The NEAREST heading line above the item whose wording occupies `span` (a line that ends with a colon, or a short line that
+    introduces a list), or None when the item has no heading."""
+    start, end = span
+    line_start = jd_text.rfind("\n", 0, start) + 1
     line_end = jd_text.find("\n", end)
     below = jd_text[line_start:len(jd_text) if line_end < 0 else line_end]       # the item's own line
     cursor = line_start
@@ -132,7 +141,7 @@ def cue_relationship(jd_text: str, span: tuple[int, int], cue: str) -> str | Non
         line = jd_text[prev_start:cursor - 1]
         cursor = prev_start
         if _is_heading_line(line, below):
-            return "heading" if contains_phrase(line, cue) else None
+            return line
         if line.strip():
             below = line
     return None

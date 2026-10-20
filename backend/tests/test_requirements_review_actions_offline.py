@@ -16,28 +16,30 @@ from workers import requirements_v2_worker as worker
 USER = "11111111-1111-4111-8111-111111111111"
 NOW = "2026-10-18T10:00:00+00:00"
 JD = "Senior Python developer.\nPython and SQL are required.\nFive years of backend experience is preferred."
+# The classification fixture needs a Preferred item the job description does not mark as optional ("valued" is not optional wording).
+JD_UNCLEAR = JD.replace("is preferred", "is valued")
 
 
-def _doc(*, cue="preferred", skills=None, experience=None):
+def _doc(*, cue="preferred", skills=None, experience=None, jd=JD):
     cats = {c: [] for c in C.CATEGORIES}
     cats["skills"] = skills if skills is not None else [
         {"text": "Python", "importance": "required", "source_text": "Python and SQL are required", "origin": "stated"},
         {"text": "SQL", "importance": "required", "source_text": "Python and SQL are required", "origin": "stated"}]
     cats["experience"] = experience if experience is not None else [
         {"text": "Backend experience", "importance": "preferred", "importance_cue": cue, "origin": "stated",
-         "source_text": "Five years of backend experience is preferred",
+         "source_text": "Five years of backend experience " + ("is preferred" if jd == JD else "is valued"),
          "experience": {"subject": "backend experience", "min_years": 5}}]
     raw = {"categories": cats, "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
     result = worker.parse_response if False else None
     from services.requirements_v2.extraction import parse_response
-    parsed = parse_response(json.dumps(raw), JD, "stop", id_factory=worker.stable_id_factory(JD))
-    doc, _ = worker.finalise_document(worker.checked_document(parsed), JD)
+    parsed = parse_response(json.dumps(raw), jd, "stop", id_factory=worker.stable_id_factory(jd))
+    doc, _ = worker.finalise_document(worker.checked_document(parsed), jd)
     return doc, parsed.original
 
 
-def _plan(stored, original, ops, *, retired=()):
+def _plan(stored, original, ops, *, retired=(), jd=JD):
     return E.plan_operations(stored, original, list(retired), E.parse_operations(ops), user_id=USER, now=NOW,
-                             jd_text=JD)
+                             jd_text=jd)
 
 
 def _ids(doc, category="skills"):
@@ -100,31 +102,31 @@ def _ready_weighted():
 # ---- classification acknowledgment ----
 
 def _classification_document():
-    return _doc(cue="nice to have")                       # an unestablished cue: one open classification warning
+    return _doc(cue="nice to have", jd=JD_UNCLEAR)        # not marked optional by the description: one open classification warning
 
 
 def test_acknowledging_an_open_warning_records_the_server_identity_and_time():
     doc, original = _classification_document()
     warning_id = doc[worker.REVIEW_KEY]["warnings"][0]["id"]
-    planned = _plan(doc, original, [{"op": "acknowledge_classification_warning", "warning_id": warning_id}])
+    planned = _plan(doc, original, [{"op": "acknowledge_classification_warning", "warning_id": warning_id}], jd=JD_UNCLEAR)
     ack = planned.document[worker.REVIEW_KEY]["acknowledgments"][0]
     assert ack["warning_id"] == warning_id and ack["user_id"] == USER and ack["acknowledged_at"] == NOW
-    assert compute_readiness(planned.document, original=original, jd_text=JD).state != "needs_classification_review"
+    assert compute_readiness(planned.document, original=original, jd_text=JD_UNCLEAR).state != "needs_classification_review"
 
 
 def test_an_unknown_warning_id_is_refused_and_changes_nothing():
     doc, original = _classification_document()
     with pytest.raises(E.InvalidOperation) as refused:
-        _plan(doc, original, [{"op": "acknowledge_classification_warning", "warning_id": "nope"}])
+        _plan(doc, original, [{"op": "acknowledge_classification_warning", "warning_id": "nope"}], jd=JD_UNCLEAR)
     assert refused.value.code == "unknown_warning"
 
 
 def test_acknowledging_the_same_warning_twice_is_refused():
     doc, original = _classification_document()
     warning_id = doc[worker.REVIEW_KEY]["warnings"][0]["id"]
-    acknowledged = _plan(doc, original, [{"op": "acknowledge_classification_warning", "warning_id": warning_id}]).document
+    acknowledged = _plan(doc, original, [{"op": "acknowledge_classification_warning", "warning_id": warning_id}], jd=JD_UNCLEAR).document
     with pytest.raises(E.InvalidOperation) as refused:
-        _plan(acknowledged, original, [{"op": "acknowledge_classification_warning", "warning_id": warning_id}])
+        _plan(acknowledged, original, [{"op": "acknowledge_classification_warning", "warning_id": warning_id}], jd=JD_UNCLEAR)
     assert refused.value.code == "already_acknowledged"
 
 

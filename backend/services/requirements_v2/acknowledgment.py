@@ -234,15 +234,21 @@ def _ack_is_valid(ack: dict | None, warning: dict, category: str, item: dict) ->
 
 
 def source_establishes_preferred(item: dict, warning: dict) -> bool:
-    """True when the item's own verbatim source sentence contains the cue the warning is about.
+    """True when the item's own verbatim source sentence establishes the Preferred classification.
 
     That is the extraction's standard for an established Preferred cue, applied to the item's stored source wording: the
     warning's evidence was written when the cue was not yet tied to the item, and a source sentence that now shows the cue
-    settles it. Only the warning's stored cue is checked; nothing is matched on particular words."""
-    from services.requirements_v2.extraction.text import contains_phrase   # lazy: the extraction package imports this module
-    cue = (warning.get("evidence") or {}).get("cue")
+    settles it. Either the warning's stored cue is in the source, or the source itself carries the approved optional wording
+    without calling the requirement required (see extraction/cues.py)."""
+    from services.requirements_v2.extraction.cues import jd_marks_preferred          # lazy: the extraction package imports this module
+    from services.requirements_v2.extraction.text import contains_phrase
     source = item.get("source_text")
-    return isinstance(cue, str) and bool(cue.strip()) and isinstance(source, str) and contains_phrase(source, cue)
+    if not (isinstance(source, str) and source.strip()):
+        return False
+    cue = (warning.get("evidence") or {}).get("cue")
+    if isinstance(cue, str) and cue.strip() and contains_phrase(source, cue):
+        return True
+    return jd_marks_preferred(source, (0, len(source)))
 
 
 def classification_status(doc: Any) -> ClassificationStatus:
