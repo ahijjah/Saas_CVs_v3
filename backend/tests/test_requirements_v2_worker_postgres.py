@@ -35,6 +35,7 @@ from services.requirements_v2.readiness import NEEDS_CLASSIFICATION_REVIEW, READ
 from workers import requirements_v2_worker as worker
 
 EN_JD = "Senior Python developer.\nPython and SQL are required.\nFive years of backend experience is preferred."
+EN_JD_UNCLEAR = EN_JD.replace("is preferred", "is valued")   # a Preferred item the description does not mark as optional
 AR_JD = "مطلوب مطور بايثون بخبرة في قواعد البيانات.\nمطلوب إتقان لغة SQL.\nخبرة سابقة في الذكاء الاصطناعي مفضلة."
 CATEGORY_KEYS = ("skills", "experience", "education", "certifications", "soft_skills", "domain_knowledge", "other_requirements")
 
@@ -66,7 +67,7 @@ AR_OUTPUT = _output(
 UNCUED_OUTPUT = _output(
     [{"text": "Python", "importance": "required", "source_text": "Python and SQL are required", "origin": "stated"}],
     [{"text": "Backend experience", "importance": "preferred", "importance_cue": "nice to have", "origin": "stated",
-      "source_text": "Five years of backend experience is preferred"}],
+      "source_text": "Five years of backend experience is valued"}],
 )
 
 
@@ -220,13 +221,13 @@ async def test_source_text_is_the_exact_job_description_wording_and_the_descript
 async def test_a_preferred_item_with_an_unestablished_cue_produces_a_classification_review_block(built, engine, monkeypatch):
     _fake_model(monkeypatch, UNCUED_OUTPUT)
     tenant = _tenant(built)
-    job = _job(built, tenant, EN_JD)
-    await _run(engine, job, EN_JD)
+    job = _job(built, tenant, EN_JD_UNCLEAR)
+    await _run(engine, job, EN_JD_UNCLEAR)
     doc = _doc(built, job)
     warnings = doc["classification_review"]["warnings"]
     assert [w["code"] for w in warnings] == ["preferred_cue_not_in_job_description"]
     readiness = compute_readiness(doc, require_classification_acknowledgment=True, original=_row(built, job)[5]["requirements"],
-                                  jd_text=EN_JD)
+                                  jd_text=EN_JD_UNCLEAR)
     assert readiness.state == NEEDS_CLASSIFICATION_REVIEW
 
 

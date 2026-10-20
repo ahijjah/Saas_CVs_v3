@@ -17,15 +17,10 @@ import re
 from typing import Iterable
 
 from services.requirements_v2.contract import CATEGORIES
+from services.requirements_v2.extraction.cues import PREFERRED_RE
 from services.requirements_v2.extraction.text import locate_span, normalize
 
-# The job description's own optional / advantage wording (English words match as whole words, Arabic as written).
-_PREFERRED_EN = (r"preferred", r"preferably", r"desirable", r"nice[- ]to[- ]have", r"(?:a|an|is|are|big|major) plus",
-                 r"(?:an|is|are) advantage", r"advantageous", r"ideally", r"(?:an|is|are) asset", r"(?:a|is) bonus",
-                 r"optional")
-_PREFERRED_AR = ("يفضل", "مفضل", "تفضل", "ميزة", "أفضلية", "افضلية", "مرغوب", "اختيارية")
-# A cue joined to another word by a hyphen ("non-preferred", "SCENARIO-PREFERRED") is part of that word, not a statement.
-_PREFERRED_RE = re.compile(r"(?<![^\W_]|-)(?:" + "|".join(_PREFERRED_EN) + r")(?![^\W_])|" + "|".join(_PREFERRED_AR))
+_PREFERRED_RE = PREFERRED_RE        # the one vocabulary of the job description's optional / advantage wording (see cues.py)
 
 # A reporting line or a work arrangement (the closed vocabulary the context block accepts).
 _CONTEXT_RE = re.compile(

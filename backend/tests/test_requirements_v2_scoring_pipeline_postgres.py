@@ -34,6 +34,7 @@ CV_TEXT = (
 )
 NOW = "2026-10-18T10:00:00+00:00"
 EN_JD = "Senior developer.\nPython and SQL are required.\nFive years of backend experience is preferred."
+EN_JD_UNCLEAR = EN_JD.replace("is preferred", "is valued")   # a Preferred item the description does not mark as optional
 SPLIT_JD = "Senior developer.\nPython or Java is required.\nFive years of experience is preferred."
 AR_JD = "مطور أول.\nمطلوب بايثون أو جافا.\nخبرة خمس سنوات مفضلة."
 
@@ -69,10 +70,10 @@ def _preferred_only():
 
 
 def _classification_warning():
-    doc, original, expectations = _build(EN_JD, {"skills": [
+    doc, original, expectations = _build(EN_JD_UNCLEAR, {"skills": [
         {"text": "Python", "importance": "required", "source_text": "Python and SQL are required", "origin": "stated"}],
         "experience": [{"text": "Backend experience", "importance": "preferred", "importance_cue": "nice to have",
-                        "origin": "stated", "source_text": "Five years of backend experience is preferred"}]},
+                        "origin": "stated", "source_text": "Five years of backend experience is valued"}]},
         {"skills": 100})
     return doc, original, expectations
 
@@ -254,7 +255,7 @@ async def test_a_preferred_only_document_is_blocked_before_confirmation_and_conf
 @pytest.mark.asyncio
 async def test_a_classification_warning_blocks_scoring_until_it_is_acknowledged(built, pipeline):
     tenant = _tenant(built)
-    job = _v2_job(built, tenant, EN_JD, _classification_warning(), revision=1)
+    job = _v2_job(built, tenant, EN_JD_UNCLEAR, _classification_warning(), revision=1)
     app = _application(built, tenant, job, pipeline.root)
     with pytest.raises(ScoringNotReady) as blocked:
         await pipeline.score(app, job, tenant)

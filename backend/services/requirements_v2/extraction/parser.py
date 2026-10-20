@@ -46,6 +46,7 @@ from services.requirements_v2.contract import (
     CATEGORIES, EXPERIENCE_CATEGORY, IMPORTANCE_PREFERRED, IMPORTANCE_REQUIRED, MAX_REQUIRED_PER_CATEGORY,
     ORIGIN_FROM_RESPONSIBILITIES, ORIGIN_STATED, SCHEMA_VERSION, Issue, is_int, make_item, new_item_id,
 )
+from services.requirements_v2.extraction.cues import jd_marks_preferred
 from services.requirements_v2.extraction.completeness import missed_context_statements, missed_preferred_statements
 from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA256, PROMPT_VERSION
 from services.requirements_v2.extraction.text import (
@@ -245,7 +246,23 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
 
 
 def _cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:
-    """Why a Preferred classification is not established by the job description, or None when it is."""
+    """Why a Preferred classification is not established by the job description, or None when it is.
+
+    Established means the job description's own approved optional wording is bound to THIS requirement (see extraction/cues.py): in
+    its own clause, ahead of it, inside its quoted words, or in the heading above it, with no required wording in that clause. The
+    model's cue establishes nothing by itself (it is only used to explain a warning), and a cue that sits in a sentence with other
+    requirements and cannot be tied to this one reliably is not established, so the recruiter confirms it."""
+    if jd_marks_preferred(jd, span):
+        return None
+    problem = _model_cue_problem(cue, jd, span)
+    if problem is not None:
+        return problem
+    return (CUE_NOT_LINKED, f"the cue \"{_preview(cue)}\" appears in a sentence that holds other requirements or required wording, so "
+                            "it cannot be tied to this item reliably; confirm it is Preferred or change it to Required")
+
+
+def _model_cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:
+    """Why the model's cue does not establish a Preferred classification, or None when it does."""
     if not isinstance(cue, str) or not cue.strip():
         return (CUE_MISSING, "classified Preferred by the AI but no cue (the job description's own optional / "
                              "advantage wording) was given; confirm it is Preferred or change it to Required")

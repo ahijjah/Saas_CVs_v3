@@ -72,21 +72,91 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('no sample job is shown for an error', () => {
-  it('renders Job Not Found for 404 and shows none of the sample data', async () => {
-    getMock.mockRejectedValue(httpError(404));
+// What a loaded job puts on the page: its own title and code, the application counts and the intake actions.
+const LOADED_JOB_TEXT = ['IT Support Engineer', 'JOB-2026-0001', 'Ramallah'];
+const JOB_ACTION_NAMES = [/upload cvs/i, /score uploaded cvs/i, /copy/i, /edit/i, /save/i];
+
+function expectNoJobContent(container: HTMLElement) {
+  const text = container.textContent ?? '';
+  for (const sample of [...SAMPLE_TEXT, ...LOADED_JOB_TEXT]) expect(text).not.toContain(sample);
+  for (const label of ['Total Received', 'AI Scored', 'Qualified', 'Evaluation Logic', 'Edit Weights', 'Original Job Description']) {
+    expect(text).not.toContain(label);
+  }
+  expect(screen.queryByTestId('requirements-panel')).toBeNull();
+  const buttons = screen.getAllByRole('button').map((b) => b.textContent ?? '');
+  expect(buttons).toEqual(['Return to Home']);                                  // the only action is the way back
+  for (const name of JOB_ACTION_NAMES) expect(screen.queryByRole('button', { name })).toBeNull();
+}
+
+describe('a refused or missing job shows one safe state and no job content', () => {
+  it.each([404, 403])('renders the same unavailable state for %i and none of the sample data', async (status) => {
+    getMock.mockRejectedValue(httpError(status));
     const { container } = renderPage();
-    expect(await screen.findByTestId('job-not-found')).toBeInTheDocument();
-    const text = container.textContent ?? '';
-    for (const sample of SAMPLE_TEXT) expect(text).not.toContain(sample);
+    expect(await screen.findByTestId('job-unavailable')).toBeInTheDocument();
+    expectNoJobContent(container);
   });
 
-  it('renders Unauthorized for 403 and shows none of the sample data', async () => {
+  it('says nothing that tells a missing job from another tenant\'s job', async () => {
+    getMock.mockRejectedValue(httpError(404));
+    const missing = renderPage();
+    await screen.findByTestId('job-unavailable');
+    const missingHtml = missing.container.innerHTML;
+    missing.unmount();
+
+    getMock.mockReset();
     getMock.mockRejectedValue(httpError(403));
+    const refused = renderPage();
+    await screen.findByTestId('job-unavailable');
+    expect(refused.container.innerHTML).toBe(missingHtml);
+    expect(refused.container.textContent ?? '').not.toMatch(/forbidden|unauthori[sz]ed|another tenant|permission|found/i);
+  });
+
+  it.each([404, 403])('clears a job that was already loaded when a later poll is refused with %i', async (status) => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    let refuse = false;
+    getMock.mockImplementation(async (url: string) => {
+      if (url !== DETAILS_URL) return [];
+      if (refuse) throw httpError(status);
+      return jobPayload('pending');
+    });
     const { container } = renderPage();
-    expect(await screen.findByTestId('job-unauthorized')).toBeInTheDocument();
-    const text = container.textContent ?? '';
-    for (const sample of SAMPLE_TEXT) expect(text).not.toContain(sample);
+    await vi.waitFor(() => expect(detailsCalls()).toBe(1));
+    await vi.waitFor(() => expect(container.textContent ?? '').toContain('JOB-2026-0001'));   // the job really was on the page
+    expect(container.textContent ?? '').toContain('IT Support Engineer');
+
+    refuse = true;
+    await advancePolls(1);
+    await vi.waitFor(() => expect(screen.queryByTestId('job-unavailable')).not.toBeNull());
+    expectNoJobContent(container);
+
+    const after = detailsCalls();
+    await advancePolls(10);
+    expect(detailsCalls()).toBe(after);                                         // polling ended with the data
+  });
+
+  it('keeps a loaded job on screen when a poll fails for a transient reason', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    let fail = false;
+    getMock.mockImplementation(async (url: string) => {
+      if (url !== DETAILS_URL) return [];
+      if (fail) throw httpError(500);
+      return jobPayload('pending');
+    });
+    const { container } = renderPage();
+    await vi.waitFor(() => expect(container.textContent ?? '').toContain('JOB-2026-0001'));
+    fail = true;
+    await advancePolls(2);
+    expect(container.textContent ?? '').toContain('JOB-2026-0001');
+    expect(screen.queryByTestId('job-unavailable')).toBeNull();
+  });
+
+  it('renders a job that loads normally, with no unavailable state', async () => {
+    getMock.mockImplementation(async (url: string) => (url === DETAILS_URL ? jobPayload('completed') : []));
+    const { container } = renderPage();
+    await vi.waitFor(() => expect(container.textContent ?? '').toContain('JOB-2026-0001'));
+    expect(container.textContent ?? '').toContain('IT Support Engineer');
+    expect(screen.queryByTestId('job-unavailable')).toBeNull();
+    expect(screen.queryByText('Sync Error')).toBeNull();
   });
 
   it('shows the error with a failure state, not sample data, for any other failure', async () => {
@@ -95,6 +165,7 @@ describe('no sample job is shown for an error', () => {
     await screen.findByText('API Error: 500');
     const text = container.textContent ?? '';
     for (const sample of SAMPLE_TEXT) expect(text).not.toContain(sample);
+    expect(screen.queryByTestId('job-unavailable')).toBeNull();
   });
 });
 

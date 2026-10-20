@@ -17,7 +17,7 @@ EN = "Senior Python developer.\nPython and SQL are required for every candidate.
 AR = "مطور أول لبناء واجهات برمجية.\nمطلوب بايثون وإتقان لغة SQL لكل مرشح.\nخبرة سابقة في الذكاء الاصطناعي مفضلة.\nيعمل الفريق على تقارير الأداء للعملاء."
 SCENARIOS = {
     "preferred": "SCENARIO-PREFERRED\nSenior developer for the reporting team.\nKnowledge of reporting tools is preferred.\nThe role supports finance analysts every day.",
-    "classification": "SCENARIO-CLASSIFICATION\nSenior developer.\nPython is required for the role.\nFive years of backend experience is preferred.\nThe role builds reporting APIs for finance teams.",
+    "classification": "SCENARIO-CLASSIFICATION\nSenior developer.\nPython is required for the role.\nFive years of backend experience is valued.\nThe role builds reporting APIs for finance teams.",
     "split": "SCENARIO-SPLIT\nSenior developer.\nPython or Java is required for the role.\nFive years of experience is preferred.\nThe role builds reporting APIs for finance teams.",
     "structure": "SCENARIO-STRUCTURE\nSenior developer.\nPython is required for the role.\nFive years of backend experience is required.\nThe role builds reporting APIs for finance teams.",
     "invalid": "SCENARIO-INVALID\nSenior developer.\nPython and SQL are required for every candidate.\nThe role builds reporting APIs for finance teams.",

@@ -501,6 +501,17 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
   // 403 or 404 on the job itself. Rendered as its own state; no job data is ever shown with it.
   const [accessError, setAccessError] = useState<number | null>(null);
 
+  // A refused or missing job (403 or 404, whichever request reports it): every piece of job state is cleared at once, so nothing
+  // loaded earlier can stay on screen next to the error. Both statuses lead to the same state, which says nothing about whether the job exists.
+  const refuseAccess = useCallback((err: any): boolean => {
+    const status = typeof err?.status === 'number' ? err.status : null;
+    if (status !== 403 && status !== 404) return false;
+    setDetails(null);
+    setQueueStatus(null);
+    setAccessError(status);
+    return true;
+  }, []);
+
   useEffect(() => {
     const title = details?.job_title || (isAr ? 'تفاصيل الوظيفة' : 'Job Details');
     setPageTitle(title);
@@ -602,12 +613,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         }
       } catch (err: any) {
         // No sample job is ever shown in place of a real one. A 403 or 404 renders its own state; anything else is an error with a retry.
-        const status = typeof err?.status === 'number' ? err.status : null;
         setDetails(null);
-        if (status === 403 || status === 404) {
-          setAccessError(status);
-          return;
-        }
+        if (refuseAccess(err)) return;
         const errorMsg =
           err.name === 'TypeError' && err.message === 'Failed to fetch'
             ? 'Network connection error.'
@@ -619,7 +626,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       }
     };
     fetchDetails();
-  }, [jobId, auth.token]);
+  }, [jobId, auth.token, refuseAccess]);
 
   // Capture original AI criteria once (first load)
   useEffect(() => {
@@ -658,11 +665,14 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           const payload = Array.isArray(data) ? data[0] : data;
           setDetails({ ...payload.details, analysis_json: payload.analysis, original_analysis_json: payload.original_analysis });
         }
-      } catch { /* ignore transient polling errors; the next poll retries */ }
+      } catch (err: any) {
+        if (refuseAccess(err)) return;                  // access is gone: nothing is shown and polling ends with the data
+        /* any other error is transient; the next poll retries */
+      }
       setCriteriaPolltick(t => t + 1); // always re-trigger effect
     }, CRITERIA_POLL_MS);
     return () => clearTimeout(timer);
-  }, [criteriaPolltick, details?.criteria_extraction_status, jobId, auth.token]);
+  }, [criteriaPolltick, details?.criteria_extraction_status, jobId, auth.token, refuseAccess]);
 
   // Check again: a new bounded run of polls, from the current state.
   const resumeCriteriaPolling = useCallback(() => {
@@ -703,8 +713,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         const payload = Array.isArray(data) ? data[0] : data;
         setDetails({ ...payload.details, analysis_json: payload.analysis });
       }
-    } catch { /* ignore transient errors during background refresh */ }
-  }, [jobId, auth.token]);
+    } catch (err: any) {
+      if (refuseAccess(err)) return;
+      /* any other error is transient during a background refresh */
+    }
+  }, [jobId, auth.token, refuseAccess]);
 
   const fetchQueueStatus = useCallback(async () => {
     if (!jobId) return;
@@ -1268,15 +1281,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     );
   }
 
-  if (accessError && !details) {
-    const notFound = accessError === 404;
+  if (accessError) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center" data-testid={notFound ? 'job-not-found' : 'job-unauthorized'}>
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center" data-testid="job-unavailable">
         <div className="bg-slate-50 text-slate-800 p-6 rounded-2xl mb-6 max-w-md">
-          <p className="font-bold mb-2">{notFound ? 'Job not found' : 'Unauthorized'}</p>
-          <p className="text-sm opacity-80">{notFound
-            ? 'This job does not exist or is not available to your account.'
-            : 'You do not have permission to view this job.'}</p>
+          <p className="font-bold mb-2">Job not available</p>
+          <p className="text-sm opacity-80">This job does not exist or is not available to your account.</p>
         </div>
         <button onClick={onBack} className="bg-primary text-white px-8 py-3 rounded-xl font-bold shadow-lg">{t.returnDashboard}</button>
       </div>
