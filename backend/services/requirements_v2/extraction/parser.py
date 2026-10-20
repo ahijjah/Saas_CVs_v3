@@ -248,14 +248,17 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
 def _cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:
     """Why a Preferred classification is not established by the job description, or None when it is.
 
-    Established means either the model's cue is tied to the item (see _model_cue_problem), or the job description marks the item as
-    optional in its own words: the approved optional wording sits in the item's own sentence, before or after the quoted words, or in
-    its heading, and the sentence does not also call it required. The second path does not depend on the model's cue at all, so a
-    short quotation or a missing cue cannot raise a warning for a sentence that plainly says "preferred"."""
-    problem = _model_cue_problem(cue, jd, span)
-    if problem is not None and jd_marks_preferred(jd, span):
+    Established means the job description's own approved optional wording is bound to THIS requirement (see extraction/cues.py): in
+    its own clause, ahead of it, inside its quoted words, or in the heading above it, with no required wording in that clause. The
+    model's cue establishes nothing by itself (it is only used to explain a warning), and a cue that sits in a sentence with other
+    requirements and cannot be tied to this one reliably is not established, so the recruiter confirms it."""
+    if jd_marks_preferred(jd, span):
         return None
-    return problem
+    problem = _model_cue_problem(cue, jd, span)
+    if problem is not None:
+        return problem
+    return (CUE_NOT_LINKED, f"the cue \"{_preview(cue)}\" appears in a sentence that holds other requirements or required wording, so "
+                            "it cannot be tied to this item reliably; confirm it is Preferred or change it to Required")
 
 
 def _model_cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:

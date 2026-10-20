@@ -31,6 +31,7 @@ RETRY_COMMAND = [*PYTEST, "tests/test_retry_hash_proof_postgres.py", "tests/test
 JOBS_COMMAND = [*PYTEST, "tests/test_job_code_sequence_postgres.py"]
 FOLLOWUP_COMMAND = [*PYTEST, "tests/test_requirements_v2_staging_followup.py"]
 PREFERRED_COMMAND = [*PYTEST, "tests/test_requirements_v2_preferred_classification.py"]
+BINDING_COMMAND = [*PYTEST, "tests/test_requirements_v2_preferred_binding.py"]
 JOB_ACCESS_COMMAND = ["npx", "vitest", "run", "tests/frontend/jobDetailsAccess.test.tsx"]
 REUSE_COMMAND = [*PYTEST, "tests/test_candidate_reuse_postgres.py", "-k", "one_file_reuse or multi_file"]
 _COMMAND_BY_TEST_PREFIX = (
@@ -511,19 +512,10 @@ MUTANTS: tuple[Mutant, ...] = (
         key="preferred-sentence-still-warns",
         description="UAT closure: an explicit 'is preferred' sentence no longer establishes the classification (the false ITIL warning)",
         file="services/requirements_v2/extraction/parser.py",
-        old="    if problem is not None and jd_marks_preferred(jd, span):",
-        new="    if False and problem is not None and jd_marks_preferred(jd, span):",
+        old="    if jd_marks_preferred(jd, span):\n        return None",
+        new="    if False and jd_marks_preferred(jd, span):\n        return None",
         command=PREFERRED_COMMAND, surface="backend",
         expect="test_itil_certification_is_preferred_needs_no_acknowledgment",
-    ),
-    Mutant(
-        key="ambiguous-preferred-no-longer-fails-closed",
-        description="UAT closure: a sentence that also calls the requirement required is accepted as an explicit Preferred",
-        file="services/requirements_v2/extraction/cues.py",
-        old="    if states_required(sentence):\n        return False",
-        new="    if False:\n        return False",
-        command=PREFERRED_COMMAND, surface="backend",
-        expect="test_an_unclear_or_unsupported_preferred_classification_still_requires_acknowledgment",
     ),
     Mutant(
         key="unsupported-preferred-always-accepted",
@@ -533,6 +525,51 @@ MUTANTS: tuple[Mutant, ...] = (
         new="    return True",
         command=PREFERRED_COMMAND, surface="backend",
         expect="test_an_unclear_or_unsupported_preferred_classification_still_requires_acknowledgment",
+    ),
+    Mutant(
+        key="cue-leaks-across-the-sentence",
+        description="UAT closure: any optional cue in the sentence establishes every requirement in it (the sentence-wide behaviour)",
+        file="services/requirements_v2/extraction/cues.py",
+        old="    owners = [(a, b) for a, b in _clauses(folded) if a < n_hi and b > n_lo]",
+        new="    return bool(PREFERRED_RE.search(folded)) and not states_required(folded)\n    owners = []",
+        command=BINDING_COMMAND, surface="backend",
+        expect="test_an_optional_cue_binds_only_to_its_own_requirement",
+    ),
+    Mutant(
+        key="trailing-cue-binds-through-a-list",
+        description="UAT closure: a cue at the end of a comma list establishes every item in the list",
+        file="services/requirements_v2/extraction/cues.py",
+        old="        elif not _LIST_COMMA_RE.search(folded[start:a] + folded[b:end]):",
+        new="        elif True:",
+        command=BINDING_COMMAND, surface="backend",
+        expect="test_an_optional_cue_binds_only_to_its_own_requirement",
+    ),
+    Mutant(
+        key="clauses-never-cut",
+        description="UAT closure: required and optional wording in one sentence are no longer separated into clauses",
+        file="services/requirements_v2/extraction/cues.py",
+        old="        if _has_marker(folded[cut:match.start()]) and _has_marker(folded[match.end():]):",
+        new="        if False:",
+        command=BINDING_COMMAND, surface="backend",
+        expect="test_an_optional_cue_binds_only_to_its_own_requirement",
+    ),
+    Mutant(
+        key="required-clause-accepts-an-optional-heading",
+        description="UAT closure: a clause that says required still counts as Preferred under a Preferred heading",
+        file="services/requirements_v2/extraction/cues.py",
+        old="    if states_required(folded[start:end]):\n        return False",
+        new="    if False:\n        return False",
+        command=BINDING_COMMAND, surface="backend",
+        expect="test_an_optional_cue_binds_only_to_its_own_requirement",
+    ),
+    Mutant(
+        key="model-chosen-cue-establishes",
+        description="UAT closure: any phrase the model names as its cue and that appears in the description establishes Preferred",
+        file="services/requirements_v2/extraction/parser.py",
+        old="    if jd_marks_preferred(jd, span):\n        return None",
+        new="    if jd_marks_preferred(jd, span) or (isinstance(cue, str) and cue.strip() and contains_phrase(jd, cue) and span is not None):\n        return None",
+        command=BINDING_COMMAND, surface="backend",
+        expect="test_a_cue_the_model_names_establishes_nothing",
     ),
     Mutant(
         key="refused-poll-keeps-job-data",
