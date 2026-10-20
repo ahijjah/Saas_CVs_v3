@@ -29,6 +29,7 @@ SEC = "security"                               # placeholder, resolved by _comma
 SEC_COMMAND = [*PYTEST, "tests/test_security_revalidation_postgres.py", "tests/test_privilege_justifications.py"]
 RETRY_COMMAND = [*PYTEST, "tests/test_retry_hash_proof_postgres.py", "tests/test_requirements_v2_worker_postgres.py"]
 JOBS_COMMAND = [*PYTEST, "tests/test_job_code_sequence_postgres.py"]
+FOLLOWUP_COMMAND = [*PYTEST, "tests/test_requirements_v2_staging_followup.py"]
 REUSE_COMMAND = [*PYTEST, "tests/test_candidate_reuse_postgres.py", "-k", "one_file_reuse or multi_file"]
 _COMMAND_BY_TEST_PREFIX = (
     ("test_a_rejected_extraction", RETRY_COMMAND),
@@ -467,6 +468,42 @@ MUTANTS: tuple[Mutant, ...] = (
         new="def _removed_unsigned_token_check(built, ids):",
         command=SEC, surface="backend",
         expect="test_security_suite_keeps_its_required_tests",
+    ),
+    Mutant(
+        key="explicit-or-merge-disabled",
+        description="Staging follow-up: the parser no longer merges explicit OR alternatives into one requirement",
+        file="services/requirements_v2/extraction/parser.py",
+        old="            value = merge_explicit_alternatives(value, jd)",
+        new="            pass",
+        command=FOLLOWUP_COMMAND, surface="backend",
+        expect="test_the_stored_python_powershell_shapes_become_one_required_alternatives_item",
+    ),
+    Mutant(
+        key="job-context-dropped",
+        description="Staging follow-up: a verified job context is no longer put into the document",
+        file="services/requirements_v2/extraction/parser.py",
+        old='        doc["context"] = context',
+        new="        pass",
+        command=FOLLOWUP_COMMAND, surface="backend",
+        expect="test_the_acceptance_sentence_yields_the_three_context_values_and_nothing_scored",
+    ),
+    Mutant(
+        key="explicit-preferred-omission-undetected",
+        description="Staging follow-up: a stated preferred sentence with no item is no longer detected",
+        file="services/requirements_v2/extraction/completeness.py",
+        old="        if not (cue or under_heading):\n            continue",
+        new="        if True:\n            continue",
+        command=FOLLOWUP_COMMAND, surface="backend",
+        expect="test_a_preferred_sentence_without_an_item_is_reported_and_a_covered_one_is_not",
+    ),
+    Mutant(
+        key="explicit-preferred-omission-reports-success",
+        description="Staging follow-up: an extraction that still lacks a stated preferred sentence is stored as a success",
+        file="workers/requirements_v2_worker.py",
+        old="    if result.ok and result.missed_preferred:\n        logger.error",
+        new="    if False and result.missed_preferred:\n        logger.error",
+        command=FOLLOWUP_COMMAND, surface="backend",
+        expect="test_an_extraction_that_keeps_dropping_a_stated_preferred_sentence_fails_instead_of_succeeding",
     ),
 )
 

@@ -15,7 +15,7 @@ from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA25
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = BACKEND / "tests" / "fixtures" / "requirements_v2_foundations"
-PROMPT_FILE = BACKEND / "services" / "requirements_v2" / "extraction" / "prompts" / "criteria_extraction_v2-2.txt"
+PROMPT_FILE = BACKEND / "services" / "requirements_v2" / "extraction" / "prompts" / "criteria_extraction_v2-3.txt"
 PRODUCTION_PATHS = ["routers", "workers", "auth", "main.py", "database.py", "config.py"]
 # The one service module approved to import the package. It is reachable from no route, worker, auth, startup or config path,
 # which PRODUCTION_PATHS checks for every module.
@@ -35,8 +35,8 @@ B12 = _case("B12_ar_injection")
 
 def test_pinned_prompt_identity_is_unchanged():
     assert PROMPT_CODE == "criteria_extraction_v2"
-    assert PROMPT_VERSION == "criteria_extraction_v2-2"
-    assert PROMPT_SHA256 == "837678793bdb2b022bed32104bc24812fdd9fb0864406f14864d4c7c89ffdad1"
+    assert PROMPT_VERSION == "criteria_extraction_v2-3"
+    assert PROMPT_SHA256 == "f819010376ba287c8b7febb14639b2a3128d6a7a51be74a4f148d575a1fd5125"
     assert PROMPT_FILE.read_bytes().decode("utf-8") == load_prompt()
 
 

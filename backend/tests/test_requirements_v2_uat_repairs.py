@@ -117,10 +117,21 @@ def test_different_importance_is_not_merged():
     assert len(merge_explicit_alternatives(items)) == 2
 
 
-def test_existing_alternatives_and_structured_experience_are_left_alone():
+def test_an_item_that_already_holds_its_alternatives_is_left_alone_and_structured_experience_is_never_merged():
+    own = [{"text": "A or B", "importance": "required", "source_text": "A or B.", "alternatives": ["A", "B"]}]
+    assert merge_explicit_alternatives(own, "A or B.") == own
+    years = [{"text": "Python", "importance": "required", "source_text": "Python or R for 3 years.",
+              "experience": {"subject": "Python", "min_years": 3}},
+             {"text": "R", "importance": "required", "source_text": "Python or R for 3 years.",
+              "experience": {"subject": "R", "min_years": 3}}]
+    assert len(merge_explicit_alternatives(years, "Python or R for 3 years.")) == 2
+
+
+def test_a_split_item_that_declares_the_alternatives_is_merged_with_its_other_half():
     items = [{"text": "A", "importance": "required", "source_text": "A or B.", "alternatives": ["A", "B"]},
              {"text": "B", "importance": "required", "source_text": "A or B."}]
-    assert len(merge_explicit_alternatives(items)) == 2
+    merged = merge_explicit_alternatives(items, "A or B.")
+    assert len(merged) == 1 and merged[0]["alternatives"] == ["A", "B"]
 
 
 def test_merged_output_passes_the_contract_validator():

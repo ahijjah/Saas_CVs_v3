@@ -112,7 +112,8 @@ def test_one_item_holding_its_alternatives_produces_no_expectation_but_a_split_w
     def doc_with(items):
         output = {"categories": {"skills": items, **{c: [] for c in C.CATEGORIES if c != "skills"}},
                   "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
-        result = parse_response(json.dumps(output), jd, "stop", id_factory=worker.stable_id_factory(jd))
+        # merging is off here: this test is about the detector's baseline for a split that reached storage unmerged
+        result = parse_response(json.dumps(output), jd, "stop", id_factory=worker.stable_id_factory(jd), merge_alternatives=False)
         return result.requirements
 
     assert worker.expectations_from_extraction(doc_with([whole]), jd)["expectations"] == []
@@ -120,3 +121,12 @@ def test_one_item_holding_its_alternatives_produces_no_expectation_but_a_split_w
     assert [e["kind"] for e in block["expectations"]] == ["alternatives_together"]
     assert block["expectations"][0]["tokens"] == ["Python", "Java"]
     assert len(validate_expectations(block, jd)) == 1       # the canonical validator accepts what is built
+
+def test_the_parser_merges_the_same_split_before_it_is_stored():
+    jd = "Python or Java is required. Five years is preferred."
+    split = [{"text": t, "importance": "required", "source_text": "Python or Java is required",
+              "alternatives": ["Python", "Java"], "origin": "stated"} for t in ("Python", "Java")]
+    output = {"categories": {"skills": split, **{c: [] for c in C.CATEGORIES if c != "skills"}},
+              "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
+    items = parse_response(json.dumps(output), jd, "stop", id_factory=worker.stable_id_factory(jd)).requirements["categories"]["skills"]["items"]
+    assert [(i["text"], i["alternatives"]) for i in items] == [("Python or Java", ["Python", "Java"])]

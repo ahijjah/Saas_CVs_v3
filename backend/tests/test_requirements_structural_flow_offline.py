@@ -39,7 +39,9 @@ def _split_document(case):
               "origin": "stated"} for t in case["texts"]]
     raw = {"categories": {"skills": items, **{c: [] for c in C.CATEGORIES if c != "skills"}},
            "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
-    parsed = parse_response(json.dumps(raw, ensure_ascii=False), case["jd"], "stop", id_factory=worker.stable_id_factory(case["jd"]))
+    # merging is off: the fixture is a split that reached storage unmerged, which is what the detector reviews
+    parsed = parse_response(json.dumps(raw, ensure_ascii=False), case["jd"], "stop", id_factory=worker.stable_id_factory(case["jd"]),
+                            merge_alternatives=False)
     doc, expectations = worker.finalise_document(worker.checked_document(parsed), case["jd"])
     return doc, parsed.original, expectations
 
@@ -90,7 +92,8 @@ def test_the_split_alone_cannot_be_saved_without_resolving_the_finding_that_name
 def _expectations_for(items, jd):
     raw = {"categories": {"skills": items, **{c: [] for c in C.CATEGORIES if c != "skills"}},
            "category_weights": {"skills": 100}, "scoreability": {"status": "scoreable"}}
-    parsed = parse_response(json.dumps(raw, ensure_ascii=False), jd, "stop", id_factory=worker.stable_id_factory(jd))
+    parsed = parse_response(json.dumps(raw, ensure_ascii=False), jd, "stop", id_factory=worker.stable_id_factory(jd),
+                            merge_alternatives=False)
     return worker.expectations_from_extraction(parsed.requirements, jd)["expectations"]
 
 

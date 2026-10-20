@@ -198,15 +198,15 @@ def test_the_response_omits_context_when_absent_and_returns_it_when_present():
 
 def test_the_pinned_prompt_states_the_context_rule_and_its_output_shape():
     text = load_prompt()
-    assert PROMPT_VERSION == "criteria_extraction_v2-2"
+    assert PROMPT_VERSION == "criteria_extraction_v2-3"
     assert '"context"' in text and '"source_text"' in text
     assert "Job context (not scored)" in text
     assert "not stated explicitly" in text or "explicitly" in text
     assert hashlib.sha256(text.encode("utf-8")).hexdigest() != ""  # the loaded text is the file
     assert hashlib.sha256(pathlib.Path(__file__).resolve().parents[1].joinpath(
-        "services/requirements_v2/extraction/prompts/criteria_extraction_v2-2.txt").read_bytes()).hexdigest() == PROMPT_SHA256
+        "services/requirements_v2/extraction/prompts/criteria_extraction_v2-3.txt").read_bytes()).hexdigest() == PROMPT_SHA256
 
 
 def test_the_superseded_prompt_file_is_gone():
     prompts = pathlib.Path(__file__).resolve().parents[1] / "services" / "requirements_v2" / "extraction" / "prompts"
-    assert sorted(p.name for p in prompts.glob("*.txt")) == ["criteria_extraction_v2-2.txt"]
+    assert sorted(p.name for p in prompts.glob("*.txt")) == ["criteria_extraction_v2-3.txt"]

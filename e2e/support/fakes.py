@@ -36,7 +36,9 @@ def scripted_response(description: str) -> str:
     if "SCENARIO-RETRY-BROKEN" in description:
         return "{not json"                      # fails on every attempt until the description is corrected to SCENARIO-RETRY-FIXED
     if "SCENARIO-RETRY-FIXED" in description:
-        return _response({"skills": [_item("Python", "required", "Python and SQL are required for every candidate")]}, {"skills": 100})
+        return _response({"skills": [_item("Python", "required", "Python and SQL are required for every candidate")],
+                          "experience": [_item("Backend experience", "preferred", "Five years of backend experience is preferred",
+                                               cue="preferred")]}, {"skills": 100})
     if "SCENARIO-INVALID" in description:
         return "{not json"
     if "SCENARIO-PREFERRED" in description:
@@ -48,7 +50,8 @@ def scripted_response(description: str) -> str:
                                                cue="nice to have")]}, {"skills": 100})
     if "SCENARIO-SPLIT" in description:
         return _response({"skills": [_item("Python", "required", "Python or Java is required", alternatives=["Python", "Java"]),
-                                     _item("Java", "required", "Python or Java is required", alternatives=["Python", "Java"])]},
+                                     _item("Java", "required", "Python or Java is required", alternatives=["Python", "Java"])],
+                          "experience": [_item("Experience", "preferred", "Five years of experience is preferred", cue="preferred")]},
                          {"skills": 100})
     if "SCENARIO-STRUCTURE" in description:
         return _response({"skills": [_item("Python", "required", "Python is required")],
@@ -148,6 +151,14 @@ def patch_external(files_root: str) -> None:
             threading.Thread(target=lambda: task.apply(args=args, kwargs=kwargs), daemon=True).start()
         return delay
 
+    real_parse = v2.parse_response
+
+    def parse_keeping_the_split(content, description, finish_reason=None, **kwargs):
+        if "SCENARIO-SPLIT" in description:
+            kwargs["merge_alternatives"] = False    # this journey reviews a split that reached storage; the parser would merge it
+        return real_parse(content, description, finish_reason, **kwargs)
+
+    v2.parse_response = parse_keeping_the_split
     v2.extract_requirements_v2_task.delay = queue_in_thread(v2.extract_requirements_v2_task)
     legacy.extract_criteria_task.delay = queue_in_thread(legacy.extract_criteria_task)
     cv_score.score_cv_task.delay = queue_in_thread(cv_score.score_cv_task)
