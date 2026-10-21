@@ -40,14 +40,14 @@ describe('job context is shown read-only and outside scoring', () => {
   it('shows nothing for a document without context', async () => {
     getMock.mockResolvedValue(view());
     render(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
-    await screen.findByRole('heading', { name: 'Requirements' });
+    await screen.findByRole('heading', { name: 'Job analysis' });
     expect(screen.queryByTestId('job-context')).toBeNull();
   });
 
   it('shows nothing when the context holds no value', async () => {
     getMock.mockResolvedValue(withContext({ location: null, work_arrangement: null, reports_to: null }));
     render(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
-    await screen.findByRole('heading', { name: 'Requirements' });
+    await screen.findByRole('heading', { name: 'Job analysis' });
     expect(screen.queryByTestId('job-context')).toBeNull();
   });
 
@@ -64,7 +64,10 @@ describe('job context is shown read-only and outside scoring', () => {
     getMock.mockResolvedValue(withContext({ location: 'Ramallah', work_arrangement: 'hybrid', reports_to: null }));
     render(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
     await screen.findByTestId('job-context');
-    expect(screen.getAllByRole('textbox', { name: 'Requirement text' })).toHaveLength(2);
+    expect(screen.queryAllByRole('textbox', { name: 'Requirement text' })).toHaveLength(0);
+    expect(screen.getByText('Python')).toBeInTheDocument();
+    expect(screen.getByText('SQL')).toBeInTheDocument();
+    expect(screen.getByTestId('analysis-ready')).toBeInTheDocument();
     expect(screen.queryByText('Ramallah', { selector: 'textarea,input' })).toBeNull();
   });
 });

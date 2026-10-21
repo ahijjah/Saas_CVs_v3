@@ -63,7 +63,7 @@ def readiness(page: Page) -> str:
 
 
 def wait_revision(page: Page, revision: int) -> None:
-    expect(panel(page).get_by_text(f"Revision {revision}", exact=True)).to_be_visible(timeout=15000)
+    expect(panel(page).locator("header").get_by_text(f"Revision {revision}")).to_be_visible(timeout=15000)
 
 
 def upload_cv_through_ui(page: Page) -> None:

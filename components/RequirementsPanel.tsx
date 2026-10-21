@@ -19,7 +19,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 const READINESS_LABELS: Record<string, string> = {
-  ready: 'Ready for scoring',
+  ready: 'Ready for use',
   needs_items: 'Needs requirements',
   needs_confirmation: 'Needs confirmation',
   needs_review: 'Needs review',
@@ -72,6 +72,8 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [conflict, setConflict] = useState<{ currentRevision: number | null } | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showSourceEvidence, setShowSourceEvidence] = useState(false);
 
   const load = useCallback(async (): Promise<RequirementsView | null> => {
     try {
@@ -106,6 +108,8 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
     setNewItems([]);
     setNotice(null);
     setConflict(null);
+    setIsEditing(false);
+    setShowSourceEvidence(false);
     void load();
   }, [jobId, load]);
 
@@ -117,8 +121,24 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
   const editItem = (itemId: string, patch: ItemDraft) =>
     setItemDrafts((prev) => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
 
+  const cancelEditing = () => {
+    setItemDrafts({});
+    setCategoryDrafts({});
+    setOrderDrafts({});
+    setNewItems([]);
+    setFindingDrafts({});
+    setConflict(null);
+    setNotice(null);
+    setIsEditing(false);
+  };
+
   /** One save with the given operations at the loaded revision. Success clears the drafts it sent; a conflict keeps everything. */
-  const submit = async (ops: RequirementsOperation[], successText: string, sentDrafts: 'all' | 'none' = 'all') => {
+  const submit = async (
+    ops: RequirementsOperation[],
+    successText: string,
+    sentDrafts: 'all' | 'none' = 'all',
+    exitEditing = false,
+  ) => {
     if (!view || ops.length === 0 || busy) return;
     setBusy(true);
     setNotice(null);
@@ -132,6 +152,7 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
       }
       setNotice({ kind: 'ok', text: `${successText} The requirements are now at revision ${result.requirements_revision}.` });
       await load();
+      if (exitEditing) setIsEditing(false);
     } catch (err) {
       if (err instanceof RequirementsApiError && err.code === 'revision_conflict') {
         // The document changed under these edits. Nothing is applied and nothing local is dropped: the user chooses what happens next.
@@ -168,6 +189,7 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
       setNewItems([]);
       setNotice({ kind: 'ok', text: `Your edits were applied to the current requirements. Revision ${result.requirements_revision}.` });
       await load();
+      setIsEditing(false);
     } catch (err) {
       setNotice({ kind: 'error', text: err instanceof Error ? err.message : 'The requirements could not be saved.' });
     } finally {
@@ -200,21 +222,64 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
   const readinessLabel = READINESS_LABELS[readiness.state] ?? 'Not ready';
   const context = hasJobContext(view.document.context) ? view.document.context : null;
   const openWarnings = classification.open_warnings.filter((w) => !w.acknowledged);
+  const allItems = Object.values(view.document.categories).flatMap((category) => category.items);
+  const requiredCount = allItems.filter((item) => item.importance === 'required').length;
+  const preferredCount = allItems.length - requiredCount;
+  const categoryWeightTotal = Object.values(view.document.categories).reduce((total, category) => total + category.weight, 0);
 
   return (
     <section className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 space-y-6" aria-labelledby="requirements-heading">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+      <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="requirements-heading" className="text-lg font-semibold text-slate-900">Requirements</h2>
-          <p className="text-xs text-slate-500">Revision {view.requirements_revision}</p>
+          <h2 id="requirements-heading" className="text-lg font-semibold text-slate-900">Job analysis</h2>
+          <p className="text-xs text-slate-500">Requirements extracted from the job description · Revision {view.requirements_revision}</p>
         </div>
-        <span
-          className={`text-sm font-medium px-3 py-1 rounded-full ${readiness.can_proceed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}
-          data-testid="readiness-state"
-        >
-          {readinessLabel}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700"
+            onClick={() => setShowSourceEvidence((shown) => !shown)}>
+            {showSourceEvidence ? 'Hide source evidence' : 'Show source evidence'}
+          </button>
+          {canEdit && !isEditing && (
+            <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700"
+              onClick={() => setIsEditing(true)}>
+              Edit analysis
+            </button>
+          )}
+          {canEdit && isEditing && (
+            <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm text-slate-700"
+              onClick={cancelEditing}>
+              Cancel editing
+            </button>
+          )}
+          <span
+            className={`text-sm font-medium px-3 py-1 rounded-full ${readiness.can_proceed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}
+            data-testid="readiness-state"
+          >
+            {readinessLabel}
+          </span>
+        </div>
       </header>
+
+      {readiness.can_proceed && (
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm text-emerald-900"
+          role="status" data-testid="analysis-ready">
+          <p className="font-medium">Analysis complete — ready for use</p>
+          <p className="mt-1 text-emerald-800">All requirements and weights are valid. Editing is optional.</p>
+        </div>
+      )}
+
+      {isEditing && (
+        <p className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900" role="status">
+          Editing mode is active. Nothing changes until you save.
+        </p>
+      )}
+
+      <dl className="grid grid-cols-2 sm:grid-cols-4 rounded-lg border border-slate-200 divide-x divide-slate-200">
+        <div className="p-3"><dt className="text-xs text-slate-500">Requirements</dt><dd className="mt-1 text-sm font-medium text-slate-900">{allItems.length} items</dd></div>
+        <div className="p-3"><dt className="text-xs text-slate-500">Required</dt><dd className="mt-1 text-sm font-medium text-slate-900">{requiredCount} items</dd></div>
+        <div className="p-3"><dt className="text-xs text-slate-500">Preferred</dt><dd className="mt-1 text-sm font-medium text-slate-900">{preferredCount} items</dd></div>
+        <div className="p-3"><dt className="text-xs text-slate-500">Category weights</dt><dd className="mt-1 text-sm font-medium text-slate-900">{categoryWeightTotal}%</dd></div>
+      </dl>
 
       {context && (
         <section className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm" aria-labelledby="job-context-heading" data-testid="job-context">
@@ -399,13 +464,19 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
           <div key={category} className="border border-slate-200 rounded-lg">
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-slate-50 rounded-t-lg">
               <h3 className="font-medium text-slate-900">{CATEGORY_LABELS[category] ?? category}</h3>
-              <label className="text-sm text-slate-600 flex items-center gap-2">
-                Category weight
-                <input type="number" min={0} max={100} aria-label={`${CATEGORY_LABELS[category] ?? category} category weight`}
-                  className="w-20 border border-slate-300 rounded px-2 py-1" disabled={!canEdit}
-                  value={categoryDrafts[category] ?? block.weight}
-                  onChange={(e) => setCategoryDrafts((prev) => ({ ...prev, [category]: Number(e.target.value) }))} />
-              </label>
+              {isEditing ? (
+                <label className="text-sm text-slate-600 flex items-center gap-2">
+                  Category weight
+                  <input type="number" min={0} max={100} aria-label={`${CATEGORY_LABELS[category] ?? category} category weight`}
+                    className="w-20 border border-slate-300 rounded px-2 py-1" disabled={!canEdit}
+                    value={categoryDrafts[category] ?? block.weight}
+                    onChange={(e) => setCategoryDrafts((prev) => ({ ...prev, [category]: Number(e.target.value) }))} />
+                </label>
+              ) : (
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700">
+                  {block.weight}% category weight
+                </span>
+              )}
             </div>
             <ul className="divide-y divide-slate-100">
               {block.items.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">No requirements in this category.</li>}
@@ -423,6 +494,38 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
                 }
                 const importance: ImportanceLevel = draft.importance ?? item.importance;
                 const weightValue = draft.weight !== undefined ? draft.weight : item.weight;
+                if (!isEditing) {
+                  return (
+                    <li key={item.id} className="px-4 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex-1 min-w-[12rem]">
+                          <p dir="auto" className="text-sm font-medium text-slate-900">{item.text}</p>
+                          {item.alternatives && item.alternatives.length > 0 && (
+                            <p dir="auto" className="mt-1 text-xs text-slate-600">Accepted alternatives: {item.alternatives.join(' / ')}</p>
+                          )}
+                          {item.experience && (item.experience.subject || item.experience.min_years !== null) && (
+                            <p dir="auto" className="mt-1 text-xs text-slate-600">
+                              Experience{item.experience.min_years !== null ? `: ${item.experience.min_years} years` : ''}
+                              {item.experience.subject ? ` of ${item.experience.subject}` : ''}
+                            </p>
+                          )}
+                          {showSourceEvidence && item.source_text && (
+                            <p dir="auto" className="mt-2 text-xs text-slate-500">From the job description: “{item.source_text}”</p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`text-xs font-medium px-2 py-1 rounded-full ${item.importance === 'preferred'
+                            ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
+                            {item.importance === 'preferred' ? 'Preferred' : 'Required'}
+                          </span>
+                          {item.importance === 'required' && item.weight !== null && (
+                            <span className="text-sm font-medium text-slate-900">{item.weight}%</span>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                }
                 return (
                   <li key={item.id} className="px-4 py-3 space-y-2">
                     <div className="flex flex-wrap gap-2 items-start">
@@ -472,7 +575,7 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
         );
       })}
 
-      {canEdit && (
+      {canEdit && isEditing && (
         <div className="space-y-3">
           <p className="text-sm font-medium text-slate-900">Add a requirement</p>
           {newItems.map((added) => (
@@ -501,15 +604,23 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
         </div>
       )}
 
-      {canEdit ? (
+      {canEdit && isEditing ? (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4">
           <p className="text-xs text-slate-500">{pendingOps.length === 0 ? 'No unsaved changes.' : `${pendingOps.length} unsaved change(s).`}</p>
-          <button type="button" className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm disabled:opacity-50"
-            disabled={pendingOps.length === 0 || busy || conflict !== null}
-            onClick={() => void submit(pendingOps, 'Saved.')}>
-            {busy ? 'Saving…' : 'Save requirements'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm"
+              disabled={busy} onClick={cancelEditing}>
+              Cancel
+            </button>
+            <button type="button" className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm disabled:opacity-50"
+              disabled={pendingOps.length === 0 || busy || conflict !== null}
+              onClick={() => void submit(pendingOps, 'Saved.', 'all', true)}>
+              {busy ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </div>
+      ) : canEdit ? (
+        <p className="text-xs text-slate-500 border-t border-slate-200 pt-4">The analysis is active automatically. Editing is optional.</p>
       ) : (
         <p className="text-xs text-slate-500 border-t border-slate-200 pt-4">Only administrators and HR managers can edit requirements. You can view the weights here.</p>
       )}

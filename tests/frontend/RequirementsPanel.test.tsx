@@ -25,32 +25,52 @@ beforeEach(() => {
   getMock.mockReset();
 });
 
-describe('who may edit', () => {
-  it.each(['admin', 'hr_manager'])('lets %s edit and save', async (role) => {
+describe('review-first access', () => {
+  it.each(['admin', 'hr_manager'])('shows %s a review-first view and opens editing on request', async (role) => {
+    const user = userEvent.setup();
     renderPanel(role);
-    await screen.findByRole('heading', { name: 'Requirements' });
-    expect(screen.getByRole('button', { name: 'Save requirements' })).toBeDisabled();
+    await screen.findByRole('heading', { name: 'Job analysis' });
+    expect(screen.getByTestId('analysis-ready')).toHaveTextContent('ready for use');
+    expect(screen.getByRole('button', { name: 'Edit analysis' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Requirement text' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Edit analysis' }));
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
     expect(screen.getAllByRole('button', { name: /Move .* up/ }).length).toBeGreaterThan(0);
   });
 
   it.each(['viewer', 'recruiter', 'super_admin', 'something_else'])('renders %s read-only', async (role) => {
     renderPanel(role);
-    await screen.findByRole('heading', { name: 'Requirements' });
-    expect(screen.queryByRole('button', { name: 'Save requirements' })).toBeNull();
+    await screen.findByRole('heading', { name: 'Job analysis' });
+    expect(screen.queryByRole('button', { name: 'Edit analysis' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
     expect(screen.queryAllByRole('button', { name: /Move .* up/ })).toHaveLength(0);
     expect(screen.getByText(/Only administrators and HR managers can edit requirements/)).toBeInTheDocument();
-    for (const field of screen.getAllByRole('textbox', { name: 'Requirement text' })) {
-      expect(field).toBeDisabled();
-    }
+    expect(screen.queryByRole('textbox', { name: 'Requirement text' })).toBeNull();
   });
 
-  it.each(['viewer', 'recruiter'])('shows %s the category and item weights, read-only', async (role) => {
+  it.each(['viewer', 'recruiter'])('shows %s category and item weights without form fields', async (role) => {
     renderPanel(role);
-    await screen.findByRole('heading', { name: 'Requirements' });
-    const spin = screen.getAllByRole('spinbutton');
-    expect(spin.length).toBeGreaterThan(0);                                 // the weights are on screen
-    for (const input of spin) expect(input).toBeDisabled();                  // and cannot be changed
+    await screen.findByRole('heading', { name: 'Job analysis' });
+    expect(screen.getByText('100% category weight')).toBeInTheDocument();
+    expect(screen.getAllByText('50%')).toHaveLength(2);
+    expect(screen.queryByRole('spinbutton')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add requirement' })).toBeNull();
+  });
+
+  it('cancels an edit without changing the displayed analysis', async () => {
+    const user = userEvent.setup();
+    renderPanel('admin');
+    await screen.findByRole('heading', { name: 'Job analysis' });
+    await user.click(screen.getByRole('button', { name: 'Edit analysis' }));
+    const input = screen.getAllByRole('textbox', { name: 'Requirement text' })[0];
+    await user.clear(input);
+    await user.type(input, 'Changed locally');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('textbox', { name: 'Requirement text' })).toBeNull();
+    expect(screen.getByText('Python')).toBeInTheDocument();
+    expect(saveMock).not.toHaveBeenCalled();
   });
 });
 
@@ -59,10 +79,11 @@ describe('edits and review actions', () => {
     const user = userEvent.setup();
     saveMock.mockResolvedValue({ requirements_revision: 4 });
     renderPanel('hr_manager');
-    const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
+    await user.click(await screen.findByRole('button', { name: 'Edit analysis' }));
+    const input = screen.getAllByRole('textbox', { name: 'Requirement text' })[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
-    await user.click(screen.getByRole('button', { name: 'Save requirements' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledWith('job-1', 3, [{ op: 'set_text', item_id: ids.py, text: 'Python 3' }]));
     expect(await screen.findByText(/Saved\. The requirements are now at revision 4\./)).toBeInTheDocument();
   });
@@ -111,8 +132,9 @@ describe('edits and review actions', () => {
     const user = userEvent.setup();
     saveMock.mockResolvedValue({ requirements_revision: 4 });
     renderPanel('admin');
-    await user.click(await screen.findByRole('button', { name: 'Move Python down' }));
-    await user.click(screen.getByRole('button', { name: 'Save requirements' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit analysis' }));
+    await user.click(screen.getByRole('button', { name: 'Move Python down' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(saveMock).toHaveBeenCalledWith('job-1', 3, [{ op: 'reorder_items', category: 'skills', item_ids: [ids.sql, ids.py] }]));
   });
 });
@@ -122,10 +144,11 @@ describe('errors keep the local work', () => {
     const user = userEvent.setup();
     saveMock.mockRejectedValueOnce(new RequirementsApiError(409, 'revision_conflict', 'changed', 5));
     renderPanel('hr_manager');
-    const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
+    await user.click(await screen.findByRole('button', { name: 'Edit analysis' }));
+    const input = screen.getAllByRole('textbox', { name: 'Requirement text' })[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
-    await user.click(screen.getByRole('button', { name: 'Save requirements' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
     const alert = await screen.findByRole('alert');
     expect(within(alert).getByText('The requirements changed while you were editing.')).toBeInTheDocument();
     expect(within(alert).getByText(/current revision is 5/)).toBeInTheDocument();
@@ -141,10 +164,11 @@ describe('errors keep the local work', () => {
     const user = userEvent.setup();
     saveMock.mockRejectedValueOnce(new RequirementsApiError(409, 'revision_conflict', 'changed', 5));
     renderPanel('hr_manager');
-    const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
+    await user.click(await screen.findByRole('button', { name: 'Edit analysis' }));
+    const input = screen.getAllByRole('textbox', { name: 'Requirement text' })[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
-    await user.click(screen.getByRole('button', { name: 'Save requirements' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
     const alert = await screen.findByRole('alert');
     await user.click(within(alert).getByRole('button', { name: 'Reload the current requirements' }));
     expect(saveMock).toHaveBeenCalledTimes(1);
@@ -155,10 +179,11 @@ describe('errors keep the local work', () => {
     const user = userEvent.setup();
     saveMock.mockRejectedValueOnce(new RequirementsApiError(422, 'invalid_requirements', 'The requirements do not pass the saving rules.', null));
     renderPanel('hr_manager');
-    const input = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
+    await user.click(await screen.findByRole('button', { name: 'Edit analysis' }));
+    const input = screen.getAllByRole('textbox', { name: 'Requirement text' })[0];
     await user.clear(input);
     await user.type(input, 'Python 3');
-    await user.click(screen.getByRole('button', { name: 'Save requirements' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
     expect(await screen.findByText('The requirements do not pass the saving rules.')).toBeInTheDocument();
     expect((screen.getAllByRole('textbox', { name: 'Requirement text' })[0] as HTMLInputElement).value).toBe('Python 3');
   });
@@ -187,10 +212,11 @@ describe('language and private fields', () => {
     const arabic = view();
     arabic.document.categories.skills.items[0] = { ...arabic.document.categories.skills.items[0], text: 'بايثون',
       source_text: 'مطلوب بايثون وإتقان لغة SQL' };
+    const user = userEvent.setup();
     renderPanel('admin', arabic);
-    const field = (await screen.findAllByRole('textbox', { name: 'Requirement text' }))[0];
-    expect(field).toHaveAttribute('dir', 'auto');
-    expect(field).toHaveValue('بايثون');
+    expect(await screen.findByText('بايثون')).toHaveAttribute('dir', 'auto');
+    expect(screen.queryByText('From the job description: “مطلوب بايثون وإتقان لغة SQL”')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Show source evidence' }));
     expect(screen.getByText('From the job description: “مطلوب بايثون وإتقان لغة SQL”')).toHaveAttribute('dir', 'auto');
   });
 
@@ -201,7 +227,7 @@ describe('language and private fields', () => {
     const withPrivate = { ...leaky, requirements_retired_item_ids: ['req_retired0001'], basis_hash: 'a'.repeat(64),
       reviewer_user_id: 'SECRET-REVIEWER', resolution: { note: 'SECRET-NOTE' } } as unknown as typeof leaky;
     renderPanel('admin', withPrivate);
-    await screen.findByRole('heading', { name: 'Requirements' });
+    await screen.findByRole('heading', { name: 'Job analysis' });
     const text = document.body.textContent ?? '';
     for (const secret of ['req_retired0001', 'aaaaaaaa', 'SECRET-REVIEWER', 'SECRET-NOTE', 'basis_hash']) {
       expect(text).not.toContain(secret);
