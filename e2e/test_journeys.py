@@ -43,11 +43,13 @@ def test_english_creation_extraction_review_and_edit(api, ui, admin):
     page = ui.open("admin", job, token_user=admin)
     expect(panel(page)).to_be_visible(timeout=20000)
     check("1 English job: requirements panel displays the document")
-    expect(panel(page).get_by_text("Ready for scoring")).to_be_visible()
+    expect(panel(page).get_by_text("Ready for use")).to_be_visible()
     check("2 English job: readiness reads ready")
+    expect(panel(page).get_by_text("Python", exact=True)).to_be_visible()
+    check("3 English job: item wording is shown exactly")
+    panel(page).get_by_role("button", name="Edit analysis").click()
     field = panel(page).get_by_role("textbox", name="Requirement text").first
     expect(field).to_have_value("Python")
-    check("3 English job: item wording is shown exactly")
     field.fill("Python 3")
     panel(page).get_by_role("button", name="Save requirements").click()
     expect(page.get_by_text("Saved. The requirements are now at revision 2.")).to_be_visible(timeout=15000)
@@ -59,9 +61,11 @@ def test_english_reorder_within_category(api, ui, admin):
     job = _job(api, admin, "english reorder", EN)
     page = ui.open("admin", job, token_user=admin)
     expect(panel(page)).to_be_visible(timeout=20000)
+    panel(page).get_by_role("button", name="Edit analysis").click()
     panel(page).get_by_role("button", name="Move SQL up").click()
     panel(page).get_by_role("button", name="Save requirements").click()
     expect(page.get_by_text("Saved. The requirements are now at revision 2.")).to_be_visible(timeout=15000)
+    panel(page).get_by_role("button", name="Edit analysis").click()
     order = panel(page).get_by_role("textbox", name="Requirement text").evaluate_all("els => els.map(e => e.value)")[:2]
     assert order == ["SQL", "Python"], order
     check("5 English job: items are reordered within the category")
@@ -96,10 +100,13 @@ def test_arabic_creation_and_editing(api, ui, admin):
     job = _job(api, admin, "arabic", AR)
     page = ui.open("admin", job, token_user=admin)
     expect(panel(page)).to_be_visible(timeout=20000)
+    arabic_text = panel(page).get_by_text("بايثون", exact=True)
+    expect(arabic_text).to_have_attribute("dir", "auto")
+    check("8 Arabic job: requirement text is shown with dir=auto and exact wording")
+    panel(page).get_by_role("button", name="Edit analysis").click()
     field = panel(page).get_by_role("textbox", name="Requirement text").first
     expect(field).to_have_attribute("dir", "auto")
     expect(field).to_have_value("بايثون")
-    check("8 Arabic job: requirement text is shown with dir=auto and exact wording")
     field.fill("بايثون المتقدمة")
     panel(page).get_by_role("button", name="Save requirements").click()
     expect(page.get_by_text("Saved. The requirements are now at revision 2.")).to_be_visible(timeout=15000)
@@ -152,6 +159,7 @@ def test_structure_confirmation_unblocks_readiness(api, ui, admin):
     job = _job(api, admin, "structure", SCENARIOS["structure"])
     page = ui.open("admin", job, token_user=admin)
     expect(panel(page)).to_be_visible(timeout=20000)
+    panel(page).get_by_role("button", name="Edit analysis").click()
     experience = panel(page).get_by_role("textbox", name="Requirement text").nth(1)
     experience.fill("Backend engineering experience")
     panel(page).get_by_role("button", name="Save requirements").click()
@@ -169,6 +177,7 @@ def test_revision_conflict_reload_and_reapply(api, ui, admin):
     page = ui.open("admin", job, token_user=admin)
     expect(panel(page)).to_be_visible(timeout=20000)
     wait_revision(page, 1)
+    panel(page).get_by_role("button", name="Edit analysis").click()
     field = panel(page).get_by_role("textbox", name="Requirement text").first
     field.fill("Python 3 with pandas")
     # Another editor saves first, so this page's save at revision 1 is stale.
@@ -191,6 +200,7 @@ def test_validation_error_preserves_local_edits(api, ui, admin):
     page = ui.open("admin", job, token_user=admin)
     expect(panel(page)).to_be_visible(timeout=20000)
     wait_revision(page, 1)
+    panel(page).get_by_role("button", name="Edit analysis").click()
     weight = panel(page).get_by_role("spinbutton", name="Skills category weight", exact=True)
     weight.fill("150")
     field = panel(page).get_by_role("textbox", name="Requirement text").first
@@ -225,7 +235,8 @@ def test_viewer_is_refused_and_sees_no_editor(api, ui, admin):
     page = ui.open("viewer", job)
     expect(panel(page)).to_be_visible(timeout=20000)
     expect(page.get_by_role("button", name="Save requirements")).to_have_count(0)
-    expect(page.get_by_role("textbox", name="Requirement text").first).to_be_disabled()
+    expect(page.get_by_role("button", name="Edit analysis")).to_have_count(0)
+    expect(page.get_by_role("textbox", name="Requirement text")).to_have_count(0)
 
 
 def test_role_matrix_over_http(api, admin):
@@ -281,6 +292,7 @@ def test_hr_manager_edits_and_saves_requirements(api, ui, admin):
     job = _job(api, admin, "hr manager edit", EN)
     page = ui.open("hr_manager", job)
     expect(panel(page)).to_be_visible(timeout=20000)
+    panel(page).get_by_role("button", name="Edit analysis").click()
     field = panel(page).get_by_role("textbox", name="Requirement text").first
     field.fill("Python 3")
     panel(page).get_by_role("button", name="Save requirements").click()
@@ -312,5 +324,5 @@ def test_extraction_failure_and_retry(api, ui, admin):
     check("R2 Retry: a changed description permits the retry")
     api.requirements(token, job, timeout=90)     # the document exists once the retry has completed
     page.reload()
-    expect(panel(page).get_by_text("Ready for scoring")).to_be_visible(timeout=30000)
+    expect(panel(page).get_by_text("Ready for use")).to_be_visible(timeout=30000)
     check("R3 Retry: the corrected description produces a ready document")
