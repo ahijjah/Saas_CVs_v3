@@ -159,6 +159,16 @@ describe('a refused or missing job shows one safe state and no job content', () 
     expect(screen.queryByText('Sync Error')).toBeNull();
   });
 
+  it('shows one full-width authoritative analysis for requirements-v2 jobs', async () => {
+    getMock.mockImplementation(async (url: string) => (url === DETAILS_URL ? jobPayload('completed') : []));
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId('requirements-unavailable')).toBeInTheDocument());
+
+    expect(screen.queryByText('Skills Analysis')).toBeNull();
+    expect(screen.getByTestId('job-details-analysis-layout').className).not.toContain('lg:grid-cols-3');
+  });
+
   it('shows the error with a failure state, not sample data, for any other failure', async () => {
     getMock.mockRejectedValue(httpError(500));
     const { container } = renderPage();

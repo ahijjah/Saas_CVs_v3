@@ -1731,8 +1731,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
       })()}
 
       {/* Main grid ─────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-start">
-      <div className="lg:col-span-2 space-y-6">
+      <div data-testid="job-details-analysis-layout" className={`grid grid-cols-1 gap-6 lg:items-start ${isRequirementsV2 ? '' : 'lg:grid-cols-3'}`}>
+      <div className={`${isRequirementsV2 ? '' : 'lg:col-span-2'} space-y-6`}>
 
       {/* C. Job Metadata ──────────────────────────────────────────────────── */}
       {/* Requirements V2 jobs show one authoritative analysis: the Requirements panel. This legacy summary is for non-V2 jobs only. */}
@@ -2668,7 +2668,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
         </div>
       </section>
 
-      {/* F. AI Criteria ──────────────────────────────────────────────────── */}
+      {/* F. Legacy AI Criteria — Requirements V2 uses the authoritative Job Analysis panel below. */}
+      {!isRequirementsV2 && (
       <section className="bg-white rounded-2xl shadow-sm border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h3 className="text-[10px] font-black text-textMuted uppercase tracking-widest flex items-center gap-2 flex-wrap">
@@ -2786,9 +2787,10 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
           )}
         </div>
       </section>
+      )}
 
       </div>
-      {/* Right column — Requirements (v2 jobs) and the legacy Evaluation Weights ────────── */}
+      {/* Requirements V2 uses this full-width row; non-V2 keeps the legacy right column. */}
       <div className="space-y-6">
         {isRequirementsV2 && (
           <>
