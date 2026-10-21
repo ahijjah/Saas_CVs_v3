@@ -40,14 +40,14 @@ describe('job context is shown read-only and outside scoring', () => {
   it('shows nothing for a document without context', async () => {
     getMock.mockResolvedValue(view());
     render(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
-    await screen.findByRole('heading', { name: 'Requirements' });
+    await screen.findByRole('heading', { name: 'Job analysis' });
     expect(screen.queryByTestId('job-context')).toBeNull();
   });
 
   it('shows nothing when the context holds no value', async () => {
     getMock.mockResolvedValue(withContext({ location: null, work_arrangement: null, reports_to: null }));
     render(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
-    await screen.findByRole('heading', { name: 'Requirements' });
+    await screen.findByRole('heading', { name: 'Job analysis' });
     expect(screen.queryByTestId('job-context')).toBeNull();
   });
 
