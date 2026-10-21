@@ -163,7 +163,7 @@ describe('a refused or missing job shows one safe state and no job content', () 
     getMock.mockImplementation(async (url: string) => (url === DETAILS_URL ? jobPayload('completed') : []));
     renderPage();
 
-    await waitFor(() => expect(screen.getByTestId('requirements-panel')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('requirements-unavailable')).toBeInTheDocument());
 
     expect(screen.queryByText('Skills Analysis')).toBeNull();
     expect(screen.getByTestId('job-details-analysis-layout').className).not.toContain('lg:grid-cols-3');
