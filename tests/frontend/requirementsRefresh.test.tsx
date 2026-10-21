@@ -22,7 +22,7 @@ describe('the requirements replace the waiting state without a browser refresh',
     expect(await screen.findByText(/being generated/)).toBeInTheDocument();
 
     rerender(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
-    expect(await screen.findByRole('heading', { name: 'Requirements' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Job analysis' })).toBeInTheDocument();
     expect(screen.queryByText(/being generated/)).toBeNull();
   });
 
@@ -35,13 +35,13 @@ describe('the requirements replace the waiting state without a browser refresh',
     expect(await screen.findByText(/being generated/)).toBeInTheDocument();
 
     rerender(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
-    expect(await screen.findByRole('heading', { name: 'Requirements' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Job analysis' })).toBeInTheDocument();
   });
 
   it('does not fetch again while the status is unchanged (no duplicate requests)', async () => {
     getMock.mockResolvedValue(view());
     const { rerender } = render(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
-    await screen.findByRole('heading', { name: 'Requirements' });
+    await screen.findByRole('heading', { name: 'Job analysis' });
     const calls = getMock.mock.calls.length;
     rerender(<RequirementsPanel jobId="job-1" userRole="recruiter" extractionStatus="completed" />);
     await act(async () => { await Promise.resolve(); });
@@ -54,6 +54,6 @@ describe('the requirements replace the waiting state without a browser refresh',
     const reload = await screen.findByRole('button', { name: 'Reload requirements' });
     await act(async () => { reload.click(); });
     await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole('heading', { name: 'Requirements' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Job analysis' })).toBeInTheDocument();
   });
 });
