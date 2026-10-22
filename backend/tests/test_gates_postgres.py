@@ -473,3 +473,26 @@ async def test_without_a_tenant_context_nothing_is_visible(built, engines, world
     await _manual_world(built, engines, world)
     async with AsyncSession(engines()) as session:
         assert (await session.execute(text("SELECT count(*) FROM application_gate_results"))).scalar() == 0
+
+
+async def test_upgrading_a_database_with_existing_required_questions_converts_none_of_them_into_gates():
+    reason = unavailable_reason()
+    if reason:
+        pytest.skip(reason)
+    with built_chain() as db:
+        cur = db.conn.cursor()
+        cur.execute(DOWN)                                   # the state before 102, with the data a production job already has
+        tag = uuid.uuid4().hex[:8]
+        cur.execute("INSERT INTO tenants (name, email_domain) VALUES (%s, %s) RETURNING tenant_id", (f"up{tag}", f"up{tag}.example"))
+        tenant = str(cur.fetchone()[0])
+        cur.execute("INSERT INTO users (tenant_id, email, password_hash, full_name, role) VALUES (%s, %s, 'x', 'u', 'admin') RETURNING user_id",
+                    (tenant, f"up{tag}@example.test"))
+        user = str(cur.fetchone()[0])
+        cur.execute("INSERT INTO jobs (tenant_id, created_by, title, description) VALUES (%s, %s, 't', 'd') RETURNING job_id", (tenant, user))
+        job = str(cur.fetchone()[0])
+        for required in (True, False):
+            cur.execute("INSERT INTO job_knockout_questions (job_id, tenant_id, question_text, is_required, passing_criteria)"
+                        " VALUES (%s, %s, 'q', %s, '{\"passing_answers\": [\"yes\"]}')", (job, tenant, required))
+        cur.execute(UP)
+        cur.execute("SELECT is_required, is_eligibility_gate, gate_failure_action FROM job_knockout_questions WHERE job_id = %s ORDER BY is_required", (job,))
+        assert cur.fetchall() == [(False, False, "not_eligible"), (True, False, "not_eligible")]
