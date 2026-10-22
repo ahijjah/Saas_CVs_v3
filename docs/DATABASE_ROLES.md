@@ -222,6 +222,16 @@ The upgrade is tested end to end on a disposable database rebuilt in the main-09
 the `before` preflight reports only `WARN`, the procedure runs in order, the `after` preflight passes every check, the live grants equal
 the manifest, and a job from before the upgrade survives with its code.
 
+## Upgrading from the legacy production database
+
+The production database that predates the migration ledger (application source commit `63f3bd7`, legacy migrations 093 to 108, `cv_app` a
+`SUPERUSER BYPASSRLS` owner of every object) is not "the previous main state": its migrations 093 to 108 are numbered and shaped differently from
+main's, and the standard procedure above cannot baseline it safely. It has its own fail-closed conversion, rehearsal and rollback in
+`docs/LEGACY_PRODUCTION_UPGRADE.md` (`python -m scripts.legacy_upgrade check | prepare`). After `prepare`, steps 5 to 9 of the operator procedure
+above continue unchanged. A database converted this way keeps the legacy-only tables (`bulk_upload_*`, `tenant_features`, `tenant_feature_audit`)
+with their data, sealed from every runtime role (`LEGACY_PRESERVED_TABLES` in `db/runtime_grants.py`); the preflight accepts them only when the
+conversion's evidence table is present.
+
 ## Bootstrap and fresh installation
 
 The database container initialises as `cv_bootstrap` (superuser) with `db/schema.sql` and `db/seed.sql`. The runtime roles are created
