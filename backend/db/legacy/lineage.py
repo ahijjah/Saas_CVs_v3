@@ -116,6 +116,29 @@ DATA_CHECKS: tuple[DataCheck, ...] = (
 )
 DATA_CHECK_FILES = {c.file: c for c in DATA_CHECKS}
 
+# What the rows that still show a problem look like, grouped by status-like columns only (never a name, address, answer text or document).
+# Used by the complete report (`check --json`) so a violation can be classified without reading the rows themselves.
+DATA_BREAKDOWNS: dict[str, str] = {
+    '059_rename_scored_to_ai_scored.sql':
+        "SELECT submission_source, count(*) FROM cv_analyzer.applications WHERE processing_status = 'scored' GROUP BY 1 ORDER BY 1",
+    '077_clean_stopped_workflow_pollution.sql':
+        "SELECT coalesce(stopped_reason, '-') || ' / ' || coalesce(workflow_status, '-'), count(*) FROM cv_analyzer.applications WHERE processing_status = 'failed' AND stopped_reason IS NOT NULL AND workflow_status IS NOT NULL GROUP BY 1 ORDER BY 1",
+    '081_fix_knockout_answer_value_encoding.sql':
+        'SELECT (CASE WHEN trim(answer_value) = \'\' THEN \'empty\' WHEN answer_value = \'""\' THEN \'empty json string\' ELSE \'json-quoted\' END) || \' / \' || coalesce(answer_source, \'-\') || \' / \' || coalesce(answer_method, \'-\'), count(*) FROM cv_analyzer.application_knockout_answers WHERE (answer_value ~ \'^"[^"\\\\]*"$\' AND char_length(answer_value) > 2) OR trim(answer_value) = \'\' OR answer_value = \'""\' GROUP BY 1 ORDER BY 1',
+    '084_fix_knockout_provenance_not_found.sql':
+        "SELECT coalesce(verification_status, '-') || ' / answer ' || (suggested_answer IS NOT NULL)::text || ' / evidence ' || (evidence_text IS NOT NULL)::text || ' / confidence>0 ' || (confidence > 0)::text, count(*) FROM cv_analyzer.application_knockout_answer_suggestions WHERE suggested_source = 'not_found' AND (suggested_answer IS NOT NULL OR evidence_text IS NOT NULL OR confidence > 0 OR verification_status != 'not_found') GROUP BY 1 ORDER BY 1",
+    '085_fix_knockout_suggestions_invalid_answers.sql':
+        "SELECT coalesce(verification_status, '-') || ' / confidence ' || coalesce(confidence::text, '-') || ' / source ' || coalesce(suggested_source, '-'), count(*) FROM cv_analyzer.application_knockout_answer_suggestions WHERE status = 'pending' AND ((verification_status = 'not_found' AND suggested_answer IS NOT NULL) OR (confidence = 0 AND (evidence_text IS NULL OR trim(evidence_text) = '') AND suggested_answer IS NOT NULL)) GROUP BY 1 ORDER BY 1",
+    '086_fix_knockout_answer_method_not_found.sql':
+        "SELECT coalesce(answer_method, '-'), count(*) FROM cv_analyzer.application_knockout_answer_suggestions WHERE suggested_source = 'not_found' AND verification_status = 'not_found' AND answer_method IS DISTINCT FROM 'not_found' GROUP BY 1 ORDER BY 1",
+    '089_recruiter_approved_method.sql':
+        "SELECT a.answer_source, count(*) FROM cv_analyzer.application_knockout_answers a JOIN cv_analyzer.application_knockout_answer_suggestions s ON s.application_id = a.application_id AND s.question_id = a.question_id WHERE s.status = 'accepted' AND a.answer_source IN ('ai_cv', 'ai_email', 'ai_cv_email') AND a.answer_method = 'ai_inference' AND a.answer_value = s.suggested_answer GROUP BY 1 ORDER BY 1",
+    '091_fix_null_workflow_status_ai_scored.sql':
+        "SELECT coalesce(submission_source, '-'), count(*) FROM cv_analyzer.applications WHERE processing_status = 'ai_scored' AND workflow_status IS NULL GROUP BY 1 ORDER BY 1",
+    '092_repair_legacy_new_workflow_status.sql':
+        "SELECT coalesce(submission_source, '-'), count(*) FROM cv_analyzer.applications WHERE processing_status = 'ai_scored' AND workflow_status = 'new' GROUP BY 1 ORDER BY 1",
+}
+
 # Files whose only effect cannot be proven from the catalogue or from a stable row predicate. They are recorded as 'attested' in the
 # evidence table with this reason, never as proven, and the runbook lists them for the operator's sign-off.
 ATTESTED = {
@@ -200,6 +223,8 @@ class Assessment:
     data: dict[str, int] = field(default_factory=dict)                         # data-check file -> violating rows
     verified_keys: dict[str, int] = field(default_factory=dict)               # file -> identities proved present
     accepted: list[str] = field(default_factory=list)                          # seed rows the operator accepted as absent
+    structure: dict = field(default_factory=dict)                              # the complete structural comparison (no cap)
+    breakdown: dict[str, list] = field(default_factory=dict)                   # data-check file -> [(label, count)]
     live: dict[str, str] = field(default_factory=dict)
 
     def add(self, level: str, name: str, detail: str = "") -> None:
@@ -228,14 +253,22 @@ def assess_structure(live: dict[str, str], out: Assessment, *, accepted_seeds: f
             note = " - its effect was never applied here and is not repaired automatically" if setter in MUST_BE_PRESENT else ""
             blocking.append(f"{state} {key} (set by {setter}){note}")
     unknown = [k for k in extra if not k.startswith("seed|")]
+    # The complete comparison, with both definitions, for the report. The text output below is capped; this is not.
+    out.structure = {
+        "expected_identities": len(EXPECTED_LEGACY),
+        "missing": [{"key": k, "expected": EXPECTED_LEGACY[k], "set_by": SETTER_LEGACY[k]} for k in missing],
+        "different": [{"key": k, "expected": EXPECTED_LEGACY[k], "live": live[k], "set_by": SETTER_LEGACY[k]} for k in different],
+        "unknown": [{"key": k, "live": live[k]} for k in unknown],
+        "operator_seed_rows": sorted(k for k in extra if k.startswith("seed|")),
+    }
     for key in blocking[:40]:
         out.add("FAIL", "expected object", key)
     if len(blocking) > 40:
-        out.add("FAIL", "expected object", f"... and {len(blocking) - 40} more")
+        out.add("FAIL", "expected object", f"... and {len(blocking) - 40} more (the complete list is in `check --json`)")
     for key in unknown[:40]:
         out.add("FAIL", "unknown object", f"{key} is not part of the legacy lineage")
     if len(unknown) > 40:
-        out.add("FAIL", "unknown object", f"... and {len(unknown) - 40} more")
+        out.add("FAIL", "unknown object", f"... and {len(unknown) - 40} more (the complete list is in `check --json`)")
     for file, keys in repairable.items():
         out.repairs.append(file)
         out.add("REPAIR", file, f"{len(keys)} object(s) absent or different; this file will be run to create or validate them")
@@ -262,6 +295,14 @@ def assess_data(cur, out: Assessment, *, acknowledged: frozenset[str] = frozense
             cur.connection.rollback() if not cur.connection.autocommit else None
             continue
         out.data[check.file] = n
+        if n and check.file in DATA_BREAKDOWNS:
+            try:
+                cur.execute(DATA_BREAKDOWNS[check.file])
+                out.breakdown[check.file] = [[str(label), int(count)] for label, count in cur.fetchall()]
+            except Exception as exc:        # noqa: BLE001 - the count is the check; the breakdown is a courtesy
+                out.breakdown[check.file] = [["breakdown unavailable: " + str(exc).splitlines()[0], 0]]
+                if not cur.connection.autocommit:
+                    cur.connection.rollback()
         if n == 0:
             out.add("PASS", f"data check {check.file}", check.description)
         elif check.file in acknowledged:

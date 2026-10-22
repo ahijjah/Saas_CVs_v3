@@ -684,6 +684,43 @@ def test_without_the_migration_roles_the_conversion_stops(legacy):
     boot.close()
 
 
+def test_the_complete_report_lists_every_difference_with_both_definitions_and_no_row_content(legacy, capsys, monkeypatch):
+    """`check --json` is the document a production difference is classified from. It must not be capped, must carry the live and the expected
+    definition of every object, must describe data violations by status-like columns only, and must hold no personal data."""
+    seed(legacy)
+    boot = legacy.bootstrap()
+    cur = boot.cursor()
+    for n in range(45):                                                       # more unknown columns than the text report prints
+        cur.execute(f"ALTER TABLE cv_analyzer.jobs ADD COLUMN extra_{n:02d} text")
+    cur.execute("ALTER TABLE cv_analyzer.applications DROP CONSTRAINT applications_decision_check")
+    cur.execute("ALTER TABLE cv_analyzer.applications ADD CONSTRAINT applications_decision_check CHECK (decision IN ('qualified', 'partial', 'rejected'))")
+    cur.execute("ALTER TABLE cv_analyzer.application_scores DROP COLUMN det_final_score")
+    cur.execute("UPDATE cv_analyzer.applications SET workflow_status = NULL WHERE processing_status = 'ai_scored'")
+    boot.close()
+    monkeypatch.setenv("LEGACY_UPGRADE_DATABASE_URL", f"postgresql://postgres@127.0.0.1:{legacy.cluster.port}/{legacy.name}")
+    assert CLI.main(["check", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    structure = report["structure"]
+    assert len(structure["unknown"]) == 45 and all(u["key"].startswith("column|jobs.extra_") and u["live"] for u in structure["unknown"])
+    different = {d["key"]: d for d in structure["different"]}
+    assert "ANY" in different["constraint|applications.applications_decision_check"]["live"]
+    assert "needs_verification" in different["constraint|applications.applications_decision_check"]["expected"]
+    assert "needs_verification" not in different["constraint|applications.applications_decision_check"]["live"]
+    missing = {m["key"]: m for m in structure["missing"]}
+    assert missing["column|application_scores.det_final_score"]["set_by"] == "096_deterministic_scoring.sql"
+    assert "index|idx_workflow_policies_sla" in missing                      # listed too, though it is the repairable one
+    assert report["data"]["091_fix_null_workflow_status_ai_scored.sql"] == 2
+    assert report["data_breakdown"]["091_fix_null_workflow_status_ai_scored.sql"] == [["manual_upload", 1], ["bulk_excel_upload", 1]] or \
+        sorted(report["data_breakdown"]["091_fix_null_workflow_status_ai_scored.sql"]) == [["bulk_excel_upload", 1], ["manual_upload", 1]]
+    text = json.dumps(report)
+    for personal in ("Sam Manual", "Bea Bulk", "Strong profile", "admin@acme.example", "Do you hold a licence", "Python and SQL", "cv.pdf"):
+        assert personal not in text
+    # the text report says how many it did not print, and where the rest is
+    assert CLI.main(["check"]) == 1
+    printed = capsys.readouterr().out
+    assert "and 5 more (the complete list is in `check --json`)" in printed
+
+
 # ---------------------------------------------------------------------------------------------------------------------------------
 # 5. Why each reconciliation exists: the unreconciled chain fails, so the failure is real and not assumed
 # ---------------------------------------------------------------------------------------------------------------------------------

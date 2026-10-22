@@ -374,5 +374,6 @@ def report_lines(a: L.Assessment) -> list[str]:
 
 
 def to_json(a: L.Assessment) -> str:
-    return json.dumps({"blocking": a.blocking, "repairs": a.repairs, "data": a.data,
-                       "findings": [{"level": l, "name": n, "detail": d} for l, n, d in a.findings]}, indent=2)
+    return json.dumps({"blocking": a.blocking, "repairs": a.repairs, "data": a.data, "data_breakdown": a.breakdown,
+                       "structure": a.structure,
+                       "findings": [{"level": l, "name": n, "detail": d} for l, n, d in a.findings]}, indent=2, sort_keys=False)

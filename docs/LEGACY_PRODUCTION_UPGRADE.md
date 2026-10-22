@@ -258,7 +258,7 @@ set -a; . "$SECRETS_FILE"; set +a
 ```bash
 # 3. check (read-only). Exit 0 is required.
 tool python -m scripts.legacy_upgrade check | tee "$EVIDENCE/01-check-before.txt"
-tool python -m scripts.legacy_upgrade check --json > "$EVIDENCE/01-check-before.json"
+tool python -m scripts.legacy_upgrade check --json > "$EVIDENCE/01-check-before.json"   # the complete report: every difference, both definitions, no row content
 docker exec -e PGPASSWORD "$DB" psql -X -h localhost -U "$PGUSER" -d cv_analyzer_prod -At -c \
   "SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolcreatedb, rolcreaterole, rolinherit FROM pg_roles WHERE rolname LIKE 'cv\_%' ORDER BY 1" \
   > "$EVIDENCE/00-roles-before.txt"
@@ -397,6 +397,11 @@ by hand against a database that has issued codes outside the runner.
   scripts. Confirm the credential variable names (5.1) and the image tag on the host before relying on them.
 
 ## 8. When `check` or `prepare` stops
+
+The text output prints at most 40 findings per category and says how many more there are. **`check --json` is never capped**: it lists every
+missing, different and unknown identity with the expected and the live definition (DDL text only), the data-check counts and, for each data check
+that finds rows, a breakdown by status-like columns. It contains no names, addresses, answers or documents. It is the document a production
+difference is classified from.
 
 | Output | Meaning | What to do |
 |---|---|---|
