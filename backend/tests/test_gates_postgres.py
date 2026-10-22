@@ -496,3 +496,67 @@ async def test_upgrading_a_database_with_existing_required_questions_converts_no
         cur.execute(UP)
         cur.execute("SELECT is_required, is_eligibility_gate, gate_failure_action FROM job_knockout_questions WHERE job_id = %s ORDER BY is_required", (job,))
         assert cur.fetchall() == [(False, False, "not_eligible"), (True, False, "not_eligible")]
+
+
+# ── a failed gate against a very high score ─────────────────────────────────────────────────────────────────────────
+
+def _score(built, app, final=99.0):
+    cur = built.conn.cursor()
+    cur.execute("INSERT INTO application_scores (application_id, score_skills, score_experience, score_education, score_certifications,"
+                " score_soft_skills, score_domain_knowledge, score_other, final_score, weights_snapshot, ai_model)"
+                " VALUES (%s, 99, 99, 99, 99, 99, 99, 99, %s, '{}', 'fixture-model')", (app, final))
+
+
+def _stored_outcome(built, app):
+    cur = built.conn.cursor()
+    cur.execute("SELECT s.final_score, a.decision, a.eligibility_status FROM applications a"
+                " JOIN application_scores s ON s.application_id = a.application_id WHERE a.application_id = %s", (app,))
+    return cur.fetchone()
+
+
+async def test_a_failed_not_eligible_gate_overrides_a_score_of_99_and_leaves_the_stored_score_and_decision_unchanged(built, engines, world):
+    from routers.applications import _effective
+    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual", "failure_action": "not_eligible"})))
+    app = _application(built, world["a"], job, decision="qualified")
+    _score(built, app, 99.0)
+    await _refresh(engines, built, world["a"], app)
+    admin = world["a"]["users"]["admin"]
+    await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.record_result(
+        s, application_id=app, gate_key="req:req_py", result="failed", summary="Original licence not valid", user_id=admin))
+
+    final_score, decision, status = _stored_outcome(built, app)
+    assert float(final_score) == 99.0                        # 1. the numeric score is unchanged
+    assert decision == "qualified"                           # 2. so is the stored scoring decision
+    assert status == "not_eligible"                          # 3. eligibility is Not Eligible
+    view = await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.gate_view(s, app))
+    assert view["eligibility_status"] == "not_eligible"
+    assert view["effective_decision"] == "not_eligible"      # 4. the effective decision the API returns
+    assert _effective(status, decision) == "not_eligible"    #    and the one the application routes derive from the stored pair
+
+
+async def test_a_failed_hold_for_review_gate_gives_review_required_not_not_eligible_even_at_a_score_of_99(built, engines, world):
+    from routers.applications import _effective
+    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual", "failure_action": "hold_for_review"})))
+    app = _application(built, world["a"], job, decision="qualified")
+    _score(built, app, 99.0)
+    await _refresh(engines, built, world["a"], app)
+    await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.record_result(
+        s, application_id=app, gate_key="req:req_py", result="failed", summary="No licence seen", user_id=world["a"]["users"]["admin"]))
+
+    final_score, decision, status = _stored_outcome(built, app)
+    assert (float(final_score), decision) == (99.0, "qualified")
+    assert status == "review_required" and status != "not_eligible"
+    view = await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.gate_view(s, app))
+    assert view["effective_decision"] == "review_required"
+    assert _effective(status, decision) == "review_required"
+
+
+async def test_a_passed_gate_leaves_the_score_decision_as_the_effective_decision(built, engines, world):
+    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual"})))
+    app = _application(built, world["a"], job, decision="qualified")
+    _score(built, app, 99.0)
+    await _refresh(engines, built, world["a"], app)
+    await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.record_result(
+        s, application_id=app, gate_key="req:req_py", result="passed", summary=None, user_id=world["a"]["users"]["admin"]))
+    view = await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.gate_view(s, app))
+    assert view["eligibility_status"] == "eligible" and view["effective_decision"] == "qualified"
