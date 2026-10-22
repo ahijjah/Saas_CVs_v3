@@ -151,7 +151,7 @@ def test_the_document_is_exactly_the_whitelisted_shape():
     for category in dumped["document"]["categories"].values():
         assert set(category) == {"weight", "items"}
         for item in category["items"]:
-            assert set(item) == {"id", "text", "importance", "weight", "origin", "source_text", "alternatives", "experience"}
+            assert set(item) == {"id", "text", "importance", "weight", "origin", "source_text", "alternatives", "experience", "gate", "gate_suggestion"}
 
 
 def test_no_hidden_or_server_owned_content_appears_in_the_response():

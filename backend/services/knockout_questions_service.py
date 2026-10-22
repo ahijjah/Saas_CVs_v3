@@ -11,6 +11,7 @@ endpoints. Use get_public_job_knockout_questions() for the candidate-facing API.
 """
 import json
 import logging
+import re
 
 from fastapi import HTTPException, status
 from sqlalchemy import text
@@ -21,6 +22,12 @@ logger = logging.getLogger(__name__)
 _VALID_TYPES = {"yes_no", "single_choice", "number"}
 _VALID_OPERATORS = {">=", ">", "=", "<=", "<"}
 _DEFAULT_MAX = 5
+GATE_FAILURE_ACTIONS = frozenset({"not_eligible", "hold_for_review"})
+_UUID_PATTERN = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _is_uuid(value) -> bool:
+    return isinstance(value, str) and bool(_UUID_PATTERN.match(value))
 
 
 async def _get_max_questions(db: AsyncSession) -> int:
@@ -34,60 +41,44 @@ async def _get_max_questions(db: AsyncSession) -> int:
         return _DEFAULT_MAX
 
 
-def _validate_passing_criteria(qtype: str, criteria: dict | None, options: list | None) -> None:
-    """Raise HTTPException if passing_criteria is missing or malformed for the given type."""
-    if criteria is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="passing_criteria is required for all knockout questions.",
-        )
-
+def passing_criteria_problem(qtype: str, criteria: dict | None, options: list | None) -> str | None:
+    """Why passing_criteria is missing or malformed for the question type, or None when it is valid. Pure; shared by the question
+    editor and by the check that a requirement gate is linked to a usable question."""
+    if criteria is None or not isinstance(criteria, dict):
+        return "passing_criteria is required for all knockout questions."
     if qtype == "yes_no":
         answers = criteria.get("passing_answers")
-        if not answers or not isinstance(answers, list) or len(answers) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="yes_no questions require passing_criteria.passing_answers with at least one value.",
-            )
+        if not answers or not isinstance(answers, list):
+            return "yes_no questions require passing_criteria.passing_answers with at least one value."
         invalid = [a for a in answers if a not in ("yes", "no")]
         if invalid:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"yes_no passing_answers must be 'yes' and/or 'no', got: {invalid}.",
-            )
-
+            return f"yes_no passing_answers must be 'yes' and/or 'no', got: {invalid}."
     elif qtype == "single_choice":
-        if not options or len(options) < 2:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="single_choice questions require at least 2 options.",
-            )
+        if not options or not isinstance(options, list) or len(options) < 2:
+            return "single_choice questions require at least 2 options."
         answers = criteria.get("passing_answers")
-        if not answers or not isinstance(answers, list) or len(answers) == 0:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="single_choice questions require passing_criteria.passing_answers with at least one value.",
-            )
+        if not answers or not isinstance(answers, list):
+            return "single_choice questions require passing_criteria.passing_answers with at least one value."
         invalid = [a for a in answers if a not in options]
         if invalid:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"passing_answers values must exist in options, invalid: {invalid}.",
-            )
-
+            return f"passing_answers values must exist in options, invalid: {invalid}."
     elif qtype == "number":
         operator = criteria.get("operator")
         value = criteria.get("value")
         if operator not in _VALID_OPERATORS:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"number questions require passing_criteria.operator, one of {sorted(_VALID_OPERATORS)}.",
-            )
-        if value is None or not isinstance(value, (int, float)):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="number questions require passing_criteria.value as a numeric.",
-            )
+            return f"number questions require passing_criteria.operator, one of {sorted(_VALID_OPERATORS)}."
+        if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+            return "number questions require passing_criteria.value as a numeric."
+    else:
+        return f"question_type must be one of {sorted(_VALID_TYPES)}, got '{qtype}'."
+    return None
+
+
+def _validate_passing_criteria(qtype: str, criteria: dict | None, options: list | None) -> None:
+    """Raise HTTPException if passing_criteria is missing or malformed for the given type."""
+    problem = passing_criteria_problem(qtype, criteria, options)
+    if problem:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=problem)
 
 
 def _validate_question(q: dict) -> None:
@@ -110,6 +101,18 @@ def _validate_question(q: dict) -> None:
             detail="options must be a list.",
         )
     _validate_passing_criteria(qtype, q.get("passing_criteria"), options)
+    # Eligibility gate controls. Absent means advisory, exactly as before. A gate question has already passed the passing-criteria
+    # check above, which every question must pass.
+    gate = q.get("is_eligibility_gate", False)
+    if not isinstance(gate, bool):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="is_eligibility_gate must be true or false.")
+    action = q.get("gate_failure_action", "not_eligible")
+    if action not in GATE_FAILURE_ACTIONS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"gate_failure_action must be one of {sorted(GATE_FAILURE_ACTIONS)}.")
+    question_id = q.get("question_id")
+    if question_id is not None and not _is_uuid(question_id):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="question_id must be a question id.")
 
 
 # ── Public (unauthenticated) fetch — passing_criteria excluded ────────────────
@@ -139,6 +142,22 @@ async def get_public_job_knockout_questions(db: AsyncSession, job_id: str) -> li
     ]
 
 
+# ── Links from Job Analysis requirements (a requirement gate names the question that verifies it) ──────────────────
+
+async def linked_requirements(db: AsyncSession, job_id: str) -> dict[str, dict]:
+    """{question id (lower case): {item_id, text, failure_action}} for the confirmed requirement gates of the job that name a question.
+    Empty when the job has no Requirements v2 document or the document cannot be read. The link is stored once, in the document."""
+    from services.requirements_v2 import gates as gate_rules
+    from services.requirements_v2.validation import validate_structure
+    row = await db.execute(text("SELECT analysis_json FROM job_criteria WHERE job_id = :jid"), {"jid": job_id})
+    analysis = row.scalar_one_or_none()
+    doc = analysis.get("requirements") if isinstance(analysis, dict) else None
+    if not isinstance(doc, dict) or validate_structure(doc):
+        return {}
+    return {g["linked_question_id"].lower(): {"item_id": g["item_id"], "text": g["text"], "failure_action": g["failure_action"]}
+            for g in gate_rules.confirmed_gates(doc) if g["linked_question_id"]}
+
+
 # ── Authenticated (internal) fetch — full, includes passing_criteria ──────────
 
 async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict]:
@@ -146,25 +165,34 @@ async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict
     rows = await db.execute(
         text("""
             SELECT question_id, question_text, question_type,
-                   is_required, options, passing_criteria, display_order
+                   is_required, options, passing_criteria, display_order,
+                   is_eligibility_gate, gate_failure_action
             FROM job_knockout_questions
             WHERE job_id = :jid
             ORDER BY display_order, created_at
         """),
         {"jid": job_id},
     )
-    return [
-        {
-            "question_id":      str(r["question_id"]),
+    links = await linked_requirements(db, job_id)
+    out = []
+    for r in rows.mappings():
+        qid = str(r["question_id"])
+        link = links.get(qid.lower())
+        out.append({
+            "question_id":      qid,
             "question_text":    r["question_text"],
             "question_type":    r["question_type"],
-            "is_required":      r["is_required"],
+            "is_required":      r["is_required"],          # "Response Required": the candidate must answer. It is not eligibility.
             "options":          r["options"],
             "passing_criteria": r["passing_criteria"],
             "display_order":    r["display_order"],
-        }
-        for r in rows.mappings()
-    ]
+            "is_eligibility_gate": r["is_eligibility_gate"],
+            "gate_failure_action": r["gate_failure_action"],
+            # read-only: the failure action that governs when the question verifies a requirement gate, and the requirement itself
+            "linked_requirement": None if link is None else {"item_id": link["item_id"], "text": link["text"],
+                                                              "failure_action": link["failure_action"]},
+        })
+    return out
 
 
 # ── Write ─────────────────────────────────────────────────────────────────────
@@ -175,7 +203,12 @@ async def save_job_knockout_questions(
     tenant_id: str,
     questions: list[dict],
 ) -> None:
-    """Replace all knockout questions for a job atomically."""
+    """Replace the knockout questions for a job atomically.
+
+    A question that names its question_id in the request keeps that id (and so its candidate answers and any requirement gate that is
+    linked to it). A question without an id is created, and every question the request does not name is removed, exactly as before.
+    A question that a confirmed requirement gate is linked to cannot be removed, and cannot stop being an eligibility gate, until the
+    gate is cleared or re-linked in Job Analysis."""
     max_q = await _get_max_questions(db)
     if len(questions) > max_q:
         raise HTTPException(
@@ -186,32 +219,69 @@ async def save_job_knockout_questions(
     for q in questions:
         _validate_question(q)
 
-    await db.execute(
-        text("DELETE FROM job_knockout_questions WHERE job_id = :jid"),
-        {"jid": job_id},
-    )
+    kept_ids = [str(q["question_id"]).lower() for q in questions if q.get("question_id")]
+    if len(kept_ids) != len(set(kept_ids)):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A question id appears twice.")
+    existing = {str(r[0]).lower(): r[1] for r in (await db.execute(
+        text("SELECT question_id, is_eligibility_gate FROM job_knockout_questions WHERE job_id = :jid"), {"jid": job_id}))}
+    unknown = [qid for qid in kept_ids if qid not in existing]
+    if unknown:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A question id does not belong to this job.")
+    by_id = {str(q["question_id"]).lower(): q for q in questions if q.get("question_id")}
+    for qid, link in (await linked_requirements(db, job_id)).items():
+        kept = by_id.get(qid)
+        if kept is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+                "code": "question_linked_to_gate",
+                "message": "A requirement gate in Job Analysis is linked to this question. Clear or re-link the gate before removing it."})
+        if not kept.get("is_eligibility_gate", False):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={
+                "code": "question_linked_to_gate",
+                "message": "A requirement gate in Job Analysis is linked to this question, so it stays an eligibility gate."})
+
+    for qid in existing:
+        if qid not in by_id:
+            await db.execute(text("DELETE FROM job_knockout_questions WHERE question_id = CAST(:qid AS uuid) AND job_id = :jid"),
+                             {"qid": qid, "jid": job_id})
 
     for i, q in enumerate(questions):
         opts = q.get("options")
         criteria = q.get("passing_criteria")
+        params = {
+            "jid":      job_id,
+            "tid":      tenant_id,
+            "qtext":    q["question_text"].strip(),
+            "qtype":    q.get("question_type", "yes_no"),
+            "required": q.get("is_required", True),
+            "opts":     json.dumps(opts) if opts is not None else None,
+            "criteria": json.dumps(criteria) if criteria is not None else None,
+            "order":    i,
+            "gate":     bool(q.get("is_eligibility_gate", False)),
+            "action":   q.get("gate_failure_action", "not_eligible"),
+        }
+        if q.get("question_id"):
+            await db.execute(
+                text("""
+                    UPDATE job_knockout_questions SET
+                        question_text = :qtext, question_type = :qtype, is_required = :required,
+                        options = CAST(:opts AS jsonb), passing_criteria = CAST(:criteria AS jsonb), display_order = :order,
+                        is_eligibility_gate = :gate, gate_failure_action = :action
+                    WHERE question_id = CAST(:qid AS uuid) AND job_id = :jid
+                """),
+                {**params, "qid": str(q["question_id"])},
+            )
+            continue
         await db.execute(
             text("""
                 INSERT INTO job_knockout_questions
                     (job_id, tenant_id, question_text, question_type,
-                     is_required, options, passing_criteria, display_order)
+                     is_required, options, passing_criteria, display_order,
+                     is_eligibility_gate, gate_failure_action)
                 VALUES (:jid, :tid, :qtext, :qtype, :required,
-                        CAST(:opts AS jsonb), CAST(:criteria AS jsonb), :order)
+                        CAST(:opts AS jsonb), CAST(:criteria AS jsonb), :order,
+                        :gate, :action)
             """),
-            {
-                "jid":      job_id,
-                "tid":      tenant_id,
-                "qtext":    q["question_text"].strip(),
-                "qtype":    q.get("question_type", "yes_no"),
-                "required": q.get("is_required", True),
-                "opts":     json.dumps(opts) if opts is not None else None,
-                "criteria": json.dumps(criteria) if criteria is not None else None,
-                "order":    i,
-            },
+            params,
         )
 
 

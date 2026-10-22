@@ -377,6 +377,10 @@ export interface ApplicationDetailedAnalysis {
   applied_at?: string | null;
   original_filename?: string | null;
   decision: ApplicationDecision;
+  /** Mandatory Gates: eligible / not_eligible / review_required / not_applicable. Separate from the score and the decision. */
+  eligibility_status?: 'eligible' | 'not_eligible' | 'review_required' | 'not_applicable';
+  /** The outcome once eligibility is applied: not_eligible or review_required when a gate says so, otherwise the score's decision. */
+  effective_decision?: string | null;
   overall_score: number;
   submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email' | 'public_apply';
   processing_status?: string;
@@ -574,6 +578,11 @@ export interface KnockoutQuestion {
   passing_criteria?: PassingCriteria | null;
   options?: string[] | null;
   display_order: number;
+  /** "Use as Eligibility Gate". Absent or false means the question is advisory, as it always was. */
+  is_eligibility_gate?: boolean;
+  gate_failure_action?: 'not_eligible' | 'hold_for_review';
+  /** Read-only: the Job Analysis requirement this question verifies (set in Job Analysis), if any. */
+  linked_requirement?: { item_id: string; text: string; failure_action: 'not_eligible' | 'hold_for_review' } | null;
 }
 
 /** Public question shape — candidate-facing API. passing_criteria omitted. */

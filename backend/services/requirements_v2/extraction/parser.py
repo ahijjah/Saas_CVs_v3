@@ -47,6 +47,7 @@ from services.requirements_v2.contract import (
     ORIGIN_FROM_RESPONSIBILITIES, ORIGIN_STATED, SCHEMA_VERSION, Issue, is_int, make_item, new_item_id,
 )
 from services.requirements_v2.extraction.cues import jd_marks_preferred
+from services.requirements_v2.extraction.gate_cues import suggest_gate
 from services.requirements_v2.extraction.completeness import missed_context_statements, missed_preferred_statements
 from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA256, PROMPT_VERSION
 from services.requirements_v2.extraction.text import (
@@ -241,8 +242,16 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
 
     experience = _convert_experience(raw.get("experience"), category, source or claimed, note, iid)
 
-    return make_item(text.strip(), importance, item_id=iid, origin=origin, source_text=source,
+    item = make_item(text.strip(), importance, item_id=iid, origin=origin, source_text=source,
                      alternatives=alternatives, experience=experience)
+    # A Mandatory Gate is only SUGGESTED, and only for a Required item whose wording the job description states explicitly. The
+    # suggestion enforces nothing; an admin or HR manager confirms or refuses it (services/requirements_v2/gates.py).
+    if importance == IMPORTANCE_REQUIRED and span is not None:
+        suggestion = suggest_gate(jd, span)
+        if suggestion is not None:
+            suggestion["source_text"] = source
+            item["gate_suggestion"] = suggestion
+    return item
 
 
 def _cue_problem(cue: Any, jd: str, span: tuple[int, int] | None) -> tuple[str, str] | None:

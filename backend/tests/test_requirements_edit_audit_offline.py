@@ -103,7 +103,7 @@ def test_planning_records_counts_touched_generated_retired_and_structure_ids():
         "set_text": 1, "set_importance": 0, "set_item_weight": 0, "set_alternatives": 1, "set_experience": 0,
         "set_category_weight": 0, "add_item": 1, "remove_item": 1, "confirm_no_numeric_score": 0,
         "acknowledge_classification_warning": 0, "confirm_structure": 0, "resolve_structural_finding": 0,
-        "reorder_items": 0}
+        "reorder_items": 0, "set_gate": 0, "clear_gate": 0}
     assert audit.touched_item_ids == ("req_py", "req_sql")
     assert audit.newly_retired_item_ids == ("req_exp",)
     assert set(audit.structure_edits) == {("req_py", "corrected"), (generated, "entered")}
@@ -135,7 +135,7 @@ def test_the_payload_has_exactly_the_approved_keys():
     planned = _plan([{"op": "set_alternatives", "item_id": "req_py", "alternatives": ["Python", "CPython"]}])
     payload = E.audit_details(planned.audit)
     assert set(payload) == {"operation_counts", "touched_item_ids", "generated_item_ids", "newly_retired_item_ids",
-                            "structure_edits", "revision_before", "revision_after", "readiness", "review_actions"}
+                            "structure_edits", "revision_before", "revision_after", "readiness", "review_actions", "gate_changes"}
     assert set(payload["readiness"]) == {"before", "after"}
     assert all(set(edit) == {"item_id", "kind"} for edit in payload["structure_edits"])
 

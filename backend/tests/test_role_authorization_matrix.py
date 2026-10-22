@@ -86,6 +86,12 @@ MATRIX: dict[tuple[str, str], frozenset[str]] = {
     # requirements
     ("GET", "/jobs/{id}/requirements"): REQUIREMENTS_READER_ROLES,
     ("POST", "/jobs/{id}/requirements/edits"): REQUIREMENTS_EDITOR_ROLES,
+    # gates / knockout criteria: every tenant role reads the Gate Summary; only an admin or an HR manager records, overrides or re-runs
+    ("GET", "/applications/{id}/gates"): REQUIREMENTS_READER_ROLES,
+    ("POST", "/applications/{id}/gates/evaluate"): REQUIREMENTS_EDITOR_ROLES,
+    ("POST", "/applications/{id}/gates/{id}/override"): REQUIREMENTS_EDITOR_ROLES,
+    ("DELETE", "/applications/{id}/gates/{id}/override"): REQUIREMENTS_EDITOR_ROLES,
+    ("POST", "/applications/{id}/gates/{id}/result"): REQUIREMENTS_EDITOR_ROLES,
     # campaigns
     ("POST", "/campaigns"): MANAGERS,
     ("PATCH", "/campaigns/{id}"): MANAGERS,

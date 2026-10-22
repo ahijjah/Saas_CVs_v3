@@ -3,6 +3,8 @@
 // server supplies those, and the parser refuses them.
 
 import type { ImportanceLevel, RequirementsItem, RequirementsOperation, RequirementsView } from './requirementsApi';
+import { draftFromItem, sameGate } from '../utils/gates';
+import type { GateDraft } from '../utils/gates';
 
 export const FINDING_DECISIONS = ['fixed', 'accepted_as_is', 'dismissed_false_positive'] as const;
 export type FindingDecision = (typeof FINDING_DECISIONS)[number];
@@ -12,6 +14,8 @@ export interface ItemDraft {
   importance?: ImportanceLevel;
   weight?: number | null;
   removed?: boolean;
+  /** undefined: no change. null: remove the gate. A draft: confirm (or change) the Mandatory Gate. */
+  gate?: GateDraft | null;
 }
 
 export interface NewItemDraft {
@@ -86,6 +90,17 @@ export function buildOperations(
     const effectiveImportance = draft.importance ?? item.importance;
     if (draft.weight !== undefined && effectiveImportance === 'required' && draft.weight !== item.weight) {
       ops.push({ op: 'set_item_weight', item_id: itemId, weight: draft.weight });
+    }
+    // A Mandatory Gate belongs to Required items only. When the item becomes Preferred the server removes the gate itself, so nothing is sent.
+    if (draft.gate !== undefined && effectiveImportance === 'required') {
+      const current = draftFromItem(item);
+      if (draft.gate === null) {
+        if (current) ops.push({ op: 'clear_gate', item_id: itemId });
+      } else if (!current || !sameGate(draft.gate, current)) {
+        ops.push({ op: 'set_gate', item_id: itemId, verification_method: draft.gate.verification_method,
+                   failure_action: draft.gate.failure_action,
+                   linked_question_id: draft.gate.verification_method === 'candidate_question' ? draft.gate.linked_question_id : null });
+      }
     }
   }
 

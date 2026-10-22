@@ -239,6 +239,7 @@
         "services.application_intake_service",
         "services.application_reuse_service",
         "services.duplicate_detection",
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.screening_validation_service",
         "workers.cv_score"
@@ -257,6 +258,7 @@
       "consumers": [
         "services.application_intake_service",
         "services.duplicate_detection",
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "workers.backfill_canonical_fp",
         "workers.cv_score",
@@ -277,6 +279,7 @@
         "routers.admin",
         "services.application_intake_service",
         "services.duplicate_detection",
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "workers.backfill_canonical_fp",
         "workers.cv_score"
@@ -288,6 +291,60 @@
         "INSERT"
       ],
       "role": "cv_admin"
+    },
+    {
+      "consumers": [
+        "services.eligibility_service"
+      ],
+      "kind": "table",
+      "object": "application_gate_result_events",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.eligibility_service"
+      ],
+      "kind": "table",
+      "object": "application_gate_result_events",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.eligibility_service"
+      ],
+      "kind": "table",
+      "object": "application_gate_results",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.eligibility_service"
+      ],
+      "kind": "table",
+      "object": "application_gate_results",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
+      ],
+      "role": "cv_worker"
     },
     {
       "consumers": [
@@ -394,6 +451,7 @@
     {
       "consumers": [
         "routers.applications",
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.knockout_answer_extraction_service",
         "services.knockout_questions_service",
@@ -411,6 +469,7 @@
     },
     {
       "consumers": [
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.knockout_answer_extraction_service",
         "services.knockout_questions_service"
@@ -427,6 +486,7 @@
     },
     {
       "consumers": [
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.knockout_answer_extraction_service",
         "services.knockout_questions_service"
@@ -532,6 +592,7 @@
         "routers.comments",
         "routers.communication",
         "routers.dashboard",
+        "routers.gates",
         "routers.interviews",
         "routers.jobs",
         "routers.tenant",
@@ -539,6 +600,7 @@
         "services.application_reuse_service",
         "services.communication_events",
         "services.duplicate_detection",
+        "services.eligibility_service",
         "services.knockout_questions_service",
         "services.screening_validation_service",
         "services.subscription_service",
@@ -559,6 +621,7 @@
       "consumers": [
         "services.application_intake_service",
         "services.duplicate_detection",
+        "services.eligibility_service",
         "services.intake_notification_service",
         "services.knockout_questions_service",
         "services.subscription_service",
@@ -582,6 +645,7 @@
         "routers.public",
         "services.application_intake_service",
         "services.duplicate_detection",
+        "services.eligibility_service",
         "services.knockout_questions_service",
         "services.subscription_service",
         "workers.cv_score"
@@ -899,6 +963,8 @@
         "services.application_intake_service",
         "services.application_reuse_service",
         "services.criteria_status",
+        "services.eligibility_service",
+        "services.knockout_questions_service",
         "services.requirements_edit",
         "services.requirements_v2.contract",
         "services.requirements_v2.scoring",
@@ -921,6 +987,8 @@
         "services.ai_service",
         "services.application_intake_service",
         "services.criteria_status",
+        "services.eligibility_service",
+        "services.knockout_questions_service",
         "services.requirements_v2.contract",
         "services.requirements_v2.scoring",
         "workers.criteria_worker",
@@ -941,6 +1009,8 @@
         "services.ai_service",
         "services.application_intake_service",
         "services.criteria_status",
+        "services.eligibility_service",
+        "services.knockout_questions_service",
         "services.requirements_v2.contract",
         "services.requirements_v2.scoring",
         "workers.cv_score"
@@ -956,9 +1026,11 @@
     {
       "consumers": [
         "routers.applications",
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.knockout_answer_extraction_service",
         "services.knockout_questions_service",
+        "services.requirements_edit",
         "services.screening_validation_service"
       ],
       "kind": "table",
@@ -967,12 +1039,14 @@
       "privileges": [
         "SELECT",
         "INSERT",
+        "UPDATE",
         "DELETE"
       ],
       "role": "cv_app"
     },
     {
       "consumers": [
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.knockout_answer_extraction_service",
         "services.knockout_questions_service"
@@ -987,6 +1061,7 @@
     },
     {
       "consumers": [
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.knockout_answer_extraction_service",
         "services.knockout_questions_service"
@@ -1391,6 +1466,7 @@
         "routers.saved_views",
         "routers.tenant",
         "routers.workflow_policies",
+        "services.eligibility_service",
         "services.knockout_analysis_service",
         "services.requirements_edit"
       ],
@@ -1406,6 +1482,7 @@
     },
     {
       "consumers": [
+        "services.eligibility_service",
         "services.intake_notification_service",
         "services.knockout_analysis_service"
       ],
@@ -1425,6 +1502,7 @@
         "routers.auth",
         "routers.platform_config",
         "routers.subscription_plans",
+        "services.eligibility_service",
         "services.knockout_analysis_service"
       ],
       "kind": "table",

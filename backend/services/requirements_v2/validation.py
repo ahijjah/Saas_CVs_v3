@@ -15,6 +15,7 @@ Rules (final):
   - duplicate items are allowed (same text, in or across categories); only ids must be unique
   - an empty job is a valid saved state (it just is not ready, see readiness.py)
   - a stored preferred-only confirmation must still match the current items
+  - Mandatory Gates (gates.py): only Required items, a verification method, a consistent question link
 """
 from __future__ import annotations
 
@@ -116,6 +117,9 @@ def _item_structure_issues(item: Any, category: str, seen_ids: set[str]) -> list
     if st is not None and not isinstance(st, str):
         bad("bad_source_text", "source_text must be a string or null.")
 
+    from services.requirements_v2.gates import shape_issues as gate_shape_issues
+    out.extend(gate_shape_issues(item, category, iid))
+
     alts = item.get("alternatives")
     if alts is not None and (not isinstance(alts, list) or len(alts) < 2
                              or not all(isinstance(a, str) and a.strip() for a in alts)):
@@ -175,6 +179,8 @@ def _rule_issues(doc: dict) -> list[Issue]:
                                  category=c))
     if any_required and category_total != 100:
         out.append(Issue("category_weights_total", f"Category weights total {category_total}%, not 100%."))
+    from services.requirements_v2.gates import rule_issues as gate_rule_issues
+    out.extend(gate_rule_issues(doc))
     return out
 
 
@@ -234,6 +240,11 @@ def validate_draft(doc: Any) -> ValidationResult:
         return ValidationResult(errors=(Issue(
             "structure_record_not_allowed_in_draft",
             "Structure confirmations are server-owned and cannot be part of an extraction draft."),))
+    from services.requirements_v2.gates import GATE_KEY
+    if any(GATE_KEY in i for c in CATEGORIES for i in doc["categories"][c]["items"]):
+        return ValidationResult(errors=(Issue(
+            "gate_not_allowed_in_draft",
+            "A confirmed Mandatory Gate is server-owned and cannot be part of an extraction draft."),))
     from services.requirements_v2.structural_review import has_structural_block
     if has_structural_block(doc):
         return ValidationResult(errors=(Issue(

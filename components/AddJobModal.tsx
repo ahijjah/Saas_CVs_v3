@@ -4,6 +4,8 @@ import { apiService } from '../services/api';
 import { WEBHOOK_CONFIG } from '../config';
 import { User, ClientOrganization, Campaign, KnockoutQuestion, PassingCriteria, PassingOperator } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import QuestionGateControl from './QuestionGateControl';
+import { questionGatePayload, questionGateProblem } from '../utils/gates';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
 interface PrefilledCampaign {
@@ -89,7 +91,7 @@ const T = {
     knockoutTypeyesNo: 'Yes / No',
     knockoutTypeSingleChoice: 'Single Choice',
     knockoutTypeNumber: 'Number',
-    knockoutRequired: 'Required',
+    knockoutRequired: 'Response Required',
     knockoutPassing: 'Passing criteria',
     knockoutPassingAnswers: 'Passing answers',
     knockoutPassingOperator: 'Operator',
@@ -150,7 +152,7 @@ const T = {
     knockoutTypeyesNo: 'نعم / لا',
     knockoutTypeSingleChoice: 'اختيار واحد',
     knockoutTypeNumber: 'رقمي',
-    knockoutRequired: 'إلزامي',
+    knockoutRequired: 'الرد مطلوب',
     knockoutPassing: 'معايير الاجتياز',
     knockoutPassingAnswers: 'إجابات الاجتياز',
     knockoutPassingOperator: 'المعامل',
@@ -387,6 +389,10 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
       const vac = parseInt(formData.vacancies_count);
       if (vac > 0) payload.vacancies_count = vac;
 
+      if (showKnockout) {
+        const gateProblem = knockoutQuestions.filter(q => q.question_text?.trim()).map(q => questionGateProblem(q, lang)).find(Boolean);
+        if (gateProblem) { addToast(gateProblem, 'error'); setLoading(false); return; }
+      }
       if (showKnockout && knockoutQuestions.length > 0) {
         const questions = knockoutQuestions
           .filter(q => q.question_text?.trim())
@@ -408,6 +414,7 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
               is_required: q.is_required ?? true,
               options: opts,
               passing_criteria: criteria,
+              ...questionGatePayload(q),
             };
           });
         if (questions.length > 0) payload.knockout_questions = questions as any;
@@ -718,6 +725,8 @@ export const AddJobModal: React.FC<AddJobModalProps> = ({ onClose, onSuccess, to
                               <span className="text-xs text-textMuted font-semibold">{(t as any).knockoutRequired}</span>
                             </label>
                           </div>
+                          <QuestionGateControl lang={lang} question={q}
+                            onChange={(field, value) => updateKnockoutQuestion(idx, field, value)} />
 
                           {/* Options textarea — single_choice only */}
                           {q.question_type === 'single_choice' && (

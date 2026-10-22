@@ -8,6 +8,24 @@ const TOKEN_KEY = 'token';
 
 export type ImportanceLevel = 'required' | 'preferred';
 
+export type GateMethod = 'cv_evidence' | 'candidate_question' | 'assessment' | 'manual';
+export type GateAction = 'not_eligible' | 'hold_for_review';
+
+/** A confirmed Mandatory Gate. The confirming user is never returned by the API. */
+export interface RequirementsGate {
+  mandatory: true;
+  verification_method: GateMethod | null;
+  failure_action: GateAction;
+  linked_question_id: string | null;
+  confirmed_at: string;
+}
+
+/** What the extraction suggested from the job description's own explicit wording. It enforces nothing until a person confirms. */
+export interface RequirementsGateSuggestion {
+  cue: string;
+  source_text: string | null;
+}
+
 export interface RequirementsItem {
   id: string;
   text: string;
@@ -17,6 +35,8 @@ export interface RequirementsItem {
   source_text: string | null;
   alternatives: string[] | null;
   experience: { subject: string | null; min_years: number | null } | null;
+  gate?: RequirementsGate | null;
+  gate_suggestion?: RequirementsGateSuggestion | null;
 }
 
 export interface RequirementsCategory {
@@ -73,7 +93,9 @@ export type RequirementsOperation =
   | { op: 'confirm_structure'; item_id: string }
   | { op: 'resolve_structural_finding'; finding_id: string; decision: 'fixed' | 'accepted_as_is' | 'dismissed_false_positive';
       note: string | null; evidence_item_ids: string[] | null }
-  | { op: 'reorder_items'; category: string; item_ids: string[] };
+  | { op: 'reorder_items'; category: string; item_ids: string[] }
+  | { op: 'set_gate'; item_id: string; verification_method: GateMethod | null; failure_action: GateAction; linked_question_id: string | null }
+  | { op: 'clear_gate'; item_id: string };
 
 export class RequirementsApiError extends Error {
   readonly status: number;

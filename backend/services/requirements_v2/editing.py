@@ -89,6 +89,7 @@ def set_importance(doc: dict, item_id: str, importance: str) -> dict:
     if item["importance"] != importance:
         item["importance"] = importance
         item["weight"] = None                      # preferred: no weight; new required: unweighted until set
+        item.pop("gate", None)                     # a Mandatory Gate belongs to Required items only; a new gate is confirmed afresh
         _zero_weight_if_no_required(out, category)
     return _reconcile_review(out)
 

@@ -69,6 +69,8 @@ export const WEBHOOK_CONFIG = {
   DUPLICATE_LOGS_BASE_URL:      `${API_BASE}/jobs`,
   // Duplicate CV file download (append /{job_id}/duplicate-logs/{log_id}/cv)
   DUPLICATE_CV_BASE_URL:        `${API_BASE}/jobs`,
+  // Mandatory Gate results of an application (append /{application_id}/gates)
+  APPLICATION_GATES_BASE_URL:   `${API_BASE}/applications`,
   // CV file download (append /{application_id}/cv)
   CV_DOWNLOAD_BASE_URL:         `${API_BASE}/applications`,
   // Workflow status transition (append /{application_id}/workflow-status)

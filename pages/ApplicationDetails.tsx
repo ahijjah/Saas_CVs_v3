@@ -9,6 +9,8 @@ import {
   WORKFLOW_STATUS_LABELS_AR,
 } from '../constants/workflow';
 import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
+import GateSummary from '../components/GateSummary';
+import { gateCopy, overridesScoreDecision, statusLabel, statusTone } from '../utils/gates';
 import { canMutateApplications } from '../utils/permissions';
 
 interface JobMetaStrip {
@@ -541,6 +543,7 @@ const LANG_LABELS: Record<string, { en: string; ar: string }> = {
 export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, onBack, jobMeta, onDownloadCV, downloadingCV, token, userRole, advancedMoveEnabled, onWorkflowStatusChange, onRecruiterNotesChange }) => {
   // Recruiter and Viewer read an application; only admin and HR manager change it. The server enforces it too.
   const canMutate = canMutateApplications(userRole);
+  const [eligibility, setEligibility] = useState<string | null>(data.eligibility_status ?? null);
   const { lang, isAr } = useLanguage() as { lang: 'en' | 'ar'; isAr: boolean };
   const t = T[lang];
 
@@ -1994,6 +1997,12 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
         );
       })()}
 
+      {/* Eligibility gates: above the numeric score, because the score cannot override a failed gate */}
+      {!isSecurityBlocked && data.application_id && (
+        <GateSummary applicationId={data.application_id} userRole={userRole} lang={lang}
+          onStatus={(status) => setEligibility(status)} />
+      )}
+
       {/* Profile & Scoring — hidden for security-blocked applications */}
       {!isSecurityBlocked && <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
@@ -2010,7 +2019,14 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${decisionStyles[data.decision] || 'bg-slate-100 text-slate-600'}`}>
+                {overridesScoreDecision(eligibility) ? (
+                  <span data-testid="eligibility-chip"
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${statusTone(eligibility) === 'red' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                    {statusLabel(eligibility, lang)}
+                  </span>
+                ) : null}
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${decisionStyles[data.decision] || 'bg-slate-100 text-slate-600'}`}
+                  title={overridesScoreDecision(eligibility) ? gateCopy(lang).scoreNote : undefined}>
                   {decisionLabel[data.decision] || data.decision || t.noDecision}
                 </span>
                 {data.duplicate_status === 'possible_duplicate' && (
