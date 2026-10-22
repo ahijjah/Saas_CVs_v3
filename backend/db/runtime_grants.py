@@ -65,6 +65,15 @@ MATRIX: dict[str, dict[str, str]] = {
     "users":                                     {APP: "ISU", ADMIN: "ISU", WORKER: "S"},
 }
 
+# Tables that hold data but are granted to no runtime role.
+#   LEGACY_PRESERVED_TABLES  exist only in a database converted from the legacy production lineage (db/legacy). The current release's code
+#                            does not use them, so nothing is granted; the data is kept, owned by the migrator and sealed by 0005.
+#   OPERATOR_TABLES          the migration ledger and the conversion's evidence table; runtime roles never touch them.
+# The preflight accepts a table without a matrix entry only if it is named here, and only the first group when the evidence table shows
+# the conversion ran.
+LEGACY_PRESERVED_TABLES = ("bulk_upload_batches", "bulk_upload_rows", "tenant_features", "tenant_feature_audit")
+OPERATOR_TABLES = ("schema_migrations", "schema_migration_legacy_evidence")
+
 # platform_secrets: no table privilege for any runtime role. Metadata columns only, never value. Writes go through the setter, reads
 # of values through the getter.
 PLATFORM_SECRETS_METADATA = ("key", "masked_value", "description", "category", "is_critical", "has_value", "updated_at", "updated_by_email")

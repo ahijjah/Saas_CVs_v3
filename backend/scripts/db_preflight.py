@@ -168,11 +168,17 @@ def run(conn, phase: str = "after") -> list[Check]:
     checks.append(Check("every routine is owned by the migrator", _status(not routines_foreign, phase, True),
                         f"not owned by {MIGRATOR}: {routines_foreign[:3]}" if routines_foreign else ""))
 
+    converted = bool(_one(cur, "SELECT to_regclass('cv_analyzer.schema_migration_legacy_evidence') IS NOT NULL")[0])
+    if converted:
+        checks.extend(_legacy_lineage_checks(cur, phase))
+
     # Table privileges equal the matrix. Only meaningful once the runtime roles exist; before that they are all missing.
     if all(name in roles for name in RUNTIME):
         extra, missing = [], []
         for (table,) in _rows(cur, "SELECT tablename FROM pg_tables WHERE schemaname = 'cv_analyzer'"):
-            if table not in G.MATRIX and table not in ("platform_secrets", "platform_secret_readable", "schema_migrations"):
+            sealed_legacy = table in G.LEGACY_PRESERVED_TABLES and converted
+            if table not in G.MATRIX and table not in ("platform_secrets", "platform_secret_readable") + G.OPERATOR_TABLES \
+                    and not sealed_legacy:
                 checks.append(Check(f"table {table} has a matrix entry", FAIL, "add it to db/runtime_grants.py after review"))
                 continue
             for role in RUNTIME:
@@ -218,6 +224,44 @@ def run(conn, phase: str = "after") -> list[Check]:
                                                    for x in (defaults.get(name) or []))]
     checks.append(Check("runtime roles default their search_path", _status(not no_path, phase, True), str(no_path)))
     return checks
+
+
+def _legacy_lineage_checks(cur, phase: str) -> list[Check]:
+    """For a database converted from the legacy production lineage (db/legacy/upgrade.py): the evidence table is consistent with the
+    committed reference, the ledger rows it describes exist with the committed checksums, and the legacy-only tables are sealed."""
+    from db.legacy import lineage as L
+    out: list[Check] = []
+    rows = _rows(cur, "SELECT item_kind, item, legacy_sha256, main_sha256, proof FROM cv_analyzer.schema_migration_legacy_evidence "
+                      "WHERE lineage = %s", (L.LINEAGE_NAME,))
+    legacy = {r[1]: r[2] for r in rows if r[0] == "legacy_migration"}
+    expected = {f["file"]: f["sha256"] for f in L.legacy_files()}
+    out.append(Check("legacy lineage: every legacy migration is recorded with its source checksum",
+                     PASS if legacy == expected else FAIL, f"recorded {len(legacy)} of {len(expected)}"))
+    out.append(Check("legacy lineage: the conversion is recorded",
+                     PASS if any(r[0] == "conversion" for r in rows) else FAIL, ""))
+    ledger = {r[0]: r[1] for r in _rows(cur, "SELECT filename, sha256 FROM cv_analyzer.schema_migrations")}
+    baselined = [(r[1], r[3]) for r in rows if r[0] == "baselined_migration"]
+    wrong = [name for name, sha in baselined if ledger.get(name) != sha]
+    out.append(Check("legacy lineage: baselined migrations match their ledger rows", FAIL if wrong else PASS, str(wrong[:5])))
+    attested = sorted(r[1] for r in rows if r[4] == "attested")
+    out.append(Check("legacy lineage: files accepted without a structural or data proof", PASS if attested == sorted(L.ATTESTED) else FAIL,
+                     f"attested={attested}"))
+    from db.legacy import production as PR
+    causes = sorted(r[1] for r in _rows(cur, "SELECT item_kind, item FROM cv_analyzer.schema_migration_legacy_evidence WHERE lineage = %s "
+                                             "AND item_kind = 'production_variation'", (L.LINEAGE_NAME,)))
+    out.append(Check("legacy lineage: every recorded production variation has a known root cause",
+                     PASS if all(c in PR.CAUSES for c in causes) else FAIL, str([c for c in causes if c not in PR.CAUSES][:5])))
+    open_corrections = [r[0] for r in _rows(cur, "SELECT item FROM cv_analyzer.schema_migration_legacy_evidence WHERE lineage = %s AND "
+                                                 "item_kind = 'data_correction' AND (detail->>'rows_after') IS DISTINCT FROM '0'", (L.LINEAGE_NAME,))]
+    out.append(Check("legacy lineage: every recorded data correction ended at zero rows", FAIL if open_corrections else PASS,
+                     str(open_corrections[:5])))
+    for level, message in PR.external_dependencies(cur, tuple(RUNTIME)):
+        out.append(Check("legacy lineage: trigger function outside cv_analyzer", PASS if level == "PASS" else FAIL, message))
+    relations = {r[0]: r[1] for r in _rows(cur, "SELECT c.relname, c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                                                "WHERE n.nspname = 'cv_analyzer' AND c.relkind = 'r'")}
+    unsealed = [t for t in G.LEGACY_PRESERVED_TABLES if t in relations and not relations[t]]
+    out.append(Check("legacy-only tables keep row-level security enabled", FAIL if unsealed else PASS, str(unsealed)))
+    return out
 
 
 def _exit_code(checks: list[Check]) -> int:
