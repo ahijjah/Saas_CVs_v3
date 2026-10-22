@@ -37,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="check: print the report as JSON")
     parser.add_argument("--acknowledge-data", action="append", default=[], metavar="FILE",
                         help="accept the rows a data check still finds for this migration file (repeatable)")
+    parser.add_argument("--acknowledge-missing-seed", action="append", default=[], metavar="KEY",
+                        help="accept that a seeded configuration row (identity as printed, 'seed|table|key') was deleted by an operator")
     args = parser.parse_args(argv)
     url = os.environ.get("LEGACY_UPGRADE_DATABASE_URL", "")
     if not url:
@@ -46,7 +48,12 @@ def main(argv: list[str] | None = None) -> int:
     if unknown:
         print(f"STOPPED: no data check exists for {unknown}", file=sys.stderr)
         return 2
+    bad_seed = [k for k in args.acknowledge_missing_seed if not k.startswith("seed|")]
+    if bad_seed:
+        print(f"STOPPED: only seeded rows can be accepted as absent, not {bad_seed}", file=sys.stderr)
+        return 2
     acknowledged = frozenset(args.acknowledge_data)
+    accepted_seeds = frozenset(args.acknowledge_missing_seed)
     try:
         conn = psycopg2.connect(url.replace("postgresql+asyncpg://", "postgresql://"))
     except psycopg2.Error as exc:
@@ -54,11 +61,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.command == "check":
-            assessment = U.assess(conn, acknowledged=acknowledged, for_prepare=False)
+            assessment = U.assess(conn, acknowledged=acknowledged, accepted_seeds=accepted_seeds, for_prepare=False)
             print(U.to_json(assessment) if args.json else "\n".join(U.report_lines(assessment)))
             return 1 if assessment.blocking else 0
         try:
-            result = U.prepare(conn, acknowledged=acknowledged, dry_run=args.dry_run)
+            result = U.prepare(conn, acknowledged=acknowledged, accepted_seeds=accepted_seeds, dry_run=args.dry_run)
         except (U.ConversionError, psycopg2.Error) as exc:
             print(f"STOPPED: {redact(exc, url)}", file=sys.stderr)
             print("Nothing was changed: the conversion runs in one transaction that was rolled back.", file=sys.stderr)

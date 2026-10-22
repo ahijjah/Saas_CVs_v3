@@ -44,7 +44,9 @@ The standard procedure (`docs/DATABASE_ROLES.md`) assumes a ledger and the main 
 ### Fail-closed rules
 
 * **Exact lineage.** Every identity in the reference must be present with the same definition. A missing or different object, **or any object
-  the lineage does not know**, stops the conversion and is listed. Seeded configuration rows that an operator added are ignored.
+  the lineage does not know**, stops the conversion and is listed. Seeded configuration rows that an operator added are ignored. A seeded row that
+  an operator *deleted* (a plan, a configuration key, a prompt version, a model) stops it too, until you name it with
+  `--acknowledge-missing-seed 'seed|table|key'` (repeatable); the acceptance is recorded in the evidence table.
 * **Never blind.** A migration is recorded in the ledger only after its effect is proved: a structural file when every identity it produces
   is present; a data-correction file (059, 077, 081, 084, 085, 086, 089, 091, 092) when its data check finds zero rows that still show the
   problem. A data check that finds rows stops the conversion unless the operator names that file with `--acknowledge-data FILE`, which is
@@ -379,6 +381,10 @@ by hand against a database that has issued codes outside the runner.
   columns, `bulk_upload_*`, `tenant_features`, the gender columns, `scoring_method`, `needs_verification` or the Requirements V2 extraction
   token and configuration keys. Their schema and data are preserved and sealed, but deploying this release stops the application from using them.
   If production relies on any of those features, that is a code decision to make before deploying, not something a database conversion can supply.
+* **The reference was generated on PostgreSQL 16.** `check` compares definitions as the catalogue prints them (constraint and index text, function
+  bodies, column types). A different major version can print some of them differently and make `check` report a difference that is not real. `check` is
+  read-only, so the rehearsal shows this at no cost; if it happens, regenerate the reference on the production major version
+  (`python -m scripts.generate_legacy_reference`) in a reviewed change.
 * **`005_job_code_alias.sql` is attested, not proved.** See step 4 of section 4.
 * **Data checks can stop the run.** A data-correction migration whose problem has reappeared (for example JSON-quoted knockout answers written since)
   stops the conversion. Inspect the rows, and either correct them or acknowledge that file with `--acknowledge-data`.
@@ -396,6 +402,7 @@ by hand against a database that has issued codes outside the runner.
 |---|---|---|
 | `FAIL unknown object ...` | A table, column, constraint, index, trigger, function or policy that is not part of the legacy lineage | Find out what created it. Do not drop it to make the check pass. If it is a legitimate production addition, extend `db/legacy/lineage.py` in a reviewed change and regenerate the reference. |
 | `FAIL expected object missing/different ...` | The database differs from the lineage | Same. If the object belongs to 010, 024 or 087, the message says its effect was never applied; apply it in a rehearsal, review it, then re-run `check`. |
+| `FAIL expected object missing seed\|...` | A seeded configuration row is absent | If an operator deleted it on purpose, accept it with `--acknowledge-missing-seed`; if not, restore the row. |
 | `FAIL data check <file>` | Rows still show the problem the migration corrected | Inspect (counts first). Correct them, or accept with `--acknowledge-data <file>`. |
 | `FAIL runtime sessions` | A runtime role is connected | Stop the API, workers and beat. |
 | `FAIL ledger` | A ledger or evidence table already exists | The conversion has already run, or the database is not the legacy lineage. Use the standard procedure. |

@@ -24,6 +24,7 @@ import pathlib
 from dataclasses import dataclass, field
 
 import psycopg2
+from psycopg2 import sql
 from psycopg2.extras import Json
 
 from db.runner import runner
@@ -81,20 +82,22 @@ def _sha(path: pathlib.Path) -> str:
 
 
 # --- read-only assessment --------------------------------------------------------------------------------------------------------
-def assess(conn, *, acknowledged: frozenset[str] = frozenset(), for_prepare: bool = False) -> L.Assessment:
+def assess(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds: frozenset[str] = frozenset(),
+           for_prepare: bool = False) -> L.Assessment:
     """Read-only. The connection is put in a read-only transaction for the duration."""
     previous = conn.autocommit
     conn.autocommit = False
     try:
         cur = conn.cursor()
         cur.execute("SET TRANSACTION READ ONLY")
-        return assess_cursor(cur, acknowledged=acknowledged, for_prepare=for_prepare)
+        return assess_cursor(cur, acknowledged=acknowledged, accepted_seeds=accepted_seeds, for_prepare=for_prepare)
     finally:
         conn.rollback()
         conn.autocommit = previous
 
 
-def assess_cursor(cur, *, acknowledged: frozenset[str] = frozenset(), for_prepare: bool = False) -> L.Assessment:
+def assess_cursor(cur, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds: frozenset[str] = frozenset(),
+                  for_prepare: bool = False) -> L.Assessment:
     out = L.Assessment()
     cur.execute("SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user), current_database(), "
                 "current_setting('server_version')")
@@ -122,7 +125,7 @@ def assess_cursor(cur, *, acknowledged: frozenset[str] = frozenset(), for_prepar
     out.add("PASS", "ledger", "absent, as expected for the legacy lineage")
 
     out.live = F.snapshot(cur)
-    L.assess_structure(out.live, out)
+    L.assess_structure(out.live, out, accepted_seeds=accepted_seeds)
     L.assess_data(cur, out, acknowledged=acknowledged)
     _assess_roles(cur, out, for_prepare=for_prepare)
     return out
@@ -166,7 +169,8 @@ def _changed(before: dict[str, str], after: dict[str, str]) -> set[str]:
     return {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
 
 
-def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), dry_run: bool = False) -> Result:
+def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds: frozenset[str] = frozenset(),
+            dry_run: bool = False) -> Result:
     """Run the whole conversion in one transaction. With dry_run the transaction is rolled back at the end, so the result shows what
     would be recorded and the database is unchanged."""
     from scripts.generate_ownership_transfer import GenerationError, generate
@@ -185,12 +189,11 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), dry_run: bool =
     try:
         cur.execute("SET LOCAL lock_timeout = '15s'")
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (runner.LOCK_KEY,))
-        assessment = assess_cursor(cur, acknowledged=acknowledged, for_prepare=True)
+        assessment = assess_cursor(cur, acknowledged=acknowledged, accepted_seeds=accepted_seeds, for_prepare=True)
         result = Result(assessment=assessment)
         if assessment.blocking:
             raise ConversionError("the database is not in the exact legacy state; nothing was changed:\n" + "\n".join(
                 f"  {name}: {detail}" for level, name, detail in assessment.findings if level == "FAIL"))
-        before_all = dict(assessment.live)
 
         # 1. Roles. The runtime roles that the legacy schema never created are added NOLOGIN, with no privilege.
         for name in RUNTIME:
@@ -210,10 +213,10 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), dry_run: bool =
                     "nspname = 'public'), current_database() FROM pg_database WHERE datname = current_database()")
         bootstrap, dba, public_owner, database = cur.fetchone()
         if dba in RUNTIME:
-            cur.execute(f'ALTER DATABASE "{database}" OWNER TO "{bootstrap}"')
+            cur.execute(sql.SQL("ALTER DATABASE {} OWNER TO {}").format(sql.Identifier(database), sql.Identifier(bootstrap)))
             result.steps.append(f"database owner {dba} -> {bootstrap}")
         if public_owner in RUNTIME:
-            cur.execute(f'ALTER SCHEMA public OWNER TO "{bootstrap}"')
+            cur.execute(sql.SQL("ALTER SCHEMA public OWNER TO {}").format(sql.Identifier(bootstrap)))
             result.steps.append(f"schema public owner {public_owner} -> {bootstrap}")
 
         # 3. The ledger and the evidence table, owned by the migrator like everything else.
@@ -300,7 +303,8 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), dry_run: bool =
                           "before": role_state_before}))
         evidence.append(("conversion", "prepare", None, None, "catalog",
                          {"lineage_commit": L.LEGACY_COMMIT, "steps": result.steps, "attested": sorted(L.ATTESTED),
-                          "data_checks": assessment.data, "acknowledged": sorted(acknowledged)}))
+                          "data_checks": assessment.data, "acknowledged": sorted(acknowledged),
+                          "accepted_missing_seeds": sorted(assessment.accepted)}))
         for kind, item, legacy_sha, main_sha, proof, detail in evidence:
             cur.execute(f"INSERT INTO {EVIDENCE_TABLE} (lineage, item_kind, item, legacy_sha256, main_sha256, proof, detail) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s)", (L.LINEAGE_NAME, kind, item, legacy_sha, main_sha, proof, Json(detail)))
@@ -312,7 +316,7 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), dry_run: bool =
         for step in L.RECONCILIATIONS:
             declared |= set(step.changes)
         missing, different, extra = F.diff(L.EXPECTED_LEGACY, after)
-        bad_diff = [k for k in different if k not in declared] + missing
+        bad_diff = [k for k in different if k not in declared] + [k for k in missing if k not in accepted_seeds]
         new_objects = [k for k in extra if not k.startswith("seed|") and k not in declared]
         if bad_diff or new_objects:
             raise ConversionError(f"the catalogue differs from the legacy reference outside the declared identities: "

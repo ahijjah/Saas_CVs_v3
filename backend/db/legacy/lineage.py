@@ -199,6 +199,7 @@ class Assessment:
     repairs: list[str] = field(default_factory=list)                           # repair files the live catalogue needs
     data: dict[str, int] = field(default_factory=dict)                         # data-check file -> violating rows
     verified_keys: dict[str, int] = field(default_factory=dict)               # file -> identities proved present
+    accepted: list[str] = field(default_factory=list)                          # seed rows the operator accepted as absent
     live: dict[str, str] = field(default_factory=dict)
 
     def add(self, level: str, name: str, detail: str = "") -> None:
@@ -209,7 +210,7 @@ class Assessment:
         return any(level == "FAIL" for level, _, _ in self.findings)
 
 
-def assess_structure(live: dict[str, str], out: Assessment) -> None:
+def assess_structure(live: dict[str, str], out: Assessment, *, accepted_seeds: frozenset[str] = frozenset()) -> None:
     """Compare the live catalogue with the base chain plus the legacy files. Missing or different objects whose last setter is a repair
     file are repairable; anything else, and every unknown object, is blocking. Seeded rows added by an operator are not unknown."""
     missing, different, extra = F.diff(EXPECTED_LEGACY, live)
@@ -217,7 +218,10 @@ def assess_structure(live: dict[str, str], out: Assessment) -> None:
     blocking: list[str] = []
     for key in missing + different:
         setter = SETTER_LEGACY[key]
-        if setter in AUTO_REPAIRS:
+        if key in accepted_seeds and key.startswith("seed|"):
+            out.add("ACK", "seed row", f"{key} is absent; accepted by the operator (it is configuration an operator may delete)")
+            out.accepted.append(key)
+        elif setter in AUTO_REPAIRS:
             repairable.setdefault(setter, []).append(key)
         else:
             state = "missing" if key in missing else "different"

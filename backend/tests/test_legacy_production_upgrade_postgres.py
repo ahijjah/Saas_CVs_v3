@@ -581,6 +581,8 @@ def test_an_unknown_table_stops_the_conversion(legacy):
     boot.cursor().execute("CREATE TABLE cv_analyzer.cv_score_events (event_id uuid PRIMARY KEY)")
     before = F.snapshot(boot.cursor())
     H.provision_migration_roles(legacy)
+    a = U.assess(boot)                       # the assessment itself names it, before the conversion's own postcondition could
+    assert a.blocking and any(n == "unknown object" and "cv_score_events" in d for _, n, d in a.findings)
     with pytest.raises(U.ConversionError, match="cv_score_events"):
         U.prepare(boot)
     boot.close()
@@ -630,6 +632,24 @@ def test_a_data_correction_that_did_not_hold_stops_unless_acknowledged_and_the_a
     cur = boot.cursor()
     cur.execute("SELECT detail FROM cv_analyzer.schema_migration_legacy_evidence WHERE item_kind = 'conversion'")
     assert cur.fetchone()[0]["acknowledged"] == ["091_fix_null_workflow_status_ai_scored.sql"]
+    boot.close()
+
+
+def test_a_seed_row_an_operator_deleted_stops_unless_it_is_named_and_the_acceptance_is_recorded(legacy):
+    seed(legacy)
+    boot = legacy.bootstrap()
+    cur = boot.cursor()
+    cur.execute("DELETE FROM cv_analyzer.ai_prompts WHERE prompt_code = 'recruitment.criteria_mapping' AND version = 1")
+    key = "seed|ai_prompts|recruitment.criteria_mapping|1"
+    a = U.assess(boot)
+    assert a.blocking and any(key in d for _, _, d in a.findings)
+    H.provision_migration_roles(legacy)
+    with pytest.raises(U.ConversionError):
+        U.prepare(boot)
+    result = U.prepare(boot, accepted_seeds=frozenset({key}))
+    assert result.pending == U.EXPECTED_PENDING_AFTER_PREPARE
+    cur.execute("SELECT detail FROM cv_analyzer.schema_migration_legacy_evidence WHERE item_kind = 'conversion'")
+    assert cur.fetchone()[0]["accepted_missing_seeds"] == [key]
     boot.close()
 
 
@@ -869,5 +889,6 @@ def test_the_command_line_reports_and_never_prints_the_connection_password(legac
     assert CLI.main(["prepare", "--dry-run"]) == 1          # the migration roles do not exist yet: stopped, nothing written
     assert "cv_migrator" in capsys.readouterr().err
     assert CLI.main(["check", "--acknowledge-data", "no_such_file.sql"]) == 2
+    assert CLI.main(["check", "--acknowledge-missing-seed", "column|jobs.title"]) == 2
     monkeypatch.delenv("LEGACY_UPGRADE_DATABASE_URL")
     assert CLI.main(["check"]) == 2
