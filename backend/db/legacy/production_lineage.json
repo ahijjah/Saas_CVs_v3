@@ -1,0 +1,489 @@
+{
+ "description": "Every identity that differs between the committed legacy reference and the restored production database, classified one by one. Reviewed by hand; tests prove it equals the diff of tests/fixtures/restored_production/schema.sql exactly.",
+ "causes": {
+  "check_rebuilt_by_type_change": {
+   "title": "Constraints and partial-index predicates printed in the form PostgreSQL produces after ALTER COLUMN TYPE",
+   "root_cause": "These columns were widened or retyped on the production database after their CHECK constraints (or partial-index predicates) existed. PostgreSQL then stores the expression as ANY (ARRAY[(literal)::text, ...]) instead of ANY ((ARRAY[literal::varchar, ...])::text[]). The allowed value set is identical; only the printed form differs. Verified by value-set equality in tests/test_legacy_production_variations.py."
+  },
+  "criteria_status_superset": {
+   "title": "job_criteria.criteria_extraction_status allows two more values than the reference",
+   "root_cause": "Production allows 'insufficient' and 'blocked' in addition to the four values schema.sql defines. The requirements extraction code of the production source writes them. Main's code does not need them but a superset constraint cannot reject a row that main writes, and no existing row is invalid under it."
+  },
+  "set_updated_at_in_public": {
+   "title": "Migration 032 ran with search_path = public",
+   "root_cause": "Migration 032 uses unqualified names and was applied on production with the default search_path, so CREATE OR REPLACE FUNCTION set_updated_at() created public.set_updated_at() instead of replacing cv_analyzer.set_updated_at(), and trg_ail_updated_at executes the public function. cv_analyzer.set_updated_at() keeps the multi-line body from schema.sql (same statements, different formatting). The trigger therefore depends on a function outside cv_analyzer, which the conversion verifies instead of assuming."
+  },
+  "intake_031_partial": {
+   "title": "Migration 031 applied only partially",
+   "root_cause": "Production has processing_started_at, processed_at and scoring_enqueued_at from migration 031 but not processing_duration_ms, notification_queued_at or the stuck-detection index, and job_code_source is varchar(50) rather than varchar(20). The current intake worker writes processing_duration_ms and notification_queued_at, so they must exist; the wider job_code_source is kept."
+  },
+  "knockout_early_044": {
+   "title": "Knockout tables come from an earlier revision of migration 044",
+   "root_cause": "Production's job_knockout_questions and application_knockout_answers were created by an earlier draft of 044: no foreign keys, no unique pair, nullable timestamp and flag columns, a question_type of varchar(50) without a default, and extra columns (is_active, updated_at) and indexes under different names. Migration 044 as committed is IF NOT EXISTS and therefore never added the missing constraints. Migration 097's tenant foreign key was never applied either."
+  },
+  "workflow_057_early": {
+   "title": "Application workflow model predates 'awaiting_review'",
+   "root_cause": "Production's applications.workflow_status was created with default 'new', a partial index excluding 'new', and no CHECK constraint. Migration 057 as committed uses default 'awaiting_review', a full index and a CHECK; because its statements are IF NOT EXISTS / DROP IF EXISTS in part, the column default and index were never replaced and the CHECK was not recorded. Rows still holding 'new' are corrected by the declared data migrations 077, 092 and, for any remaining rows, the backfill in 057."
+  },
+  "early_schema_columns": {
+   "title": "Production-only columns and constraints on applications and jobs",
+   "root_cause": "Columns from the first production schema (applications intake/source/semantic-match fields and jobs.alias_status) that later schema.sql revisions dropped from the base file but production never removed. They are populated or defaulted, nothing in main reads them, and removing them would destroy data. They are preserved and listed."
+  },
+  "migration_096_not_applied": {
+   "title": "Migration 070 could not apply",
+   "root_cause": "Migration 070 has a syntax error and never applied, so idx_workflow_policies_sla does not exist. Repair migration 096 creates it; it is run by the conversion when absent."
+  }
+ },
+ "identities": {
+  "column|application_knockout_answers.created_at": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_answers_integrity",
+   "live": "timestamp with time zone notnull=False default=now() identity= generated="
+  },
+  "column|application_knockout_answers.is_disqualifying": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_answers_integrity",
+   "live": "boolean notnull=False default=false identity= generated="
+  },
+  "column|applications.cv_file_path": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "text notnull=False default= identity= generated="
+  },
+  "column|applications.error_reason": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "text notnull=False default= identity= generated="
+  },
+  "column|applications.gatekeeper_reason_json": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "jsonb notnull=False default= identity= generated="
+  },
+  "column|applications.intake_status": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "character varying(20) notnull=True default='received'::character varying identity= generated="
+  },
+  "column|applications.linkedin_url": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "text notnull=False default= identity= generated="
+  },
+  "column|applications.matched_keywords": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "jsonb notnull=False default= identity= generated="
+  },
+  "column|applications.matched_skills": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "jsonb notnull=False default= identity= generated="
+  },
+  "column|applications.missing_keywords": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "jsonb notnull=False default= identity= generated="
+  },
+  "column|applications.missing_skills": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "jsonb notnull=False default= identity= generated="
+  },
+  "column|applications.original_email_body": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "text notnull=False default= identity= generated="
+  },
+  "column|applications.original_email_subject": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "text notnull=False default= identity= generated="
+  },
+  "column|applications.semantic_similarity_score": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "numeric(5,2) notnull=False default= identity= generated="
+  },
+  "column|applications.semantic_threshold": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "numeric(5,2) notnull=False default= identity= generated="
+  },
+  "column|applications.source_channel": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "character varying(30) notnull=True default='manual_upload'::character varying identity= generated="
+  },
+  "column|applications.source_email": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "character varying(255) notnull=False default= identity= generated="
+  },
+  "column|applications.workflow_status": {
+   "disposition": "reconcile",
+   "cause": "workflow_057_early",
+   "step": "workflow_status_model",
+   "live": "character varying(50) notnull=False default='new'::character varying identity= generated="
+  },
+  "column|email_ingest_log.job_code_source": {
+   "disposition": "wider",
+   "cause": "intake_031_partial",
+   "live": "character varying(50) notnull=False default= identity= generated="
+  },
+  "column|email_ingest_log.notification_queued_at": {
+   "disposition": "reconcile",
+   "cause": "intake_031_partial",
+   "step": "email_ingest_log_operational_columns",
+   "live": null
+  },
+  "column|email_ingest_log.processing_duration_ms": {
+   "disposition": "reconcile",
+   "cause": "intake_031_partial",
+   "step": "email_ingest_log_operational_columns",
+   "live": null
+  },
+  "column|job_knockout_questions.created_at": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_questions_integrity",
+   "live": "timestamp with time zone notnull=False default=now() identity= generated="
+  },
+  "column|job_knockout_questions.is_active": {
+   "disposition": "production_only",
+   "cause": "knockout_early_044",
+   "live": "boolean notnull=False default=true identity= generated="
+  },
+  "column|job_knockout_questions.is_required": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_questions_integrity",
+   "live": "boolean notnull=False default=true identity= generated="
+  },
+  "column|job_knockout_questions.question_type": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_questions_integrity",
+   "live": "character varying(50) notnull=True default= identity= generated=",
+   "after": "character varying(50) notnull=True default='yes_no'::character varying identity= generated="
+  },
+  "column|job_knockout_questions.updated_at": {
+   "disposition": "production_only",
+   "cause": "knockout_early_044",
+   "live": "timestamp with time zone notnull=False default=now() identity= generated="
+  },
+  "column|jobs.alias_status": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "character varying(20) notnull=True default='active'::character varying identity= generated="
+  },
+  "constraint|agency_user_clients.agency_user_clients_role_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((role_for_client)::text = ANY (ARRAY[('account_manager'::character varying)::text, ('recruiter'::character varying)::text, ('viewer'::character varying)::text])))"
+  },
+  "constraint|ai_prompts.ai_prompts_prompt_category_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((prompt_category)::text = ANY (ARRAY[('criteria'::character varying)::text, ('scoring'::character varying)::text, ('screening'::character varying)::text, ('summary'::character varying)::text, ('interview'::character varying)::text, ('knockout'::character varying)::text, ('mapping'::character varying)::text])))"
+  },
+  "constraint|application_files.application_files_extraction_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((extraction_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('done'::character varying)::text, ('failed'::character varying)::text])))"
+  },
+  "constraint|application_knockout_answers.application_knockout_answers_application_id_fkey": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_answers_integrity",
+   "live": null
+  },
+  "constraint|application_knockout_answers.application_knockout_answers_application_id_question_id_key": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_answers_integrity",
+   "live": null
+  },
+  "constraint|application_knockout_answers.application_knockout_answers_question_id_fkey": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_answers_integrity",
+   "live": null
+  },
+  "constraint|application_knockout_answers.application_knockout_answers_tenant_id_fkey": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_answers_integrity",
+   "live": null
+  },
+  "constraint|applications.applications_decision_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((decision)::text = ANY (ARRAY[('qualified'::character varying)::text, ('partial'::character varying)::text, ('rejected'::character varying)::text, ('needs_verification'::character varying)::text])))"
+  },
+  "constraint|applications.applications_duplicate_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((duplicate_status)::text = ANY (ARRAY[('not_duplicate'::character varying)::text, ('possible_duplicate'::character varying)::text, ('exact_duplicate'::character varying)::text])))"
+  },
+  "constraint|applications.applications_intake_status_check": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "c CHECK (((intake_status)::text = ANY (ARRAY[('received'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('scored'::character varying)::text, ('failed'::character varying)::text, ('unassigned'::character varying)::text])))"
+  },
+  "constraint|applications.applications_processing_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((processing_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('scored'::character varying)::text, ('ai_scored'::character varying)::text, ('failed'::character varying)::text])))"
+  },
+  "constraint|applications.applications_source_channel_check": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "c CHECK (((source_channel)::text = ANY (ARRAY[('public_page'::character varying)::text, ('dedicated_alias'::character varying)::text, ('central_forward'::character varying)::text, ('manual_upload'::character varying)::text, ('api'::character varying)::text])))"
+  },
+  "constraint|applications.applications_stopped_reason_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((stopped_reason)::text = ANY (ARRAY[('security_blocked'::character varying)::text, ('extraction_failed'::character varying)::text, ('processing_error'::character varying)::text, ('duplicate_blocked'::character varying)::text, ('scoring_failed'::character varying)::text, ('evaluation_unsupported'::character varying)::text, ('other'::character varying)::text])))"
+  },
+  "constraint|applications.applications_submission_source_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((submission_source)::text = ANY (ARRAY[('manual_upload'::character varying)::text, ('email_forwarding'::character varying)::text, ('platform_email'::character varying)::text, ('public_apply'::character varying)::text, ('bulk_excel_upload'::character varying)::text])))"
+  },
+  "constraint|applications.applications_workflow_status_check": {
+   "disposition": "reconcile",
+   "cause": "workflow_057_early",
+   "step": "workflow_status_model",
+   "live": null
+  },
+  "constraint|bulk_upload_batches.bulk_upload_batches_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((batch_status)::text = ANY (ARRAY[('created'::character varying)::text, ('uploaded'::character varying)::text, ('validating'::character varying)::text, ('validated'::character varying)::text, ('importing'::character varying)::text, ('imported'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])))"
+  },
+  "constraint|bulk_upload_rows.bulk_upload_rows_import_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((import_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('imported'::character varying)::text, ('skipped'::character varying)::text, ('failed'::character varying)::text])))"
+  },
+  "constraint|bulk_upload_rows.bulk_upload_rows_processing_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((processing_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text])))"
+  },
+  "constraint|bulk_upload_rows.bulk_upload_rows_validation_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((validation_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('ready'::character varying)::text, ('warning'::character varying)::text, ('error'::character varying)::text])))"
+  },
+  "constraint|candidate_approvals.candidate_approvals_decision_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((decision)::text = ANY (ARRAY[('pending'::character varying)::text, ('approved'::character varying)::text, ('rejected'::character varying)::text, ('needs_revision'::character varying)::text])))"
+  },
+  "constraint|candidate_interview_feedback.candidate_interview_feedback_recommendation_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((recommendation)::text = ANY (ARRAY[('strong_yes'::character varying)::text, ('yes'::character varying)::text, ('neutral'::character varying)::text, ('no'::character varying)::text, ('strong_no'::character varying)::text])))"
+  },
+  "constraint|candidate_interviews.candidate_interviews_interview_type_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((interview_type)::text = ANY (ARRAY[('phone_screen'::character varying)::text, ('technical'::character varying)::text, ('hr'::character varying)::text, ('panel'::character varying)::text, ('final'::character varying)::text, ('other'::character varying)::text])))"
+  },
+  "constraint|candidate_interviews.candidate_interviews_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('scheduled'::character varying)::text, ('completed'::character varying)::text, ('cancelled'::character varying)::text, ('no_show'::character varying)::text])))"
+  },
+  "constraint|candidate_saved_views.candidate_saved_views_visibility_type_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((visibility_type)::text = ANY (ARRAY[('private'::character varying)::text, ('tenant_shared'::character varying)::text])))"
+  },
+  "constraint|client_organizations.client_organizations_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('inactive'::character varying)::text])))"
+  },
+  "constraint|communication_automation_rules.chk_automation_mode": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((mode)::text = ANY (ARRAY[('disabled'::character varying)::text, ('draft_only'::character varying)::text, ('auto_send'::character varying)::text])))"
+  },
+  "constraint|email_ingest_log.email_ingest_log_ingestion_mode_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK ((((ingestion_mode)::text = ANY (ARRAY[('platform_email'::character varying)::text, ('forwarding'::character varying)::text, ('unknown'::character varying)::text])) OR (ingestion_mode IS NULL)))"
+  },
+  "constraint|email_ingest_log.email_ingest_log_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('received'::character varying)::text, ('processing'::character varying)::text, ('scored'::character varying)::text, ('duplicate'::character varying)::text, ('failed'::character varying)::text, ('skipped'::character varying)::text, ('unassigned'::character varying)::text])))"
+  },
+  "constraint|job_campaigns.job_campaigns_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('draft'::character varying)::text, ('active'::character varying)::text, ('on_hold'::character varying)::text, ('closed'::character varying)::text, ('cancelled'::character varying)::text])))"
+  },
+  "constraint|job_criteria.job_criteria_criteria_extraction_status_check": {
+   "disposition": "extended",
+   "cause": "criteria_status_superset",
+   "live": "c CHECK (((criteria_extraction_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('processing'::character varying)::text, ('completed'::character varying)::text, ('failed'::character varying)::text, ('insufficient'::character varying)::text, ('blocked'::character varying)::text])))"
+  },
+  "constraint|job_knockout_questions.job_knockout_questions_job_id_fkey": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_questions_integrity",
+   "live": null
+  },
+  "constraint|jobs.jobs_alias_status_check": {
+   "disposition": "production_only",
+   "cause": "early_schema_columns",
+   "live": "c CHECK (((alias_status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('expired'::character varying)::text])))"
+  },
+  "constraint|jobs.jobs_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('closed'::character varying)::text, ('draft'::character varying)::text])))"
+  },
+  "constraint|notification_log.notification_log_recipient_type_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((recipient_type)::text = ANY (ARRAY[('candidate'::character varying)::text, ('recruiter'::character varying)::text])))"
+  },
+  "constraint|notification_log.notification_log_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('sent'::character varying)::text, ('failed'::character varying)::text])))"
+  },
+  "constraint|plan_features.plan_features_value_type_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((value_type)::text = ANY (ARRAY[('boolean'::character varying)::text, ('number'::character varying)::text, ('text'::character varying)::text])))"
+  },
+  "constraint|subscription_plans.subscription_plans_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('inactive'::character varying)::text])))"
+  },
+  "constraint|system_config.system_config_category_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((category)::text = ANY (ARRAY[('scoring'::character varying)::text, ('ai'::character varying)::text, ('email'::character varying)::text, ('queue'::character varying)::text, ('subscription'::character varying)::text, ('security'::character varying)::text, ('general'::character varying)::text])))"
+  },
+  "constraint|system_config.system_config_type_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((type)::text = ANY (ARRAY[('string'::character varying)::text, ('number'::character varying)::text, ('boolean'::character varying)::text, ('json'::character varying)::text])))"
+  },
+  "constraint|tenants.tenants_billing_cycle_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((billing_cycle)::text = ANY (ARRAY[('monthly'::character varying)::text, ('yearly'::character varying)::text])))"
+  },
+  "constraint|tenants.tenants_branding_level_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((branding_level)::text = ANY (ARRAY[('none'::character varying)::text, ('basic'::character varying)::text, ('white_label'::character varying)::text])))"
+  },
+  "constraint|tenants.tenants_cv_ingestion_mode_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((cv_ingestion_mode)::text = ANY (ARRAY[('platform_email'::character varying)::text, ('forwarding'::character varying)::text])))"
+  },
+  "constraint|tenants.tenants_pending_plan_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((pending_plan)::text = ANY (ARRAY[('trial'::character varying)::text, ('starter'::character varying)::text, ('professional'::character varying)::text, ('enterprise'::character varying)::text])))"
+  },
+  "constraint|tenants.tenants_status_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('suspended'::character varying)::text])))"
+  },
+  "constraint|tenants.tenants_tenant_type_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((tenant_type)::text = ANY (ARRAY[('organization'::character varying)::text, ('agency'::character varying)::text, ('individual_recruiter'::character varying)::text])))"
+  },
+  "constraint|user_invites.user_invites_role_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((role)::text = ANY (ARRAY[('admin'::character varying)::text, ('recruiter'::character varying)::text, ('viewer'::character varying)::text])))"
+  },
+  "constraint|users.users_role_check": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "c CHECK (((role)::text = ANY (ARRAY[('super_admin'::character varying)::text, ('admin'::character varying)::text, ('hr_manager'::character varying)::text, ('recruiter'::character varying)::text, ('viewer'::character varying)::text])))"
+  },
+  "function|set_updated_at()": {
+   "disposition": "equivalent",
+   "cause": "set_updated_at_in_public",
+   "live": "1f33c21ff644b962bef4cbba7ce3860e"
+  },
+  "index|application_knockout_answers_application_id_question_id_key": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_answers_integrity",
+   "live": null
+  },
+  "index|idx_application_knockout_answers_app": {
+   "disposition": "production_only",
+   "cause": "knockout_early_044",
+   "live": "CREATE INDEX idx_application_knockout_answers_app ON cv_analyzer.application_knockout_answers USING btree (application_id)"
+  },
+  "index|idx_applications_workflow_status": {
+   "disposition": "reconcile",
+   "cause": "workflow_057_early",
+   "step": "workflow_status_model",
+   "live": "CREATE INDEX idx_applications_workflow_status ON cv_analyzer.applications USING btree (job_id, workflow_status) WHERE ((workflow_status)::text <> 'new'::text)"
+  },
+  "index|idx_bulk_batches_status": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "CREATE INDEX idx_bulk_batches_status ON cv_analyzer.bulk_upload_batches USING btree (tenant_id, batch_status) WHERE ((batch_status)::text <> ALL (ARRAY[('completed'::character varying)::text, ('failed'::character varying)::text]))"
+  },
+  "index|idx_bulk_rows_processing_status": {
+   "disposition": "equivalent",
+   "cause": "check_rebuilt_by_type_change",
+   "live": "CREATE INDEX idx_bulk_rows_processing_status ON cv_analyzer.bulk_upload_rows USING btree (batch_id, processing_status) WHERE ((processing_status)::text <> ALL (ARRAY[('completed'::character varying)::text, ('failed'::character varying)::text]))"
+  },
+  "index|idx_email_ingest_log_stuck": {
+   "disposition": "reconcile",
+   "cause": "intake_031_partial",
+   "step": "email_ingest_log_operational_columns",
+   "live": null
+  },
+  "index|idx_job_knockout_questions_job": {
+   "disposition": "production_only",
+   "cause": "knockout_early_044",
+   "live": "CREATE INDEX idx_job_knockout_questions_job ON cv_analyzer.job_knockout_questions USING btree (job_id)"
+  },
+  "index|idx_knockout_answers_application": {
+   "disposition": "substituted",
+   "cause": "knockout_early_044",
+   "live": null,
+   "substitute": "index|idx_application_knockout_answers_app"
+  },
+  "index|idx_knockout_questions_job": {
+   "disposition": "reconcile",
+   "cause": "knockout_early_044",
+   "step": "knockout_questions_integrity",
+   "live": null
+  },
+  "index|idx_workflow_policies_sla": {
+   "disposition": "repair",
+   "cause": "migration_096_not_applied",
+   "live": null
+  },
+  "trigger|application_intake_log.trg_ail_updated_at": {
+   "disposition": "equivalent",
+   "cause": "set_updated_at_in_public",
+   "live": "CREATE TRIGGER trg_ail_updated_at BEFORE UPDATE ON cv_analyzer.application_intake_log FOR EACH ROW EXECUTE FUNCTION public.set_updated_at()"
+  }
+ }
+}

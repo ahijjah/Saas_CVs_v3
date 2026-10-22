@@ -246,6 +246,17 @@ def _legacy_lineage_checks(cur, phase: str) -> list[Check]:
     attested = sorted(r[1] for r in rows if r[4] == "attested")
     out.append(Check("legacy lineage: files accepted without a structural or data proof", PASS if attested == sorted(L.ATTESTED) else FAIL,
                      f"attested={attested}"))
+    from db.legacy import production as PR
+    causes = sorted(r[1] for r in _rows(cur, "SELECT item_kind, item FROM cv_analyzer.schema_migration_legacy_evidence WHERE lineage = %s "
+                                             "AND item_kind = 'production_variation'", (L.LINEAGE_NAME,)))
+    out.append(Check("legacy lineage: every recorded production variation has a known root cause",
+                     PASS if all(c in PR.CAUSES for c in causes) else FAIL, str([c for c in causes if c not in PR.CAUSES][:5])))
+    open_corrections = [r[0] for r in _rows(cur, "SELECT item FROM cv_analyzer.schema_migration_legacy_evidence WHERE lineage = %s AND "
+                                                 "item_kind = 'data_correction' AND (detail->>'rows_after') IS DISTINCT FROM '0'", (L.LINEAGE_NAME,))]
+    out.append(Check("legacy lineage: every recorded data correction ended at zero rows", FAIL if open_corrections else PASS,
+                     str(open_corrections[:5])))
+    for level, message in PR.external_dependencies(cur, tuple(RUNTIME)):
+        out.append(Check("legacy lineage: trigger function outside cv_analyzer", PASS if level == "PASS" else FAIL, message))
     relations = {r[0]: r[1] for r in _rows(cur, "SELECT c.relname, c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
                                                 "WHERE n.nspname = 'cv_analyzer' AND c.relkind = 'r'")}
     unsealed = [t for t in G.LEGACY_PRESERVED_TABLES if t in relations and not relations[t]]

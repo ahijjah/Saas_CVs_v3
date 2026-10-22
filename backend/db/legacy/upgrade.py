@@ -33,6 +33,7 @@ from db.runner.manifest import MANIFEST
 from db.runner.sqltext import migration_body
 from . import fingerprint as F
 from . import lineage as L
+from . import production as P
 
 MIGRATIONS_DIR = pathlib.Path(__file__).resolve().parents[1] / "migrations"
 MIGRATOR = "cv_migrator"
@@ -51,7 +52,7 @@ CREATE TABLE cv_analyzer.schema_migration_legacy_evidence (
     evidence_id  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     lineage      text NOT NULL,
     item_kind    text NOT NULL CHECK (item_kind IN ('legacy_migration', 'baselined_migration', 'repair_run', 'reconciliation',
-                                                    'role_state', 'conversion')),
+                                                    'production_variation', 'data_correction', 'role_state', 'conversion')),
     item         text NOT NULL,
     legacy_sha256 text CHECK (legacy_sha256 IS NULL OR legacy_sha256 ~ '^[0-9a-f]{64}$'),
     main_sha256   text CHECK (main_sha256 IS NULL OR main_sha256 ~ '^[0-9a-f]{64}$'),
@@ -83,21 +84,22 @@ def _sha(path: pathlib.Path) -> str:
 
 # --- read-only assessment --------------------------------------------------------------------------------------------------------
 def assess(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds: frozenset[str] = frozenset(),
-           for_prepare: bool = False) -> L.Assessment:
+           corrections: dict[str, int] | None = None, for_prepare: bool = False) -> L.Assessment:
     """Read-only. The connection is put in a read-only transaction for the duration."""
     previous = conn.autocommit
     conn.autocommit = False
     try:
         cur = conn.cursor()
         cur.execute("SET TRANSACTION READ ONLY")
-        return assess_cursor(cur, acknowledged=acknowledged, accepted_seeds=accepted_seeds, for_prepare=for_prepare)
+        return assess_cursor(cur, acknowledged=acknowledged, accepted_seeds=accepted_seeds, corrections=corrections,
+                             for_prepare=for_prepare)
     finally:
         conn.rollback()
         conn.autocommit = previous
 
 
 def assess_cursor(cur, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds: frozenset[str] = frozenset(),
-                  for_prepare: bool = False) -> L.Assessment:
+                  corrections: dict[str, int] | None = None, for_prepare: bool = False) -> L.Assessment:
     out = L.Assessment()
     cur.execute("SELECT current_user, (SELECT rolsuper FROM pg_roles WHERE rolname = current_user), current_database(), "
                 "current_setting('server_version')")
@@ -126,9 +128,35 @@ def assess_cursor(cur, *, acknowledged: frozenset[str] = frozenset(), accepted_s
 
     out.live = F.snapshot(cur)
     L.assess_structure(out.live, out, accepted_seeds=accepted_seeds)
-    L.assess_data(cur, out, acknowledged=acknowledged)
+    L.assess_data(cur, out, acknowledged=acknowledged, corrections=corrections)
+    _assess_prechecks(cur, out)
+    for level, message in P.external_dependencies(cur, RUNTIME):
+        out.add(level, "external dependency", message)
     _assess_roles(cur, out, for_prepare=for_prepare)
     return out
+
+
+def _assess_prechecks(cur, out: L.Assessment) -> None:
+    """The rows that would stop each reconcile step, counted now so the report shows them before prepare is attempted."""
+    for name in out.steps:
+        for check in P.STEP_BY_NAME[name].prechecks:
+            cur.execute("SAVEPOINT precheck")
+            try:
+                cur.execute(check.sql)
+                n = cur.fetchone()[0]
+            except psycopg2.Error as exc:       # a column the structure check also reports as missing
+                cur.execute("ROLLBACK TO SAVEPOINT precheck")
+                out.add("FAIL", f"precheck {name}", f"{check.name}: could not run ({str(exc).splitlines()[0]})")
+                continue
+            cur.execute("RELEASE SAVEPOINT precheck")
+            out.prechecks[f"{name}: {check.name}"] = n
+            if n == 0:
+                out.add("PASS", f"precheck {name}", f"{check.name}: 0")
+            elif check.after_corrections:
+                out.add("WARN", f"precheck {name}", f"{check.name}: {n} now; must be 0 once the declared data corrections have run "
+                                                    f"(prepare re-checks inside the transaction). {check.advice}")
+            else:
+                out.add("FAIL", f"precheck {name}", f"{check.name}: {n}. {check.advice}. The tool changes none of these rows.")
 
 
 def _assess_roles(cur, out: L.Assessment, *, for_prepare: bool) -> None:
@@ -170,7 +198,7 @@ def _changed(before: dict[str, str], after: dict[str, str]) -> set[str]:
 
 
 def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds: frozenset[str] = frozenset(),
-            dry_run: bool = False) -> Result:
+            corrections: dict[str, int] | None = None, dry_run: bool = False) -> Result:
     """Run the whole conversion in one transaction. With dry_run the transaction is rolled back at the end, so the result shows what
     would be recorded and the database is unchanged."""
     from scripts.generate_ownership_transfer import GenerationError, generate
@@ -189,7 +217,8 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds:
     try:
         cur.execute("SET LOCAL lock_timeout = '15s'")
         cur.execute("SELECT pg_advisory_xact_lock(%s)", (runner.LOCK_KEY,))
-        assessment = assess_cursor(cur, acknowledged=acknowledged, accepted_seeds=accepted_seeds, for_prepare=True)
+        assessment = assess_cursor(cur, acknowledged=acknowledged, accepted_seeds=accepted_seeds, corrections=corrections,
+                                   for_prepare=True)
         result = Result(assessment=assessment)
         if assessment.blocking:
             raise ConversionError("the database is not in the exact legacy state; nothing was changed:\n" + "\n".join(
@@ -254,6 +283,13 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds:
         evidence.append(("baselined_migration", L.BRIDGE_RUN, None, _sha(MIGRATIONS_DIR / L.BRIDGE_RUN), "ran",
                          {"changed": sorted(bridge_changed), "note": "legacy 106 and 107 added the same columns; the file is idempotent"}))
 
+        # 5b. Declared data corrections, only those the operator confirmed by count, then the production reconcile steps.
+        for file in P.CORRECTION_ORDER:
+            if file in assessment.to_correct:
+                evidence.append(_apply_correction(cur, file, assessment.to_correct[file], result))
+        for name in assessment.steps:
+            evidence.append(_apply_step(cur, P.STEP_BY_NAME[name], result))
+
         for step in L.RECONCILIATIONS:
             pre = F.snapshot(cur)
             cur.execute(step.sql)
@@ -269,6 +305,13 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds:
                          {"proved": ["applications_submission_source_check allows 'candidate_reuse'",
                                      "applications.submission_source has no default"],
                           "note": "the check also keeps 'bulk_excel_upload'; see reconciliation submission_source_union"}))
+
+        final = F.snapshot(cur)
+        assessment.verified_keys = _verified(final)
+        for cause, entries in _by_cause(assessment).items():
+            evidence.append(("production_variation", cause, None, None, "catalog",
+                             {"title": P.CAUSES[cause]["title"], "root_cause": P.CAUSES[cause]["root_cause"],
+                              "identities": entries}))
 
         # 6. Ledger rows, one per manifest file before 098, each with the sha256 of the file in this repository.
         files = [e.file for e in MANIFEST]
@@ -316,8 +359,9 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds:
         for step in L.RECONCILIATIONS:
             declared |= set(step.changes)
         missing, different, extra = F.diff(L.EXPECTED_LEGACY, after)
-        bad_diff = [k for k in different if k not in declared] + [k for k in missing if k not in accepted_seeds]
-        new_objects = [k for k in extra if not k.startswith("seed|") and k not in declared]
+        bad_diff = [k for k in different if k not in declared and not P.final_ok(k, L.EXPECTED_LEGACY[k], after.get(k))]
+        bad_diff += [k for k in missing if k not in accepted_seeds and not P.final_ok(k, L.EXPECTED_LEGACY[k], None)]
+        new_objects = [k for k in extra if not k.startswith("seed|") and k not in declared and not P.final_ok(k, None, after.get(k))]
         if bad_diff or new_objects:
             raise ConversionError(f"the catalogue differs from the legacy reference outside the declared identities: "
                                   f"{(bad_diff + new_objects)[:8]}")
@@ -339,6 +383,85 @@ def prepare(conn, *, acknowledged: frozenset[str] = frozenset(), accepted_seeds:
         raise
 
 
+def _by_cause(assessment: L.Assessment) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = {}
+    for entry in assessment.production:
+        out.setdefault(entry["cause"], []).append({k: v for k, v in entry.items() if k != "cause"})
+    return out
+
+
+def _verified(final: dict[str, str]) -> dict[str, int]:
+    verified: dict[str, int] = {}
+    for item in L.base_files() + L.legacy_files():
+        verified[item["file"]] = len([k for k in item["set"] if k in L.EXPECTED_LEGACY and L.SETTER_LEGACY.get(k) == item["file"]
+                                      and final.get(k) == L.EXPECTED_LEGACY[k]])
+    return verified
+
+
+def _apply_step(cur, step: P.Step, result: Result) -> tuple:
+    """One production reconcile step. Its prechecks must all be zero; the catalogue may then change only in the step's identities and
+    each must end in the reference's definition (or the recorded end state)."""
+    counts: dict[str, int] = {}
+    for check in step.prechecks:
+        cur.execute(check.sql)
+        counts[check.name] = cur.fetchone()[0]
+    blocked = {name: n for name, n in counts.items() if n}
+    if blocked:
+        advice = {c.name: c.advice for c in step.prechecks}
+        raise ConversionError(f"step {step.name} cannot be applied; nothing was changed. " + "; ".join(
+            f"{name}: {n} row(s) - {advice[name]}" for name, n in blocked.items()))
+    pre = F.snapshot(cur)
+    cur.execute(step.sql)
+    cur.execute("SET LOCAL search_path = cv_analyzer, public")
+    post = F.snapshot(cur)
+    changed = _changed(pre, post)
+    if not changed <= set(step.keys):
+        raise ConversionError(f"step {step.name} changed objects outside its declared set: {sorted(changed - set(step.keys))}")
+    wrong = [k for k in step.keys if not P.final_ok(k, L.EXPECTED_LEGACY.get(k), post.get(k))]
+    if wrong:
+        raise ConversionError(f"step {step.name}: {wrong[:4]} did not end in the expected definition")
+    result.steps.append(f"reconciled {step.name} ({len(changed)} identities)")
+    return ("reconciliation", step.name, None, None, "ran",
+            {"changed": sorted(changed), "prechecks": counts,
+             "causes": sorted({P.IDENTITIES[k]["cause"] for k in step.keys})})
+
+
+def _apply_correction(cur, file: str, expected_rows: int, result: Result) -> tuple:
+    """Run one declared data correction. The count the operator confirmed has already been matched against the live count; afterwards
+    the same check must show zero, and no table loses rows other than the ones the migration is declared to delete."""
+    check = L.DATA_CHECK_FILES[file]
+    correction = P.CORRECTIONS[file]
+    totals = {t: _count(cur, t) for t in ("applications", "application_knockout_answers")}
+    cur.execute(check.sql)
+    before = cur.fetchone()[0]
+    if before != expected_rows:
+        raise ConversionError(f"correction {file}: {before} row(s) now, {expected_rows} confirmed; nothing was changed")
+    sql_text = correction.sql if correction.sql is not None else migration_body((MIGRATIONS_DIR / file).read_text(encoding="utf-8")).sql
+    cur.execute(sql_text)
+    cur.execute("SET LOCAL search_path = cv_analyzer, public")
+    cur.execute(check.sql)
+    after = cur.fetchone()[0]
+    if after != 0:
+        raise ConversionError(f"correction {file}: {after} row(s) still show the problem afterwards; the transaction was rolled back")
+    totals_after = {t: _count(cur, t) for t in totals}
+    deleted = {t: totals[t] - totals_after[t] for t in totals}
+    if deleted["applications"] != 0 or deleted["application_knockout_answers"] < 0 or (
+            deleted["application_knockout_answers"] and file != "081_fix_knockout_answer_value_encoding.sql"):
+        raise ConversionError(f"correction {file} removed rows it is not declared to remove: {deleted}")
+    if deleted["application_knockout_answers"] > before:
+        raise ConversionError(f"correction {file} deleted more rows than it reported: {deleted}")
+    result.steps.append(f"corrected {file}: {before} -> 0 (rows deleted: {deleted['application_knockout_answers']})")
+    sha = _sha(MIGRATIONS_DIR / file) if (MIGRATIONS_DIR / file).exists() else None
+    return ("data_correction", file, None, sha, "data",
+            {"rows_reported": before, "rows_after": after, "rows_deleted": deleted, "totals_before": totals, "totals_after": totals_after,
+             "effect": correction.note, "source": "migration file body" if correction.sql is None else "statement declared in db/legacy/production.py"})
+
+
+def _count(cur, table: str) -> int:
+    cur.execute(sql.SQL("SELECT count(*) FROM cv_analyzer.{}").format(sql.Identifier(table)))
+    return cur.fetchone()[0]
+
+
 def _prove_094(cur) -> None:
     """The effect of main migration 094, proved from the catalogue: 'candidate_reuse' is allowed and the default is gone."""
     cur.execute("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'cv_analyzer.applications'::regclass "
@@ -357,23 +480,25 @@ def _prove_094(cur) -> None:
 
 def _baseline_evidence(file: str, sha: str, assessment: L.Assessment) -> tuple:
     verified = assessment.verified_keys.get(file, 0)
+    variations = len([e for e in assessment.production if L.SETTER_LEGACY.get(e["key"]) == file])
     if file in L.DATA_CHECK_FILES:
         return ("baselined_migration", file, None, sha, "catalog+data" if verified else "data",
-                {"identities_proved": verified, "data_check": L.DATA_CHECK_FILES[file].description,
-                 "violating_rows": assessment.data.get(file)})
+                {"identities_proved": verified, "production_variations": variations, "data_check": L.DATA_CHECK_FILES[file].description,
+                 "violating_rows_before": assessment.data.get(file), "corrected": file in assessment.to_correct})
     if file in L.ATTESTED:
         return ("baselined_migration", file, None, sha, "attested", {"reason": L.ATTESTED[file], "identities_proved": verified})
     if verified:
-        return ("baselined_migration", file, None, sha, "catalog", {"identities_proved": verified})
+        return ("baselined_migration", file, None, sha, "catalog", {"identities_proved": verified, "production_variations": variations})
     return ("baselined_migration", file, None, sha, "no_effect", {"reason": L.NO_EFFECT.get(file, "produces no catalogue identity")})
 
 
 def report_lines(a: L.Assessment) -> list[str]:
-    order = {"FAIL": 0, "REPAIR": 1, "ACK": 2, "ATTEST": 3, "WARN": 4, "PASS": 5, "INFO": 6}
+    order = {"FAIL": 0, "CORRECT": 1, "RECONCILE": 2, "REPAIR": 3, "ACK": 4, "ATTEST": 5, "WARN": 6, "ACCEPT": 7, "PASS": 8, "INFO": 9}
     return [f"{level:<7} {name}  {detail}".rstrip() for level, name, detail in sorted(a.findings, key=lambda f: order.get(f[0], 9))]
 
 
 def to_json(a: L.Assessment) -> str:
     return json.dumps({"blocking": a.blocking, "repairs": a.repairs, "data": a.data, "data_breakdown": a.breakdown,
-                       "structure": a.structure,
+                       "data_corrections_confirmed": a.to_correct, "reconcile_steps": a.steps, "prechecks": a.prechecks,
+                       "production_variations": a.production, "structure": a.structure,
                        "findings": [{"level": l, "name": n, "detail": d} for l, n, d in a.findings]}, indent=2, sort_keys=False)

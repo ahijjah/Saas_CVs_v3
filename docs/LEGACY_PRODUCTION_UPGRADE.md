@@ -12,7 +12,12 @@ the files at that commit). **No `cv_analyzer.schema_migrations` ledger.** `cv_ap
 and `cv_secrets` as `NOSUPERUSER NOBYPASSRLS` with the grants of `backend/db/runtime_grants.py`, owner `cv_migrator`, operator
 `cv_migration_operator`, and a valid ledger.
 
-Nothing in this document is run against production or staging by the change that added it. Run it first on the restored backup (section 5).
+**The real database is not the reconstructed one.** The first rehearsal on the restored backup found 13 expected objects missing, 50 different and 23
+unknown. Section 2a classifies every one of those 86 identities individually (`backend/db/legacy/production_lineage.json`, proved against the schema of the
+restored backup, committed as `backend/tests/fixtures/restored_production/schema.sql`). The conversion accepts exactly that recorded state, reconciles the
+part main needs, and stops on anything else.
+
+Nothing in this document is run against production or staging by the change that added it. Run it first on a freshly restored copy of the backup (section 5).
 
 ## 1. Why the standard procedure does not apply
 
@@ -62,6 +67,68 @@ The standard procedure (`docs/DATABASE_ROLES.md`) assumes a ledger and the main 
 * **Exactly the declared changes.** After each reconciliation step, and at the end, the catalogue is compared again: it may differ from
   the reference only in identities the step declares. A surprise rolls everything back.
 
+### 2a. The production lineage: what the restored backup showed, identity by identity
+
+`backend/db/legacy/production_lineage.json` has one entry per identity that differs from the reference: its disposition, its root cause, and the exact
+catalogue text found on production. Nothing is matched by pattern at run time: a live definition that is neither the reference's nor the recorded one is
+unexplained and stops the conversion. `backend/tests/test_legacy_production_variations.py` proves the file equals the difference between the restored
+schema and the reference (no identity more, none fewer), and that each disposition means what it says.
+
+| Disposition | Count | Meaning | What the conversion does |
+|---|---|---|---|
+| `equivalent` | 41 | Same behaviour, printed differently | Accepts the recorded text. Proved in tests: same allowed values in the same order, same expression apart from casts. |
+| `extended` | 1 | Allows a superset of the reference's values | Accepts it (`job_criteria.criteria_extraction_status` also allows `insufficient` and `blocked`). |
+| `wider` | 1 | A wider column, otherwise equal | Accepts it (`email_ingest_log.job_code_source` is `varchar(50)`, the reference `varchar(20)`). |
+| `production_only` | 23 | An object the reference does not have | Preserves it, never drops it. Tests prove none can make a statement of this release fail (every added column is nullable or defaulted). |
+| `substituted` | 1 | An expected index that exists under another name | Accepts its absence while the production index of the same definition exists as recorded. |
+| `reconcile` | 18 | Missing or weaker than main needs | Creates or tightens it, after its prechecks are zero, in the same transaction. |
+| `repair` | 1 | Created by repair migration 096 | 096 runs (as before). |
+
+Root cause of each category:
+
+| Cause | Identities | Why production differs |
+|---|---|---|
+| `check_rebuilt_by_type_change` | 39 | These CHECK constraints and two partial-index predicates print as `ANY (ARRAY[('a'::character varying)::text, ...])` instead of `ANY ((ARRAY['a'::character varying, ...])::text[])`. PostgreSQL stores that form when a column was retyped after the constraint existed. The allowed values are identical. |
+| `criteria_status_superset` | 1 | Production's extraction code writes two more statuses than `schema.sql` allows. |
+| `set_updated_at_in_public` | 2 | Migration 032 was applied with `search_path = public`, so `CREATE OR REPLACE FUNCTION set_updated_at()` created `public.set_updated_at()`; `trg_ail_updated_at` calls that. `cv_analyzer.set_updated_at()` kept `schema.sql`'s multi-line body (same statements). |
+| `intake_031_partial` | 4 | Migration 031 applied partially: `processing_duration_ms`, `notification_queued_at` and the stuck-detection index are absent (this release's intake worker writes the first two), and `job_code_source` is wider. |
+| `knockout_early_044` | 17 | The knockout tables come from an earlier draft of migration 044: no foreign keys, no unique pair, nullable timestamp and flag columns, `question_type varchar(50)` without a default, extra columns and indexes. 044 is `IF NOT EXISTS`, so it never added what was missing; 097's tenant foreign key was never applied. |
+| `workflow_057_early` | 3 | `applications.workflow_status` was created with default `'new'`, a partial index excluding `'new'` and no CHECK. The committed 057 uses `'awaiting_review'`, a full index and a CHECK. |
+| `early_schema_columns` | 19 | Columns and constraints from the first production schema on `applications` (15 columns, 2 constraints) and `jobs` (`alias_status` and its CHECK). Populated or defaulted; nothing in this release reads them; removing them would destroy data. |
+| `migration_096_not_applied` | 1 | Migration 070 has a syntax error, so `idx_workflow_policies_sla` never existed. |
+
+**Reconcile steps** (`backend/db/legacy/production.py`; each is one transaction step with prechecks, an exact set of identities it may change, and a check that
+each ends in the reference's definition):
+
+| Step | Creates or tightens | Prechecks (all must be 0; the tool changes none of these rows) |
+|---|---|---|
+| `email_ingest_log_operational_columns` | `processing_duration_ms`, `notification_queued_at`, `idx_email_ingest_log_stuck` | none (additive) |
+| `knockout_answers_integrity` | NOT NULL on `created_at` and `is_disqualifying`; foreign keys to applications, questions and tenants; the unique pair | NULL timestamps or flags; answers whose application, question or tenant does not exist; duplicate pairs |
+| `knockout_questions_integrity` | NOT NULL on `created_at`, `is_required`; default `'yes_no'` on `question_type` (width 50 is kept); foreign key to jobs; `idx_knockout_questions_job` | NULL timestamps or flags; questions whose job does not exist |
+| `workflow_status_model` | default `'awaiting_review'`; the CHECK; the full `(job_id, workflow_status)` index replacing the partial one | rows with a status outside the valid set (after the data corrections) |
+
+Production already has a unique index on `(application_id, question_id)`, so duplicate answers cannot exist there; the precheck is kept because it is what protects the
+new constraint on any database. The duplicate index `idx_application_knockout_answers_app` is kept (it is the `substituted` entry's substitute); `idx_job_knockout_questions_job (job_id)` is kept beside the
+new composite index. Dropping redundant indexes is an operator decision, not part of this procedure.
+
+**External dependency.** `trg_ail_updated_at` calls `public.set_updated_at()`, which a schema-only dump does not contain. `check` and the preflight verify, every time, that it exists,
+is a plain (not `SECURITY DEFINER`, no settings) `plpgsql` trigger function with a body equal to `cv_analyzer.set_updated_at()`, and is not owned by a runtime role. Any other
+trigger that calls a function outside `cv_analyzer` stops the conversion.
+
+**Data corrections are explicit.** `check` reports the counts first (`check --json` adds a breakdown by status columns only, never a name, address or answer).
+Nothing is changed until the operator confirms the exact count per file:
+
+| File | Count in the real report | What the declared migration does |
+|---|---|---|
+| `077_clean_stopped_workflow_pollution.sql` | 86 | Sets `workflow_status` to NULL on failed applications that carry a `stopped_reason`. |
+| `081_fix_knockout_answer_value_encoding.sql` | 2 | Strips JSON quoting from knockout answers and **deletes** answers that are empty strings. |
+| `092_repair_legacy_new_workflow_status.sql` | 524 | Sets `workflow_status` to `'awaiting_review'` on scored applications holding `'new'` or NULL. |
+| `057_application_workflow.sql` (backfill only) | 0 expected | 057 ends with a `'new'` to `'awaiting_review'` backfill that production's early 057 never ran. Applies the same statement to the applications 077 and 092 do not own. Needed only if rows exist. |
+
+`--apply-data-correction FILE=COUNT` runs that migration's body inside the conversion transaction, but only when the live count equals `COUNT`; afterwards the same check must show 0, no
+application may have been deleted, and only 081 may delete knockout answers (and no more than it reported). Each correction is recorded in the evidence table with the reported
+count, the count after, the totals before and after, and what it does. Migration 005 stays an explicit operator attestation.
+
 ### What it changes, in order
 
 1. Creates `cv_worker`, `cv_admin`, `cv_secrets` as `NOLOGIN NOSUPERUSER NOBYPASSRLS` with no privilege (only those that are absent).
@@ -72,7 +139,7 @@ The standard procedure (`docs/DATABASE_ROLES.md`) assumes a ledger and the main 
 3. Creates the ledger (`cv_analyzer.schema_migrations`) and the evidence table (`cv_analyzer.schema_migration_legacy_evidence`), both owned by the migrator
    and granted to no runtime role.
 4. Switches to `cv_migrator`. Runs `096` if needed. Runs main's `093` (idempotent; legacy 106 and 107 added the same columns).
-5. Reconciles the three places where legacy and main disagree (each is a documented, tested step in `db/legacy/lineage.py`):
+5. Applies the data corrections the operator confirmed (077, 081, 092, and the 057 backfill if rows exist), then the reconcile steps of section 2a, each after its prechecks. Reconciles the three places where legacy and main disagree (each is a documented, tested step in `db/legacy/lineage.py`):
    * `submission_source_union`: `applications_submission_source_check` allows both `candidate_reuse` and `bulk_excel_upload`, and the column default
      is dropped. This is the effect main's 094 requires, proved from the catalogue, without making the database refuse its bulk rows.
    * `tenant_features_admin_policy`: the legacy `app.current_role` policy becomes `current_user = 'cv_admin'`, the form main uses.
@@ -107,6 +174,15 @@ every code issued before; a worker path runs on the worker login; the converted 
 legacy additions; and the refusals (a clean-chain remnant, an unknown table, a missing column, a changed constraint, a failed data correction, open
 sessions, a runtime role as the login, a second conversion) change nothing.
 
+`backend/tests/test_legacy_production_variations.py` and `backend/tests/test_legacy_production_restored_postgres.py` do the same for the **real** schema: the
+fixture is the restored backup's schema-only dump; rows are generated with the real counts (86, 2, 524); seeded configuration rows are copied from a legacy build. They
+prove the report's counts and breakdowns, that corrections change only the rows reported (and delete only the declared answer), that the converted catalogue equals the
+reference apart from the recorded production state, that the preflight is all `PASS`, that the database now refuses the retired status, orphans and duplicates, that the
+new API and a worker path run on it, and that each of these stops the conversion without changing a catalogue entry or a row: an orphaned answer or question, a NULL
+timestamp or flag, residual `'new'` rows, an unrecorded or altered object, a half-applied step, a changed superset constraint, a wrong or unconfirmed count, a correction that
+leaves rows, deletes applications or removes answers it is not declared to remove, and an external trigger function that differs, is `SECURITY DEFINER` or is owned by a runtime role.
+`scripts/release_mutation_checks.py` carries a mutant for each rule.
+
 ## 4. Procedure
 
 Do these in order. Stop at the first non-zero exit or unexpected output. Every command that needs a credential reads it from the environment
@@ -138,10 +214,16 @@ or the secret store; none is written here.
    LEGACY_UPGRADE_DATABASE_URL="$BOOTSTRAP_URL" python -m scripts.legacy_upgrade check | tee /var/backups/legacy-check-before.txt
    ```
 
-   Exit `0` is required. `REPAIR` lines name a file that will be run (only `096` is possible). `ATTEST` lines are the files accepted without a
-   proof. `FAIL` lines are blocking and the output names the object; do not work around them (section 8).
-4. **Sign-off.** Confirm `005_job_code_alias.sql` is the only `ATTEST`, and that you accept it: it set `jobs.platform_email = job_code@email_domain`
-   once, and the application has written that column since. Confirm any `ACK` data lines were intended.
+   On the real database the first `check` exits `1` until the data corrections are confirmed (below); it must show **no** `FAIL expected object`, `FAIL unknown object`,
+   `FAIL production state` or `FAIL precheck` line. `ACCEPT` and `RECONCILE` lines name each root cause of section 2a with counts. `FAIL data check` lines give the counts to confirm.
+   `REPAIR` names a file that will be run (only `096`). `ATTEST` lines are the files accepted without a proof. Any other `FAIL` is blocking: do not work around it (section 8).
+4. **Sign-off.** Decide, from the `check` output, each of these (all are operator decisions; the tool decides none of them):
+   * `005_job_code_alias.sql` is the only `ATTEST`, and you accept it: it set `jobs.platform_email = job_code@email_domain` once, and the application has written that column since.
+   * The data corrections: read the counts and breakdowns (expected 077: 86, 081: 2, 092: 524, 057: 0). A different count means the data changed since the rehearsal; read it again and decide.
+     Note that 081 **deletes** the answers that are empty strings (the count includes them).
+   * `public.set_updated_at()` is the function the trigger should call (it is verified equal to `cv_analyzer.set_updated_at()`); re-pointing the trigger is optional and not done here.
+   * Whether to keep production-only columns and duplicate indexes (they are preserved; dropping them is a separate change).
+   * Any `ACK` data lines were intended.
 5. **Migration roles** (once; the passwords come from the secret store):
 
    ```bash
@@ -152,11 +234,16 @@ or the secret store; none is written here.
 
    ```bash
    cd backend
-   LEGACY_UPGRADE_DATABASE_URL="$BOOTSTRAP_URL" python -m scripts.legacy_upgrade prepare --dry-run     # rolls back
-   LEGACY_UPGRADE_DATABASE_URL="$BOOTSTRAP_URL" python -m scripts.legacy_upgrade prepare | tee /var/backups/legacy-prepare.txt
+   CONFIRM="--apply-data-correction 077_clean_stopped_workflow_pollution.sql=86 \
+            --apply-data-correction 081_fix_knockout_answer_value_encoding.sql=2 \
+            --apply-data-correction 092_repair_legacy_new_workflow_status.sql=524"   # the counts YOU read in step 3
+   LEGACY_UPGRADE_DATABASE_URL="$BOOTSTRAP_URL" python -m scripts.legacy_upgrade check $CONFIRM        # exit 0 now; CORRECT lines show what will be done
+   LEGACY_UPGRADE_DATABASE_URL="$BOOTSTRAP_URL" python -m scripts.legacy_upgrade prepare --dry-run $CONFIRM     # rolls back
+   LEGACY_UPGRADE_DATABASE_URL="$BOOTSTRAP_URL" python -m scripts.legacy_upgrade prepare $CONFIRM | tee /var/backups/legacy-prepare.txt
    ```
 
-   Expect `ledger rows: 94` and `pending for scripts.migrate:` followed by exactly `098`, `099`, `100`, `101`.
+   Expect `done: corrected ...: 86 -> 0`, `2 -> 0 (rows deleted: 1)` or as the report said, `524 -> 0`, four `reconciled ...` steps, `ledger rows: 94` and
+   `pending for scripts.migrate:` followed by exactly `098`, `099`, `100`, `101`. If a precheck stops it, nothing was changed; section 8.
 7. **Migrations 098 to 101** (dry run first):
 
    ```bash
@@ -189,6 +276,10 @@ or the secret store; none is written here.
 The backup is restored into the isolated container `cvprod-upgrade-rehearsal` (network `cvprod-upgrade-rehearsal-net`, database
 `cv_analyzer_prod`). **Nothing here touches production or staging, and the rehearsal environment must not be given production service
 addresses** (no production Redis, SMTP, IMAP or AI provider keys).
+
+**Start each rehearsal from a freshly restored copy of the same backup.** A rehearsal that stopped partway through `0000`, `migrate` or `0004` has changed the cluster (roles) and
+possibly the database; `prepare` itself never leaves a partial change, but the steps after it do. Drop the rehearsal database and restore the backup again before repeating
+(`pg_restore` into a new `cv_analyzer_prod`), and drop the rehearsal's `cv_*` roles, so the starting point is identical. Do not rehearse twice on the same copy.
 
 Run on the VPS, from a checkout of the pull request head, as the operator who can read the credentials file. Set `REHEARSAL_ENV` to the
 credentials file and `SRC` to the checkout. The commands never print a value: the file is only sourced, and the variables are passed to
@@ -256,9 +347,13 @@ set -a; . "$SECRETS_FILE"; set +a
 **5.4 Run the procedure** (section 4, steps 3 to 9) against the container, saving the outputs as evidence:
 
 ```bash
-# 3. check (read-only). Exit 0 is required.
-tool python -m scripts.legacy_upgrade check | tee "$EVIDENCE/01-check-before.txt"
-tool python -m scripts.legacy_upgrade check --json > "$EVIDENCE/01-check-before.json"   # the complete report: every difference, both definitions, no row content
+# 3. check (read-only). Expected to exit 1 only because of the three FAIL data check lines, which give the counts to confirm.
+tool python -m scripts.legacy_upgrade check | tee "$EVIDENCE/01-check-before.txt" || true
+tool python -m scripts.legacy_upgrade check --json > "$EVIDENCE/01-check-before.json" || true   # complete: every identity classified, both definitions, no row content
+# Stop here and read it: no "FAIL expected object", "FAIL unknown object", "FAIL production state" or "FAIL precheck" line may be present, and the
+# counts must be the ones you will confirm. Then set CONFIRM from what you read (the real report showed 86, 2 and 524):
+CONFIRM="--apply-data-correction 077_clean_stopped_workflow_pollution.sql=86 --apply-data-correction 081_fix_knockout_answer_value_encoding.sql=2 --apply-data-correction 092_repair_legacy_new_workflow_status.sql=524"
+tool python -m scripts.legacy_upgrade check $CONFIRM | tee "$EVIDENCE/01b-check-confirmed.txt"          # exit 0 now
 docker exec -e PGPASSWORD "$DB" psql -X -h localhost -U "$PGUSER" -d cv_analyzer_prod -At -c \
   "SELECT rolname, rolsuper, rolbypassrls, rolcanlogin, rolcreatedb, rolcreaterole, rolinherit FROM pg_roles WHERE rolname LIKE 'cv\_%' ORDER BY 1" \
   > "$EVIDENCE/00-roles-before.txt"
@@ -267,8 +362,8 @@ docker exec -e PGPASSWORD "$DB" psql -X -h localhost -U "$PGUSER" -d cv_analyzer
 psql_file "$SRC/backend/db/ops/0000_migration_roles.sql.template" -v migration_operator_password="$MIGRATION_OPERATOR_PASSWORD"
 
 # 6. conversion: dry run, then real
-tool python -m scripts.legacy_upgrade prepare --dry-run | tee "$EVIDENCE/02-prepare-dry-run.txt"
-tool python -m scripts.legacy_upgrade prepare            | tee "$EVIDENCE/03-prepare.txt"
+tool python -m scripts.legacy_upgrade prepare --dry-run $CONFIRM | tee "$EVIDENCE/02-prepare-dry-run.txt"
+tool python -m scripts.legacy_upgrade prepare $CONFIRM            | tee "$EVIDENCE/03-prepare.txt"
 
 # 7. migrations 098 to 101 as the operator login (the helper passes the operator password by name)
 migrate() {
@@ -300,6 +395,10 @@ q "SELECT rolname, rolsuper, rolbypassrls, rolcanlogin FROM pg_roles WHERE rolna
 q "SELECT 'next job code number', last_value + CASE WHEN is_called THEN 1 ELSE 0 END FROM cv_analyzer.job_code_seq"
 q "SELECT 'highest issued job code number', max(substring(job_code FROM '([0-9]+)\$')::bigint) FROM cv_analyzer.jobs"
 q "SELECT 'bulk applications kept', count(*) FROM cv_analyzer.applications WHERE submission_source = 'bulk_excel_upload'"
+q "SELECT item_kind, item, detail->>'rows_reported' AS reported, detail->>'rows_after' AS after, detail->'rows_deleted' AS deleted FROM cv_analyzer.schema_migration_legacy_evidence WHERE item_kind = 'data_correction' ORDER BY item"
+q "SELECT 'applications on the retired status', count(*) FROM cv_analyzer.applications WHERE workflow_status = 'new'"
+q "SELECT 'production variations recorded', count(*) FROM cv_analyzer.schema_migration_legacy_evidence WHERE item_kind = 'production_variation'"
+q "SELECT conname FROM pg_constraint WHERE conrelid = 'cv_analyzer.application_knockout_answers'::regclass AND contype IN ('f', 'u') ORDER BY 1"
 ```
 
 Compare row counts of the data tables before and after (counts only). Run the same query on the restored database before step 5.4 and after step 9:
@@ -330,12 +429,23 @@ docker rm -f cvrehearsal-api
 (The `-e` values above put the passwords on this container's environment, not in your shell history or on a command line you type; `docker inspect` of the
 rehearsal container shows them, which is acceptable for a throw-away rehearsal and a reason not to reuse any of these passwords elsewhere.)
 
-**5.7 What a good rehearsal looks like.** `check` exits 0 with only the expected `REPAIR` and `ATTEST` lines; `prepare --dry-run` and `prepare` exit 0
-with 94 ledger rows and the four pending files; `migrate` applies exactly those four; the preflight is all `PASS`; the ledger, evidence and role
-queries match section 2; the counts match before and after; the API answers `/health`. If `check` or `prepare` stops, it prints what it found and
-**changed nothing**; send the output (it contains object names only) and do not retry with a changed database.
+**5.7 What a good rehearsal looks like.** The first `check` shows `ACCEPT`/`RECONCILE` lines for the eight causes of section 2a, `REPAIR 096`, `ATTEST 005`, and
+exactly three `FAIL data check` lines with the counts; `check $CONFIRM` exits 0; `prepare --dry-run` and `prepare` exit 0 with three `corrected` lines, four `reconciled` steps,
+94 ledger rows and the four pending files; `migrate` applies exactly those four; the preflight is all `PASS`; the evidence queries show three `data_correction` rows ending at
+0 and the production variations; no application is on the retired status; row counts of every table match before and after except `application_knockout_answers`
+(minus the empty answers 081 deletes); the API answers `/health`. If `check` or `prepare` stops, it prints what it found and **changed nothing**; send the output (object
+names and counts only) and do not retry with a changed database.
+
+**Report back from the rehearsal:** the new head SHA you ran, `01-check-before.json` (if it differs from the committed fixture's classification, it will say which identity), the
+`03-prepare.txt` output, the preflight output, the evidence queries above, and the row counts before and after.
 
 ## 6. Rollback
+
+**Abort and roll back when any of these is true** (before the new stack takes traffic): `prepare` stopped (nothing to roll back; fix the cause in a rehearsal first);
+`migrate` applied anything other than 098 to 101 or failed; the preflight shows any non-`PASS` line; a data-correction line in the evidence table does not end at 0; the row counts
+of any table other than `application_knockout_answers` differ from before (that table is expected to lose exactly the empty answers 081 reports); `/health/ready` or the tenant login
+fails; or the operator who signed off section 4 step 4 no longer accepts a decision it covered. **After the new stack has taken traffic**, a restore loses everything written since:
+decide it as an incident, not as a procedure step.
 
 Migrations are forward-only. Rollback is a **restore into a new database**, never a reversal by hand and never `REASSIGN OWNED`.
 
@@ -374,9 +484,16 @@ by hand against a database that has issued codes outside the runner.
 
 ## 7. Remaining risks
 
-* **The rehearsal decides.** This was built and proved against the lineage reconstructed from the committed files. The real database can differ
-  (a hand-applied fix, an extra table, a drifted constraint). `check` is built to find exactly that and to stop; the first run on the restored
-  backup is the real test. The expected result is `REPAIR 096` plus `ATTEST 005`.
+* **The rehearsal still decides.** The first rehearsal found the real database differed from the reconstructed lineage in 86 identities; the procedure now encodes the real
+  restored schema. The production database itself can still have drifted since the backup. `check` is built to find that and to stop; it changes nothing. The expected
+  result is the eight causes of section 2a, `REPAIR 096`, `ATTEST 005`, and the three data counts.
+* **The recorded production state is the backup's.** The classification was proved against the schema of one restored backup. If production changed after that backup
+  (a hot fix, a new column), `check` reports it as unexplained and stops, which is the intended behaviour.
+* **`public.set_updated_at()` was not in the schema-only dump.** The tests use a stand-in documented in the fixture loader; the conversion verifies the real function every
+  time it runs (existence, plain `plpgsql`, body equal to `cv_analyzer.set_updated_at()`, not owned by a runtime role).
+* **Data-correction 081 deletes rows** (answers that are empty strings), by design of that migration. The count to confirm includes them; the evidence records how many were deleted.
+* **Rows that could block a new constraint** (orphaned or duplicate knockout answers, NULL timestamps or flags, residual `'new'` statuses) are reported by `check`, stop `prepare`, and are never changed
+  by the tool. Production is expected to have none; the rehearsal shows it.
 * **The release does not carry the legacy features' code.** Main (and so the converted database's application) does not reference the scoring-V2
   columns, `bulk_upload_*`, `tenant_features`, the gender columns, `scoring_method`, `needs_verification` or the Requirements V2 extraction
   token and configuration keys. Their schema and data are preserved and sealed, but deploying this release stops the application from using them.
@@ -408,7 +525,11 @@ difference is classified from.
 | `FAIL unknown object ...` | A table, column, constraint, index, trigger, function or policy that is not part of the legacy lineage | Find out what created it. Do not drop it to make the check pass. If it is a legitimate production addition, extend `db/legacy/lineage.py` in a reviewed change and regenerate the reference. |
 | `FAIL expected object missing/different ...` | The database differs from the lineage | Same. If the object belongs to 010, 024 or 087, the message says its effect was never applied; apply it in a rehearsal, review it, then re-run `check`. |
 | `FAIL expected object missing seed\|...` | A seeded configuration row is absent | If an operator deleted it on purpose, accept it with `--acknowledge-missing-seed`; if not, restore the row. |
-| `FAIL data check <file>` | Rows still show the problem the migration corrected | Inspect (counts first). Correct them, or accept with `--acknowledge-data <file>`. |
+| `FAIL data check <file>` | Rows still show the problem the migration corrected | For 077, 081, 092 and 057: read the count, then confirm it with `--apply-data-correction <file>=<count>`. For the others: inspect (counts first), correct them, or accept with `--acknowledge-data <file>`. |
+| `FAIL data correction <file>` | The confirmed count is not the live count, or the file has no declared correction | Read the report again; the data changed. Never raise or lower the number to make it pass. |
+| `FAIL precheck <step>` | Rows that would make a new constraint fail (orphans, duplicates, NULLs, stray statuses) | Decide what those rows are (counts only are printed). The tool changes none of them. Correct them in a reviewed change, restore, rehearse again. |
+| `FAIL production state ...` | An identity of the recorded production state is in a different form, or a reconcile step is half applied | The database is not the restored backup's. Classify the new difference in `production_lineage.json` through review; do not edit the database. |
+| `FAIL external dependency ...` | `public.set_updated_at()` differs from `cv_analyzer.set_updated_at()`, is not a plain trigger function, or a runtime role owns it | Correct the function's owner or body in a reviewed change; re-run `check`. |
 | `FAIL runtime sessions` | A runtime role is connected | Stop the API, workers and beat. |
 | `FAIL ledger` | A ledger or evidence table already exists | The conversion has already run, or the database is not the legacy lineage. Use the standard procedure. |
 | `FAIL role cv_migrator` | `db/ops/0000` has not run | Run it (step 5). |

@@ -5,13 +5,17 @@ and docs/LEGACY_PRODUCTION_UPGRADE.md.
     LEGACY_UPGRADE_DATABASE_URL=...  python -m scripts.legacy_upgrade prepare --dry-run
     LEGACY_UPGRADE_DATABASE_URL=...  python -m scripts.legacy_upgrade prepare
 
-  check     read-only report: PASS / REPAIR / ATTEST / ACK / INFO / WARN / FAIL. Exit 0 when the database is the exact legacy lineage,
+  check     read-only report: PASS / ACCEPT / RECONCILE / CORRECT / REPAIR / ATTEST / ACK / INFO / WARN / FAIL. Exit 0 when the database is the exact legacy lineage,
             1 when anything is FAIL.
   prepare   the conversion, in one transaction (rolled back on any failure). --dry-run runs everything and rolls back at the end.
 
 The login must be a superuser that is not one of the runtime roles. The URL comes from the environment and is never printed; a password
 in it, or in a driver message, is replaced by ***. --acknowledge-data FILE accepts the rows a named data check still finds (repeatable);
-the acknowledgement is recorded in the evidence table."""
+the acknowledgement is recorded in the evidence table.
+
+--apply-data-correction FILE=COUNT runs the declared data migration for FILE (077, 081, 092 and the 057 backfill) inside the conversion
+transaction, but only when the live count equals COUNT, the number the operator read in the report; the same check must then show 0.
+Every correction is recorded, with its before and after counts, in the evidence table."""
 from __future__ import annotations
 
 import argparse
@@ -37,6 +41,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="check: print the report as JSON")
     parser.add_argument("--acknowledge-data", action="append", default=[], metavar="FILE",
                         help="accept the rows a data check still finds for this migration file (repeatable)")
+    parser.add_argument("--apply-data-correction", action="append", default=[], metavar="FILE=COUNT",
+                        help="apply the declared data migration FILE if exactly COUNT rows show its problem (repeatable)")
     parser.add_argument("--acknowledge-missing-seed", action="append", default=[], metavar="KEY",
                         help="accept that a seeded configuration row (identity as printed, 'seed|table|key') was deleted by an operator")
     args = parser.parse_args(argv)
@@ -52,6 +58,13 @@ def main(argv: list[str] | None = None) -> int:
     if bad_seed:
         print(f"STOPPED: only seeded rows can be accepted as absent, not {bad_seed}", file=sys.stderr)
         return 2
+    corrections: dict[str, int] = {}
+    for item in args.apply_data_correction:
+        name, _, count = item.rpartition("=")
+        if not name or not count.isdigit() or name in corrections:
+            print(f"STOPPED: --apply-data-correction takes FILE=COUNT once per file, not {item!r}", file=sys.stderr)
+            return 2
+        corrections[name] = int(count)
     acknowledged = frozenset(args.acknowledge_data)
     accepted_seeds = frozenset(args.acknowledge_missing_seed)
     try:
@@ -61,11 +74,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.command == "check":
-            assessment = U.assess(conn, acknowledged=acknowledged, accepted_seeds=accepted_seeds, for_prepare=False)
+            assessment = U.assess(conn, acknowledged=acknowledged, accepted_seeds=accepted_seeds, corrections=corrections,
+                                  for_prepare=False)
             print(U.to_json(assessment) if args.json else "\n".join(U.report_lines(assessment)))
             return 1 if assessment.blocking else 0
         try:
-            result = U.prepare(conn, acknowledged=acknowledged, accepted_seeds=accepted_seeds, dry_run=args.dry_run)
+            result = U.prepare(conn, acknowledged=acknowledged, accepted_seeds=accepted_seeds, corrections=corrections,
+                               dry_run=args.dry_run)
         except (U.ConversionError, psycopg2.Error) as exc:
             print(f"STOPPED: {redact(exc, url)}", file=sys.stderr)
             print("Nothing was changed: the conversion runs in one transaction that was rolled back.", file=sys.stderr)

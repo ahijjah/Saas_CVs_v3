@@ -290,6 +290,7 @@ def test_the_production_state_is_recognised_exactly_and_only_the_sla_repair_is_n
         conn.close()
     assert not a.blocking, U.report_lines(a)
     assert a.repairs == ["096_repair_070_sla_policy_index.sql"]
+    assert [e for e in a.production if e["disposition"] != "repair"] == [] and a.steps == []       # no production variation is needed here
     assert set(a.data) == set(L.DATA_CHECK_FILES) and all(n == 0 for n in a.data.values())
     for item in L.legacy_files():
         introduced = [k for k in item["set"] if L.SETTER_LEGACY.get(k) == item["file"]]
