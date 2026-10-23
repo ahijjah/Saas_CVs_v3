@@ -28,7 +28,7 @@ export default function RequirementGateControls({ item, draft, importance, lang,
     ) : null;
   }
   const effective: GateDraft | null = draft === undefined ? draftFromItem(item) : draft;
-  const problem = gateProblem(effective, importance, otherLinkedQuestionIds, lang);
+  const problem = gateProblem(effective, importance, [], lang);
   const patch = (changes: Partial<GateDraft>) => onChange({
     ...(effective ?? suggestedDraft()),
     ...changes,
