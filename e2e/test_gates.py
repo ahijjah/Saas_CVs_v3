@@ -58,7 +58,7 @@ def test_suggestion_is_unconfirmed_until_an_admin_confirms_and_preferred_has_no_
     expect(page.get_by_test_id(f"gate-controls-{python['id']}")).to_have_count(0)               # Preferred: no control
     page.get_by_test_id(f"gate-controls-{licence['id']}").get_by_label("Mandatory Gate (eligibility)").check()
     box = page.get_by_test_id(f"gate-controls-{licence['id']}")
-    box.get_by_label("Verification method").select_option("manual")
+    expect(box.get_by_label("Verification method")).to_have_count(0)
     box.get_by_label("If the check fails").select_option("not_eligible")
     panel(page).get_by_role("button", name="Save changes").click()
     expect(page.get_by_text("Saved. The requirements are now at revision 2.")).to_be_visible(timeout=15000)
@@ -68,7 +68,7 @@ def test_suggestion_is_unconfirmed_until_an_admin_confirms_and_preferred_has_no_
 
     saved = api.requirements(token, job)["document"]["categories"]["skills"]["items"]
     gate = next(i for i in saved if i["text"] == "Valid driving licence")["gate"]
-    assert gate["verification_method"] == "manual" and gate["failure_action"] == "not_eligible" and "confirmed_by" not in gate
+    assert gate["verification_method"] == "cv_evidence" and gate["failure_action"] == "not_eligible" and "confirmed_by" not in gate
 
 
 def test_a_recruiter_and_a_viewer_cannot_confirm_a_gate(api, admin):
