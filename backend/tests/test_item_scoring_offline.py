@@ -163,6 +163,15 @@ def test_unclear_required_items_make_the_status_review_required_with_a_range():
     assert (breakdown.final_min, breakdown.final_max) == (50, 100) and breakdown.final_score is None
 
 
+def test_a_category_with_an_unclear_item_has_no_score_or_contribution_only_a_range():
+    breakdown = compute({"skills": 53, "experience": 47}, items(
+        ("a", "skills", 50, UNCLEAR), ("b", "skills", 50, MET), ("c", "experience", 100, MET)))
+    skills, experience = breakdown.categories
+    assert skills.score is None and skills.contribution is None and (skills.score_min, skills.score_max) == (50, 100)
+    assert experience.score == 100 and experience.contribution == 47
+    assert all(item.earned is None for item in skills.items if item.result == UNCLEAR)
+
+
 def test_every_unclear_item_counts_zero_in_the_minimum_and_its_full_weight_in_the_maximum():
     breakdown = compute({"skills": 60, "experience": 40}, items(
         ("a", "skills", 50, UNCLEAR), ("b", "skills", 50, UNCLEAR), ("c", "experience", 100, UNCLEAR)))

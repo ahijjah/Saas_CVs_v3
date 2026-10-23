@@ -252,7 +252,7 @@ async def load_view(db: AsyncSession, application_id: str) -> dict | None:
         resolved = e["resolved_at"] is not None
         return {
             "item_id": e["item_id"], "text": e["item_text"], "weight": e["item_weight"], "result": e["result"], "ai_result": e["ai_result"],
-            "earned": _numeric(earned.get(e["item_id"])) if e["importance"] == "required" else None,
+            "earned": calc.format_number(earned.get(e["item_id"])) if e["importance"] == "required" else None,
             "evidence": list(e["evidence"] or []), "explanation": e["explanation"],
             "confidence": None if e["confidence"] is None else format(e["confidence"], "f"), "source": e["evaluation_source"],
             "evaluated_at": e["evaluated_at"].isoformat() if e["evaluated_at"] else None,
@@ -263,9 +263,9 @@ async def load_view(db: AsyncSession, application_id: str) -> dict | None:
     categories = []
     for c in breakdown.categories:
         categories.append({
-            "category": c.category, "weight": c.weight, "score": _numeric(c.score), "score_min": _numeric(c.score_min),
-            "score_max": _numeric(c.score_max), "contribution": _numeric(c.contribution),
-            "contribution_min": _numeric(c.contribution_min), "contribution_max": _numeric(c.contribution_max),
+            "category": c.category, "weight": c.weight, "score": calc.format_number(c.score), "score_min": calc.format_number(c.score_min),
+            "score_max": calc.format_number(c.score_max), "contribution": calc.format_number(c.contribution),
+            "contribution_min": calc.format_number(c.contribution_min), "contribution_max": calc.format_number(c.contribution_max),
             "items": [item_view(e) for e in required if e["category"] == c.category]})
     counts = calc.preferred_summary(e["result"] for e in preferred)
     current = app["current_revision"]

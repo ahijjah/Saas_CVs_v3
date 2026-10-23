@@ -128,12 +128,43 @@ def pipeline(built, monkeypatch, tmp_path):
                               "finish_reason": "stop"}
 
     monkeypatch.setattr(ai_service, "score_cv", fake_score)
+    monkeypatch.setattr(ai_service, "_get_client", lambda: _ItemClient(state))      # a v2 job is scored per item through this client
     engine = async_engine(built, "cv_worker")
     yield _Pipeline(engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False), state, tmp_path, built)
 
 
 async def _none(*args, **kwargs):
     return None
+
+
+class _ItemClient:
+    """Stands in for the model of the item-level evaluation: every Required item is met and every Preferred item is yes, each with a
+    quotation that really is in CV_TEXT. `state["calls"]` records the Required criteria of each request, by category."""
+
+    QUOTE = "Python engineer with five years of backend experience"
+
+    def __init__(self, state):
+        self.state = state
+        self.chat = type("Chat", (), {"completions": self})()
+
+    async def create(self, **kwargs):
+        from types import SimpleNamespace
+        user = kwargs["messages"][1]["content"]
+        requirements = json.loads(user.split("Requirements:\n", 1)[1].split("\n\nCV Text:", 1)[0])
+        criteria = {c: [] for c in C.CATEGORIES}
+        for r in requirements:
+            if r["importance"] == "required":
+                criteria[r["category"]].append(r["requirement"])
+        self.state["calls"].append(criteria)
+        if self.state.get("error") is not None:
+            raise self.state["error"]
+        if self.state["during"] is not None:
+            await self.state["during"]()
+        evaluations = [{"item_id": r["item_id"], "result": "met" if r["importance"] == "required" else "yes",
+                        "evidence_quotes": [self.QUOTE], "explanation": "stated in the CV", "confidence": 0.95} for r in requirements]
+        content = json.dumps({"candidate_name": "Jane Candidate", "evaluations": evaluations, "evaluation_notes": "ok"})
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason="stop")],
+                               usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2))
 
 
 def _gatekeeper_pass(**kwargs):
@@ -208,10 +239,14 @@ def _application(built, tenant, job, root) -> str:
 
 
 def _scores(built, app):
+    """(final score, revision used, weights by column name) of the application's item-level runs."""
     cur = built.conn.cursor()
-    cur.execute("SELECT final_score, requirements_revision_used, weights_snapshot FROM application_scores WHERE application_id = %s",
-                (app,))
-    return cur.fetchall()
+    cur.execute("SELECT final_score, requirements_revision, category_weights FROM application_scoring_runs WHERE application_id = %s", (app,))
+    runs = [(score, revision, {C.WEIGHT_COLUMN[c]: w for c, w in weights.items()}) for score, revision, weights in cur.fetchall()]
+    if runs:
+        return runs
+    cur.execute("SELECT final_score, requirements_revision_used, weights_snapshot FROM application_scores WHERE application_id = %s", (app,))
+    return cur.fetchall()                                    # a legacy job: the category-level score in application_scores
 
 
 def _status(built, app):
@@ -405,3 +440,91 @@ async def test_a_legacy_job_is_scored_from_its_flat_columns_and_records_no_revis
     assert pipeline.calls[0]["skills"] == ["Legacy Python", "Legacy SQL"]
     (final_score, revision_used, weights), = _scores(built, app)
     assert revision_used is None and weights["weight_skills"] == 40
+
+
+
+def _mismatch_gatekeeper(**kwargs):
+    from services.local_processor import GatekeeperResult
+    return GatekeeperResult(cv_language="en", jd_language="en", semantic_similarity=0.01, semantic_similarity_pct=1.0,
+                            skill_match_ratio=0.0, matched_skills=[], missing_skills=["Python", "SQL"], gatekeeper_passed=False,
+                            rejection_reason="mismatch", cleaned_cv_text=CV_TEXT)
+
+
+def _outcome(built, app):
+    cur = built.conn.cursor()
+    cur.execute("SELECT decision, scoring_status, item_final_score, processing_status, gatekeeper_passed FROM applications WHERE application_id = %s", (app,))
+    return cur.fetchone()
+
+
+@pytest.mark.asyncio
+async def test_a_v2_job_is_not_rejected_by_the_local_gatekeeper_before_item_evaluation(built, pipeline, monkeypatch):
+    import services.local_processor as local_processor
+    monkeypatch.setattr(local_processor, "run_gatekeeper", _mismatch_gatekeeper)
+    tenant = _tenant(built)
+    job = _v2_job(built, tenant, EN_JD, _ready(), revision=2)
+    app = _application(built, tenant, job, pipeline.root)
+    await pipeline.score(app, job, tenant)
+    assert len(pipeline.calls) == 1                                           # the items were evaluated despite the low similarity
+    (final_score, revision, _), = _scores(built, app)
+    assert final_score == 100 and revision == 2                                # not zero, and not a local rejection
+    decision, scoring_status, item_score, processing, gatekeeper_passed = _outcome(built, app)
+    assert (scoring_status, item_score, processing) == ("scored", 100, "ai_scored") and decision == "qualified"
+    cur = built.conn.cursor()
+    cur.execute("SELECT gatekeeper_hint ->> 'decision_zone' FROM application_scoring_runs WHERE application_id = %s", (app,))
+    assert cur.fetchone()[0] == "clear_mismatch_rejected"                      # kept as a routing hint only
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_job_keeps_the_local_gatekeeper_rejection(built, pipeline, monkeypatch):
+    import services.local_processor as local_processor
+    monkeypatch.setattr(local_processor, "run_gatekeeper", _mismatch_gatekeeper)
+    tenant = _tenant(built)
+    cur = built.conn.cursor()
+    cur.execute("INSERT INTO jobs (tenant_id, created_by, title, description, status) VALUES (%s, %s, 'Legacy', %s, 'active') RETURNING job_id",
+                (tenant["tenant"], tenant["user"], EN_JD))
+    job = str(cur.fetchone()[0])
+    cur.execute("INSERT INTO job_criteria (job_id, criteria_extraction_status, skills, analysis_json, weight_skills, weight_experience,"
+                " weight_education, weight_certifications, weight_soft_skills, weight_domain_knowledge, weight_other)"
+                " VALUES (%s, 'completed', ARRAY['Legacy Python'], CAST(%s AS jsonb), 40, 20, 10, 10, 10, 5, 5)",
+                (job, json.dumps({"scoreability": {"status": "scoreable"}})))
+    app = _application(built, tenant, job, pipeline.root)
+    await pipeline.score(app, job, tenant)
+    assert pipeline.calls == [] and _outcome(built, app)[0] == "rejected" and _scores(built, app)[0][0] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_model_failure_is_a_processing_error_and_never_scores_or_rejects_the_candidate(built, pipeline):
+    from services.item_scoring.evaluator import EvaluationProcessingError
+    pipeline.state["error"] = RuntimeError("upstream down")
+    tenant = _tenant(built)
+    job = _v2_job(built, tenant, EN_JD, _ready(), revision=1)
+    app = _application(built, tenant, job, pipeline.root)
+    with pytest.raises(EvaluationProcessingError):
+        await pipeline.score(app, job, tenant)
+    decision, scoring_status, item_score, _, _ = _outcome(built, app)
+    assert decision is None and scoring_status is None and item_score is None and _scores(built, app) == []
+    pipeline.state["error"] = None
+    await pipeline.score(app, job, tenant)                                      # the retry then scores it normally
+    assert _scores(built, app)[0][0] == 100
+
+
+@pytest.mark.asyncio
+async def test_a_retry_after_a_successful_score_does_not_create_a_second_run(built, pipeline):
+    tenant = _tenant(built)
+    job = _v2_job(built, tenant, EN_JD, _ready(), revision=1)
+    app = _application(built, tenant, job, pipeline.root)
+    await pipeline.score(app, job, tenant)
+    await pipeline.score(app, job, tenant)
+    assert len(pipeline.calls) == 1 and len(_scores(built, app)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_confirmed_preferred_only_job_is_not_scored_with_no_score_and_no_rejection(built, pipeline):
+    tenant = _tenant(built)
+    job = _v2_job(built, tenant, EN_JD, _preferred_only(), revision=1)
+    await pipeline.save(job, tenant, 1, [{"op": "confirm_no_numeric_score"}])
+    app = _application(built, tenant, job, pipeline.root)
+    await pipeline.score(app, job, tenant)
+    decision, scoring_status, item_score, processing, _ = _outcome(built, app)
+    assert (decision, scoring_status, item_score, processing) == (None, "not_scored", None, "ai_scored")
+    assert _scores(built, app)[0][0] is None

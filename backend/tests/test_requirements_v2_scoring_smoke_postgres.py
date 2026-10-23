@@ -89,15 +89,24 @@ async def test_a_real_pdf_scores_through_the_real_pipeline_and_records_the_revis
     monkeypatch.setattr(email_service, "send_cv_received_email", no_email)
     scored = []
 
-    async def fake_ai(cv_text, criteria, job_title, **kwargs):
-        scored.append({"cv_text": cv_text, "criteria": criteria})
-        return ({"score_skills": 80, "score_experience": 70, "score_education": 60, "score_certifications": 50,
-                 "score_soft_skills": 50, "score_domain_knowledge": 50, "score_other": 50, "strengths": [],
-                 "gaps_identified": [], "red_flags": [], "evaluation_notes": "smoke", "interview_questions": [],
-                 "reasoning": {}, "score_details": {}},
-                {"model": "test-model", "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "finish_reason": "stop"})
+    class _ItemClient:
+        """The model of the item-level evaluation: every requirement is met (a Preferred one: yes), quoting the real PDF's text."""
 
-    monkeypatch.setattr(ai_service, "score_cv", fake_ai)
+        def __init__(self):
+            self.chat = type("Chat", (), {"completions": self})()
+
+        async def create(self, **kwargs):
+            user = kwargs["messages"][1]["content"]
+            requirements = json.loads(user.split("Requirements:\n", 1)[1].split("\n\nCV Text:", 1)[0])
+            scored.append({"cv_text": user.split("\n\nCV Text:\n", 1)[1], "criteria": {
+                c: [r["requirement"] for r in requirements if r["category"] == c and r["importance"] == "required"] for c in C.CATEGORIES}})
+            evaluations = [{"item_id": r["item_id"], "result": "met" if r["importance"] == "required" else "yes",
+                            "evidence_quotes": ["Strong Python and SQL skills"], "explanation": "stated", "confidence": 0.95} for r in requirements]
+            content = json.dumps({"candidate_name": "Jane", "evaluations": evaluations, "evaluation_notes": "smoke"})
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason="stop")],
+                                   usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2))
+
+    monkeypatch.setattr(ai_service, "_get_client", lambda: _ItemClient())          # a v2 job is scored per item through this client
 
     tenant_tag = uuid.uuid4().hex[:8]
     cur = built.conn.cursor()
@@ -136,10 +145,10 @@ async def test_a_real_pdf_scores_through_the_real_pipeline_and_records_the_revis
     finally:
         await engine.dispose()
 
-    cur.execute("SELECT final_score, requirements_revision_used, gatekeeper_passed FROM application_scores WHERE application_id = %s", (app,))
+    cur.execute("SELECT final_score, requirements_revision, status FROM application_scoring_runs WHERE application_id = %s AND is_current", (app,))
     rows = cur.fetchall()
     assert len(rows) == 1, rows
-    final_score, revision_used, gatekeeper_passed = rows[0]
-    assert revision_used == 4 and gatekeeper_passed is True
+    final_score, revision_used, status = rows[0]
+    assert revision_used == 4 and status == "scored" and final_score == 100
     assert "Python" in scored[0]["cv_text"] and len(scored[0]["cv_text"]) >= 300      # the text really came from the PDF
     assert scored[0]["criteria"]["skills"] == ["Python", "SQL"]

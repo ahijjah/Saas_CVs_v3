@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS cv_analyzer.application_item_evaluations (
                                  AND result    IN ('met', 'partially_met', 'not_met', 'unclear'))
         OR (importance = 'preferred' AND ai_result IN ('yes', 'no', 'not_clear') AND result IN ('yes', 'no', 'not_clear'))),
     CONSTRAINT application_item_evaluations_weight_check CHECK (
-        (importance = 'required' AND item_weight BETWEEN 1 AND 100) OR (importance = 'preferred' AND item_weight IS NULL)),
+        (importance = 'required' AND item_weight IS NOT NULL AND item_weight BETWEEN 1 AND 100) OR (importance = 'preferred' AND item_weight IS NULL)),
     CONSTRAINT application_item_evaluations_confidence_check CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
     CONSTRAINT application_item_evaluations_resolution_check CHECK (
         (resolved_by IS NULL AND resolved_at IS NULL AND resolution_reason IS NULL AND result = ai_result)

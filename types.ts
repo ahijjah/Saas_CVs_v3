@@ -147,6 +147,9 @@ export interface Campaign {
   applications_qualified?: number;
   applications_partial?: number;
   applications_rejected?: number;
+  applications_not_eligible?: number;
+  applications_review_required?: number;
+  applications_not_scored?: number;
   applications_scored?: number;
 }
 
@@ -198,6 +201,9 @@ export interface Job {
   applications_qualified: number;
   applications_partial: number;
   applications_rejected: number;
+  applications_not_eligible?: number;
+  applications_review_required?: number;
+  applications_not_scored?: number;
   applications_evaluated?: number;
   applications_pending?: number;
   applications_above_threshold?: number;
@@ -265,7 +271,8 @@ export interface JobDetails extends Job {
 }
 
 // decision='low_match' is a frontend-only display alias for evaluation_stage=1 + gatekeeper_passed=false + decision='rejected'
-export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_match';
+/** The stored scoring decision, or an effective outcome: not_eligible / review_required (a gate or an unresolved Required item) and not_scored (no Required items). */
+export type ApplicationDecision = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'not_eligible' | 'review_required' | 'not_scored';
 
 export type WorkflowStatus =
   | 'awaiting_review'
@@ -381,7 +388,14 @@ export interface ApplicationDetailedAnalysis {
   eligibility_status?: 'eligible' | 'not_eligible' | 'review_required' | 'not_applicable';
   /** The outcome once eligibility is applied: not_eligible or review_required when a gate says so, otherwise the score's decision. */
   effective_decision?: string | null;
-  overall_score: number;
+  /** Null for an item-level result that is not final (Review Required) or has no Required items (Not scored): null is not zero. */
+  overall_score: number | null;
+  /** item_level_v2: scored per Required item by code; legacy_category: the earlier category-level score, shown as it was. */
+  scoring_method?: 'item_level_v2' | 'legacy_category' | null;
+  scoring_status?: 'scored' | 'review_required' | 'not_scored' | null;
+  requirements_revision_used?: number | null;
+  current_requirements_revision?: number | null;
+  score_stale?: boolean;
   submission_source?: 'manual_upload' | 'email_forwarding' | 'platform_email' | 'public_apply';
   processing_status?: string;
   stopped_reason?: 'security_blocked' | 'extraction_failed' | 'processing_error' | 'duplicate_blocked' | 'other' | null;
@@ -452,7 +466,7 @@ export interface ApplicationDetailedAnalysis {
   workflow_history?: WorkflowHistoryEntry[];
 }
 
-export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_awaiting_review' | 'workflow_under_review' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected' | 'workflow_withdrawn' | 'workflow_on_hold';
+export type ApplicationFilter = 'qualified' | 'partial' | 'rejected' | 'low_match' | 'not_eligible' | 'review_required' | 'not_scored' | 'all' | 'possible_duplicate' | 'ai_scored' | 'security_blocked' | 'duplicate_blocked' | 'failed_needs_review' | 'blocked' | 'workflow_awaiting_review' | 'workflow_under_review' | 'workflow_shortlisted' | 'workflow_interviewing' | 'workflow_offer' | 'workflow_hired' | 'workflow_rejected' | 'workflow_withdrawn' | 'workflow_on_hold';
 
 export interface UploadedCV {
   application_id: string;

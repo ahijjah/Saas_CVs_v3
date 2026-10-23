@@ -43,6 +43,7 @@ import {
 import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
 import { TagChip } from '../components/TagChip';
 import GateSummary from '../components/GateSummary';
+import ItemScoring from '../components/ItemScoring';
 import { canExportApplications, canMutateApplications } from '../utils/permissions';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -257,6 +258,8 @@ const T = {
     decPartial: 'Partial',
     decRejected: 'Rejected',
     decNotScored: 'Not Scored',
+    decNotEligible: 'Not Eligible',
+    decReviewRequired: 'Review Required',
     // Processing labels
     procPending: 'Pending',
     procInProgress: 'In Progress',
@@ -525,6 +528,8 @@ const T = {
     decPartial: 'جزئي',
     decRejected: 'مرفوض',
     decNotScored: 'غير مقيَّم',
+    decNotEligible: 'غير مؤهل',
+    decReviewRequired: 'مطلوب مراجعة',
     procPending: 'معلق',
     procInProgress: 'قيد المعالجة',
     procAiScored: 'مقيَّم بالذكاء',
@@ -759,7 +764,8 @@ const T = {
 function aiDecisionStyle(decision: string | null): string {
   if (decision === 'qualified') return 'bg-green-100 text-green-800';
   if (decision === 'partial')   return 'bg-yellow-100 text-yellow-800';
-  if (decision === 'rejected' || decision === 'rejected_low_match') return 'bg-red-100 text-red-700';
+  if (decision === 'rejected' || decision === 'rejected_low_match' || decision === 'not_eligible') return 'bg-red-100 text-red-700';
+  if (decision === 'review_required') return 'bg-amber-100 text-amber-800';
   return 'bg-slate-100 text-slate-500';
 }
 
@@ -767,6 +773,8 @@ function aiDecisionLabel(decision: string | null, t: typeof T['en']): string {
   if (decision === 'qualified') return t.decQualified;
   if (decision === 'partial')   return t.decPartial;
   if (decision === 'rejected' || decision === 'rejected_low_match') return t.decRejected;
+  if (decision === 'not_eligible') return t.decNotEligible;
+  if (decision === 'review_required') return t.decReviewRequired;
   return t.decNotScored;
 }
 
@@ -3699,9 +3707,10 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
           <div className="h-px bg-slate-200" />
 
           {/* Eligibility gates: above the numeric score, because the score cannot override a failed gate */}
-          {candidate.processing_status === 'ai_scored' && (
+          {candidate.processing_status === 'ai_scored' && (<>
             <GateSummary key={candidate.application_id} applicationId={candidate.application_id} userRole={userRole} lang={lang} />
-          )}
+            <ItemScoring key={`items-${candidate.application_id}`} applicationId={candidate.application_id} userRole={userRole} lang={lang} />
+          </>)}
 
           {/* AI Evaluation Summary — lazy-loaded from detail endpoint */}
           {candidate.processing_status === 'ai_scored' && (
@@ -5249,6 +5258,9 @@ export const CandidatesWorkspace: React.FC<CandidatesWorkspaceProps> = ({ auth, 
           <option value="qualified">Qualified</option>
           <option value="partial">Partial</option>
           <option value="rejected_low_match">Rejected / Low Match</option>
+          <option value="not_eligible">{t.decNotEligible}</option>
+          <option value="review_required">{t.decReviewRequired}</option>
+          <option value="not_scored">{t.decNotScored}</option>
         </select>
 
         {/* Campaign filter */}
