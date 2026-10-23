@@ -7,24 +7,28 @@ One eligibility model, built on the Requirements v2 document and the existing kn
 | Concept | Where it lives | Enforces anything? |
 | --- | --- | --- |
 | **AI suggested gate** | `gate_suggestion` on a Required item of `job_criteria.analysis_json["requirements"]`. Written only by extraction, from the job description's own explicit wording (must, mandatory, required, minimum, essential, valid licence, legally required and the Arabic equivalents). It keeps the cue and the source text for comparison and audit. | No |
-| **Mandatory Gate** | `gate` on a Required item: verification method (`cv_evidence`, `candidate_question`, `assessment`, `manual`), failure action (`not_eligible`, `hold_for_review`), optional `linked_question_id`, and the confirming user and time stamped by the server. | Yes, once saved by an Admin or HR Manager |
-| **Eligibility-gate question** | `job_knockout_questions.is_eligibility_gate` + `gate_failure_action`. A question is advisory unless this is switched on explicitly. | Yes, when on |
+| **Mandatory Gate** | `gate` on a Required item: the requirement is designated mandatory (verified from CV evidence in the UI; older records may name another verification method), plus the confirming user and time stamped by the server. There is no failure action to choose. | Yes, once saved by an Admin or HR Manager |
+| **Eligibility-gate question** | `job_knockout_questions.is_eligibility_gate` (the old `gate_failure_action` column is legacy and unused). A question is advisory unless this is switched on explicitly. | Yes, when on |
 | **Response Required** | The former "Required" label of a question (`is_required`): the candidate must answer to submit. Same data meaning, not eligibility. | No |
 
 Only Required items can be gates. A Preferred item cannot, and an item that becomes Preferred loses its gate. A gate item stays in normal required-item scoring: the score formula is untouched.
 
 ## Decision
 
-Per application, from the effective result of each enforced gate (`services/eligibility_service.decide`; the score is not an input):
+A gate has no failure action to configure. Its outcome follows the evidence (`services/eligibility_service.decide`; the score is not an input):
 
-1. any `failed` gate whose action is `not_eligible` → **Not Eligible**, whatever the score;
-2. otherwise any `failed` (hold for review), `needs_verification` or `not_assessed` gate → **Review Required**;
-3. otherwise (all `passed` or `overridden`) → **Eligible** and the normal flow continues;
-4. a job without enforced gates → `not_applicable`.
+1. Every enforced gate clearly satisfied (or overridden by a person) → **Eligible**, normal flow continues.
+2. Clear, affirmative, reliable evidence that a gate is not satisfied (result `failed`) → **Not Eligible**, whatever the score.
+3. Evidence missing, unclear, conflicting, incomplete or unverifiable (`needs_verification`), or not assessed yet (`not_assessed`) → **Review Required**. Missing evidence never makes a candidate Not Eligible.
+4. A technical failure (the model call, unreadable or incomplete model output) is a **processing error**, not a result about the candidate. An earlier decisive result stands; otherwise the gate stays `not_assessed` with a "Processing error" note (`processing_error: true` in the Gate Summary) and the candidate is Review Required until "Check again" retries it. It is never Not Eligible.
+5. A job without enforced gates → `not_applicable`.
 
-`applications.decision` (the score's decision) is never rewritten. `effective_decision` is derived: a failed gate or an unresolved one replaces the score outcome on screen, and the numeric score stays visible with a note that it cannot override a failed gate.
+`applications.decision` (the score's decision) is never rewritten. `effective_decision` is derived: Not Eligible or Review Required replaces the score outcome on screen, and the numeric score stays visible with a note that it cannot override a failed gate.
 
-Missing, ambiguous or low-confidence CV evidence never fails a gate. The CV check is one model call per application; a gate **passes** only on a quote found verbatim in the CV text at confidence ≥ 0.75, and **fails** only on a quoted explicit contradiction at confidence ≥ 0.90. Everything else, including a failed call, is `needs_verification`. Question gates are judged from the candidate's own answer to the linked question; no answer (for example an email-intake application) is `needs_verification`. Assessment and manual gates wait as `not_assessed` until a result is recorded.
+The CV check is one model call per application. A gate **passes** only on a quote found verbatim in the CV text at confidence ≥ 0.75, and **fails** only on a quoted explicit contradiction at confidence ≥ 0.90; every other verdict (including "conflicting") is `needs_verification`. Question gates are judged from the candidate's own answer; no answer, or an answer that cannot be read against the criteria, is `needs_verification`. Assessment and manual gates wait as `not_assessed` until a result is recorded. Knockout Questions remain a separate candidate-answer mechanism.
+
+### Legacy failure action
+Earlier versions stored a `failure_action` (`not_eligible` / `hold_for_review`) on requirement gates, on `job_knockout_questions.gate_failure_action` and on `application_gate_results.failure_action`. These values stay readable and valid, are **never read for a decision**, are not returned by the API and are not shown in the UI. `set_gate` and the question save still accept a valid `failure_action` from a stale client and ignore it (a malformed one is refused); an existing stored value is left as it was, and new records get the canonical value so older code can still read them. No migration was needed.
 
 ## Overrides
 

@@ -41,7 +41,7 @@ def _doc(*gates) -> dict:
         _item("req_go", "Go", C.IMPORTANCE_PREFERRED),
     ]}
     for item_id, kw in gates:
-        args = dict(verification_method="cv_evidence", failure_action="not_eligible", linked_question_id=None,
+        args = dict(verification_method="cv_evidence", linked_question_id=None,
                     user_id="11111111-1111-4111-8111-111111111111", confirmed_at=NOW)
         args.update(kw)
         doc = R.set_gate(doc, item_id, **args)
@@ -280,12 +280,12 @@ async def test_a_missing_answer_is_needs_verification_and_review_required_never_
     assert await _refresh(engines, built, world["a"], app) == G.REVIEW_REQUIRED
 
 
-async def test_a_failed_hold_for_review_gate_gives_review_required(built, engines, world):
+async def test_an_old_hold_for_review_value_on_a_question_is_ignored_and_a_failing_answer_is_not_eligible(built, engines, world):
     job = _job(built, world["a"])
     q = _question(built, world["a"], job, gate=True, action="hold_for_review")
     app = _application(built, world["a"], job)
     _answer(built, app, q, "no")
-    assert await _refresh(engines, built, world["a"], app) == G.REVIEW_REQUIRED
+    assert await _refresh(engines, built, world["a"], app) == G.NOT_ELIGIBLE
 
 
 async def test_an_advisory_question_never_affects_eligibility_even_with_a_failing_answer(built, engines, world):
@@ -306,11 +306,11 @@ async def test_a_requirement_gate_on_a_question_is_judged_from_the_linked_questi
     job = _job(built, world["a"])
     q = _question(built, world["a"], job, gate=True, action="hold_for_review")
     cur = built.conn.cursor()
-    doc = _doc(("req_py", {"verification_method": "candidate_question", "linked_question_id": q, "failure_action": "not_eligible"}))
+    doc = _doc(("req_py", {"verification_method": "candidate_question", "linked_question_id": q}))
     cur.execute("UPDATE job_criteria SET analysis_json = %s WHERE job_id = %s", (json.dumps({"requirements": doc}), job))
     app = _application(built, world["a"], job)
     _answer(built, app, q, "no")
-    assert await _refresh(engines, built, world["a"], app) == G.NOT_ELIGIBLE        # the requirement's action governs, not the question's
+    assert await _refresh(engines, built, world["a"], app) == G.NOT_ELIGIBLE        # a failing answer is clear evidence; no action is read
     cur.execute("SELECT gate_key FROM application_gate_results WHERE application_id = %s", (app,))
     assert [r[0] for r in cur.fetchall()] == ["req:req_py"]
 
@@ -516,7 +516,7 @@ def _stored_outcome(built, app):
 
 async def test_a_failed_not_eligible_gate_overrides_a_score_of_99_and_leaves_the_stored_score_and_decision_unchanged(built, engines, world):
     from routers.applications import _effective
-    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual", "failure_action": "not_eligible"})))
+    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual"})))
     app = _application(built, world["a"], job, decision="qualified")
     _score(built, app, 99.0)
     await _refresh(engines, built, world["a"], app)
@@ -534,21 +534,34 @@ async def test_a_failed_not_eligible_gate_overrides_a_score_of_99_and_leaves_the
     assert _effective(status, decision) == "not_eligible"    #    and the one the application routes derive from the stored pair
 
 
-async def test_a_failed_hold_for_review_gate_gives_review_required_not_not_eligible_even_at_a_score_of_99(built, engines, world):
+async def test_missing_evidence_gives_review_required_not_not_eligible_even_at_a_score_of_99(built, engines, world):
     from routers.applications import _effective
-    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual", "failure_action": "hold_for_review"})))
+    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "cv_evidence"})))
     app = _application(built, world["a"], job, decision="qualified")
     _score(built, app, 99.0)
-    await _refresh(engines, built, world["a"], app)
-    await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.record_result(
-        s, application_id=app, gate_key="req:req_py", result="failed", summary="No licence seen", user_id=world["a"]["users"]["admin"]))
+    await _refresh(engines, built, world["a"], app,
+                   cv_outcomes={"req:req_py": {"result": G.NEEDS_VERIFICATION, "confidence": None, "summary": "The CV does not show it."}})
 
     final_score, decision, status = _stored_outcome(built, app)
     assert (float(final_score), decision) == (99.0, "qualified")
     assert status == "review_required" and status != "not_eligible"
     view = await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.gate_view(s, app))
-    assert view["effective_decision"] == "review_required"
+    assert view["effective_decision"] == "review_required" and view["gates"][0]["result"] == "needs_verification"
     assert _effective(status, decision) == "review_required"
+
+
+async def test_a_gate_stored_with_an_old_hold_for_review_value_is_read_and_a_confirmed_failure_is_still_not_eligible(built, engines, world):
+    doc = _doc(("req_py", {"verification_method": "manual"}))
+    doc["categories"]["skills"]["items"][0]["gate"]["failure_action"] = "hold_for_review"
+    job = _job(built, world["a"], doc)
+    app = _application(built, world["a"], job, decision="qualified")
+    _score(built, app, 99.0)
+    await _refresh(engines, built, world["a"], app)
+    await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.record_result(
+        s, application_id=app, gate_key="req:req_py", result="failed", summary="No licence", user_id=world["a"]["users"]["admin"]))
+    assert _stored_outcome(built, app)[1:] == ("qualified", "not_eligible")
+    view = await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.gate_view(s, app))
+    assert "failure_action" not in view["gates"][0] and view["effective_decision"] == "not_eligible"
 
 
 async def test_a_passed_gate_leaves_the_score_decision_as_the_effective_decision(built, engines, world):

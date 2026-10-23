@@ -59,7 +59,9 @@ def test_suggestion_is_unconfirmed_until_an_admin_confirms_and_preferred_has_no_
     page.get_by_test_id(f"gate-controls-{licence['id']}").get_by_label("Mandatory Gate (eligibility)").check()
     box = page.get_by_test_id(f"gate-controls-{licence['id']}")
     expect(box.get_by_label("Verification method")).to_have_count(0)
-    box.get_by_label("If the check fails").select_option("not_eligible")
+    expect(box.locator("select")).to_have_count(0)                                             # no failure-action control
+    expect(page.get_by_text("If the check fails")).to_have_count(0)
+    expect(page.get_by_text("Hold for review")).to_have_count(0)
     panel(page).get_by_role("button", name="Save changes").click()
     expect(page.get_by_text("Saved. The requirements are now at revision 2.")).to_be_visible(timeout=15000)
     expect(panel(page).get_by_text("Mandatory Gate", exact=True).first).to_be_visible()
@@ -68,13 +70,13 @@ def test_suggestion_is_unconfirmed_until_an_admin_confirms_and_preferred_has_no_
 
     saved = api.requirements(token, job)["document"]["categories"]["skills"]["items"]
     gate = next(i for i in saved if i["text"] == "Valid driving licence")["gate"]
-    assert gate["verification_method"] == "cv_evidence" and gate["failure_action"] == "not_eligible" and "confirmed_by" not in gate
+    assert gate["verification_method"] == "cv_evidence" and "confirmed_by" not in gate and "failure_action" not in gate
 
 
 def test_a_recruiter_and_a_viewer_cannot_confirm_a_gate(api, admin):
     job, doc = _job(api, admin, "gates roles")
     item = doc["document"]["categories"]["skills"]["items"][0]["id"]
-    op = [{"op": "set_gate", "item_id": item, "verification_method": "manual", "failure_action": "not_eligible", "linked_question_id": None}]
+    op = [{"op": "set_gate", "item_id": item, "verification_method": "manual", "linked_question_id": None}]
     for role in ("recruiter", "viewer"):
         token, _ = api.login(role)
         status, _ = api.edit(token, job, doc["requirements_revision"], op)
@@ -86,7 +88,7 @@ def test_gate_summary_review_then_not_eligible_then_overridden_with_history(api,
     job, doc = _job(api, admin, "gates summary")
     licence = next(i for i in doc["document"]["categories"]["skills"]["items"] if i["text"] == "Valid driving licence")
     status, body = api.edit(token, job, doc["requirements_revision"], [
-        {"op": "set_gate", "item_id": licence["id"], "verification_method": "manual", "failure_action": "not_eligible", "linked_question_id": None}])
+        {"op": "set_gate", "item_id": licence["id"], "verification_method": "manual", "linked_question_id": None}])
     assert status == 200, body
 
     page = ui.open("admin", job, token_user=admin)
@@ -152,7 +154,7 @@ def test_create_job_offers_response_required_and_eligibility_gate_separately(api
     expect(page.get_by_role("alert").filter(has_text="Set the passing criteria")).to_be_visible()
     page.get_by_label("yes", exact=True).check()
     expect(page.get_by_role("alert").filter(has_text="Set the passing criteria")).to_have_count(0)
-    expect(page.get_by_label("If the check fails")).to_be_visible()
+    expect(page.get_by_text("If the check fails")).to_have_count(0)                            # the question gate has no failure action either
     _shot(page, "create-job-eligibility-gate")
 
 

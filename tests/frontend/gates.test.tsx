@@ -24,14 +24,14 @@ const Q2 = '22222222-2222-4222-8222-222222222222';
 const base: RequirementsItem = { id: ids.py, text: 'Python', importance: 'required', weight: 50, origin: 'stated', source_text: 'Python is required',
   alternatives: null, experience: null };
 const gated = (over: Partial<NonNullable<RequirementsItem['gate']>> = {}): RequirementsItem => ({
-  ...base, gate: { mandatory: true, verification_method: 'cv_evidence', failure_action: 'not_eligible', linked_question_id: null,
+  ...base, gate: { mandatory: true, verification_method: 'cv_evidence', linked_question_id: null,
     confirmed_at: '2026-10-17T12:00:00+00:00', ...over } });
 const suggested: RequirementsItem = { ...base, gate_suggestion: { cue: 'must', source_text: 'Candidates must know Python' } };
 
 function summary(over: Partial<GateSummaryData> = {}, gate: Partial<GateSummaryData['gates'][0]> = {}): GateSummaryData {
   return {
     application_id: 'app-1', eligibility_status: 'not_eligible', effective_decision: 'not_eligible', evaluated_at: null,
-    gates: [{ gate_key: 'req:a', source: 'requirement', label: 'Valid driving licence', verification_method: 'manual', failure_action: 'not_eligible',
+    gates: [{ gate_key: 'req:a', source: 'requirement', label: 'Valid driving licence', verification_method: 'manual', processing_error: false,
       requirement_item_id: 'a', question_id: null, result: 'failed', computed_result: 'failed', evidence_source: 'manual',
       evidence_summary: 'Checked the original', confidence: null, evaluated_at: null, override_reason: null, overridden_at: null, history: [], ...gate }],
     ...over,
@@ -61,14 +61,14 @@ describe('badges', () => {
 describe('the gate edit payloads', () => {
   const v = () => view();
   it('sends set_gate only when the gate differs from the stored one, with no confirmation fields', () => {
-    const ops = buildOperations(v(), { [ids.py]: { gate: { mandatory: true, verification_method: 'manual', failure_action: 'hold_for_review', linked_question_id: null } } }, {}, {}, []);
-    expect(ops).toEqual([{ op: 'set_gate', item_id: ids.py, verification_method: 'manual', failure_action: 'hold_for_review', linked_question_id: null }]);
+    const ops = buildOperations(v(), { [ids.py]: { gate: { mandatory: true, verification_method: 'manual', linked_question_id: null } } }, {}, {}, []);
+    expect(ops).toEqual([{ op: 'set_gate', item_id: ids.py, verification_method: 'manual', linked_question_id: null }]);
     expect(JSON.stringify(ops)).not.toMatch(/confirmed_by|confirmed_at|mandatory/);
   });
   it('sends the link only for a candidate-question gate', () => {
-    const ops = buildOperations(v(), { [ids.py]: { gate: { mandatory: true, verification_method: 'manual', failure_action: 'not_eligible', linked_question_id: Q1 } } }, {}, {}, []);
+    const ops = buildOperations(v(), { [ids.py]: { gate: { mandatory: true, verification_method: 'manual', linked_question_id: Q1 } } }, {}, {}, []);
     expect(ops[0]).toMatchObject({ linked_question_id: null });
-    const linked = buildOperations(v(), { [ids.py]: { gate: { mandatory: true, verification_method: 'candidate_question', failure_action: 'not_eligible', linked_question_id: Q1 } } }, {}, {}, []);
+    const linked = buildOperations(v(), { [ids.py]: { gate: { mandatory: true, verification_method: 'candidate_question', linked_question_id: Q1 } } }, {}, {}, []);
     expect(linked[0]).toMatchObject({ linked_question_id: Q1 });
   });
   it('sends clear_gate only when there is a stored gate to clear', () => {
@@ -87,7 +87,7 @@ describe('the gate edit payloads', () => {
 });
 
 describe('client checks that mirror the server', () => {
-  const d = (over = {}) => ({ mandatory: true as const, verification_method: 'cv_evidence' as const, failure_action: 'not_eligible' as const, linked_question_id: null, ...over });
+  const d = (over = {}) => ({ mandatory: true as const, verification_method: 'cv_evidence' as const, linked_question_id: null, ...over });
   it('refuses a gate on a Preferred item, a missing link, a contradictory link and a reused question', () => {
     expect(gateProblem(d(), 'preferred', [], 'en')).toBe(GATE_COPY.en.preferredCannotBeGate);
     expect(gateProblem(d({ verification_method: 'candidate_question' }), 'required', [], 'en')).toBe(GATE_COPY.en.problems.link);
@@ -123,18 +123,31 @@ describe('RequirementGateControls', () => {
     expect(screen.getByLabelText(GATE_COPY.en.mandatoryGateControl)).not.toBeChecked();
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: GATE_COPY.en.confirmGate }));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ mandatory: true, verification_method: 'cv_evidence', failure_action: 'hold_for_review' }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ mandatory: true, verification_method: 'cv_evidence', linked_question_id: null }));
   });
-  it('keeps CV evidence internal and exposes only the failure action', () => {
+  it('exposes only the mandatory switch: no failure action, no verification method, no question link', () => {
+    for (const item of [base, gated(), gated({ verification_method: 'candidate_question', linked_question_id: Q1 })]) {
+      const { container, unmount } = render(<RequirementGateControls item={item} draft={undefined} importance="required" {...props} />);
+      expect(container.querySelectorAll('select')).toHaveLength(0);
+      expect(screen.queryByText(/if the check fails/i)).toBeNull();
+      expect(screen.queryByText(/hold for review/i)).toBeNull();
+      expect(screen.queryByLabelText(GATE_COPY.en.verificationMethod)).toBeNull();
+      expect(screen.queryByLabelText(GATE_COPY.en.linkedQuestion)).toBeNull();
+      expect(screen.getByLabelText(GATE_COPY.en.mandatoryGateControl)).toBeInTheDocument();
+      unmount();
+    }
+  });
+  it('has no failure-action wording in either language', () => {
+    for (const lang of ['en', 'ar'] as const) {
+      const copy = GATE_COPY[lang] as Record<string, unknown>;
+      for (const key of ['failureAction', 'actions', 'onFail', 'linkedGovernsAction']) expect(copy[key]).toBeUndefined();
+    }
+  });
+  it('turns the gate off and on with the switch alone', () => {
     const onChange = vi.fn();
-    render(<RequirementGateControls item={gated({ verification_method: 'candidate_question', linked_question_id: Q1 })}
-      draft={undefined} importance="required" {...props} onChange={onChange} />);
-    expect(screen.queryByLabelText(GATE_COPY.en.verificationMethod)).toBeNull();
-    expect(screen.queryByLabelText(GATE_COPY.en.linkedQuestion)).toBeNull();
-    fireEvent.change(screen.getByLabelText(GATE_COPY.en.failureAction), { target: { value: 'not_eligible' } });
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      verification_method: 'cv_evidence', failure_action: 'not_eligible', linked_question_id: null,
-    }));
+    render(<RequirementGateControls item={gated()} draft={undefined} importance="required" {...props} onChange={onChange} />);
+    fireEvent.click(screen.getByLabelText(GATE_COPY.en.mandatoryGateControl));
+    expect(onChange).toHaveBeenCalledWith(null);
   });
   it('renders in Arabic', () => {
     render(<RequirementGateControls item={base} draft={undefined} importance="required" {...props} lang="ar" />);
@@ -146,15 +159,16 @@ describe('the knockout-question gate control', () => {
   it('is off by default, so an existing question stays advisory', () => {
     render(<QuestionGateControl lang="en" question={{ question_type: 'yes_no', passingAnswers: ['yes'] }} onChange={vi.fn()} />);
     expect(screen.getByLabelText('Use as Eligibility Gate')).not.toBeChecked();
-    expect(screen.queryByLabelText(GATE_COPY.en.failureAction)).toBeNull();
+    expect(screen.queryByText(/if the check fails/i)).toBeNull();
   });
-  it('reports the change when switched on and shows the failure action', () => {
+  it('reports the change when switched on and shows no failure action', () => {
     const onChange = vi.fn();
     const { rerender } = render(<QuestionGateControl lang="en" question={{ question_type: 'yes_no', passingAnswers: ['yes'] }} onChange={onChange} />);
     fireEvent.click(screen.getByLabelText('Use as Eligibility Gate'));
     expect(onChange).toHaveBeenCalledWith('is_eligibility_gate', true);
     rerender(<QuestionGateControl lang="en" question={{ question_type: 'yes_no', passingAnswers: ['yes'], is_eligibility_gate: true }} onChange={onChange} />);
     expect(screen.getByLabelText('Use as Eligibility Gate')).toBeChecked();
+    expect(document.querySelectorAll('select')).toHaveLength(0);
   });
   it('asks for passing criteria only when the question is a gate without them', () => {
     const { rerender } = render(<QuestionGateControl lang="en" question={{ question_type: 'yes_no', passingAnswers: [], is_eligibility_gate: false }} onChange={vi.fn()} />);
@@ -162,14 +176,12 @@ describe('the knockout-question gate control', () => {
     rerender(<QuestionGateControl lang="en" question={{ question_type: 'yes_no', passingAnswers: [], is_eligibility_gate: true }} onChange={vi.fn()} />);
     expect(screen.getByRole('alert')).toHaveTextContent(GATE_COPY.en.gateNeedsCriteria);
   });
-  it('shows the linked requirement and lets the requirement own the failure action', () => {
+  it('shows the linked requirement and no failure action', () => {
     render(<QuestionGateControl lang="en" onChange={vi.fn()}
-      question={{ question_type: 'yes_no', passingAnswers: ['yes'], is_eligibility_gate: true, gate_failure_action: 'hold_for_review',
-        linked_requirement: { item_id: 'a', text: 'Valid driving licence', failure_action: 'not_eligible' } }} />);
+      question={{ question_type: 'yes_no', passingAnswers: ['yes'], is_eligibility_gate: true,
+        linked_requirement: { item_id: 'a', text: 'Valid driving licence' } }} />);
     expect(screen.getByTestId('question-linked-requirement')).toHaveTextContent('Valid driving licence');
-    const select = screen.getByLabelText(GATE_COPY.en.failureAction) as HTMLSelectElement;
-    expect(select.value).toBe('not_eligible');
-    expect(select).toBeDisabled();
+    expect(document.querySelectorAll('select')).toHaveLength(0);
   });
   it('renders in Arabic', () => {
     render(<QuestionGateControl lang="ar" question={{ question_type: 'yes_no', passingAnswers: ['yes'] }} onChange={vi.fn()} />);
@@ -184,11 +196,10 @@ describe('the knockout-question gate control', () => {
     expect(hasPassingCriteria({ question_type: 'single_choice', optionsText: 'A\nB', passingAnswers: ['A'] })).toBe(true);
     expect(hasPassingCriteria({ question_type: 'single_choice', optionsText: 'A\nB', passingAnswers: ['C'] })).toBe(false);
   });
-  it('sends gate fields only as an explicit choice and keeps ids', () => {
+  it('sends gate fields only as an explicit choice, keeps ids and never sends a failure action', () => {
     expect(questionGatePayload({})).toEqual({ is_eligibility_gate: false });
-    expect(questionGatePayload({ gate_failure_action: 'not_eligible' })).toEqual({ is_eligibility_gate: false });
-    expect(questionGatePayload({ question_id: Q1, is_eligibility_gate: true })).toEqual({ question_id: Q1, is_eligibility_gate: true, gate_failure_action: 'hold_for_review' });
-    expect(questionGatePayload({ is_eligibility_gate: true, gate_failure_action: 'not_eligible' })).toEqual({ is_eligibility_gate: true, gate_failure_action: 'not_eligible' });
+    expect(questionGatePayload({ question_id: Q1, is_eligibility_gate: true })).toEqual({ question_id: Q1, is_eligibility_gate: true });
+    expect(questionGatePayload({ is_eligibility_gate: true, gate_failure_action: 'hold_for_review' } as any)).toEqual({ is_eligibility_gate: true });
   });
   it('blocks a save of a gate without criteria', () => {
     expect(questionGateProblem({ is_eligibility_gate: true, question_type: 'yes_no', passingAnswers: [] }, 'en')).toBe(GATE_COPY.en.gateNeedsCriteria);
@@ -253,6 +264,40 @@ describe('GateSummary', () => {
     render(<GateSummary applicationId="app-1" userRole="admin" lang="ar" initial={summary()} />);
     expect(screen.getByTestId('gate-overall-status')).toHaveTextContent(GATE_COPY.ar.status.not_eligible);
     expect(screen.getByTestId('gate-score-note')).toHaveTextContent(GATE_COPY.ar.scoreNote);
+  });
+});
+
+describe('processing errors and legacy records', () => {
+  it('shows a processing error as a retry state, not as a result about the candidate', () => {
+    render(<GateSummary applicationId="app-1" userRole="admin" lang="en"
+      initial={summary({ eligibility_status: 'review_required', effective_decision: 'review_required' },
+        { verification_method: 'cv_evidence', result: 'not_assessed', computed_result: 'not_assessed', processing_error: true,
+          evidence_summary: 'Processing error: the CV check could not be completed. Evaluate again to retry.', evidence_source: 'none' })} />);
+    expect(screen.getByTestId('gate-result-req:a')).toHaveTextContent('Processing error');
+    expect(screen.getByTestId('gate-result-req:a')).not.toHaveTextContent('Failed');
+    expect(screen.getByTestId('gate-processing-error-req:a')).toHaveTextContent('says nothing about the candidate');
+    expect(screen.getByTestId('gate-overall-status')).toHaveTextContent('Review Required');
+    expect(screen.getByRole('button', { name: GATE_COPY.en.evaluateAgain })).toBeInTheDocument();     // retry
+  });
+  it('shows the processing error in Arabic', () => {
+    render(<GateSummary applicationId="app-1" userRole="admin" lang="ar"
+      initial={summary({ eligibility_status: 'review_required' }, { result: 'not_assessed', computed_result: 'not_assessed', processing_error: true })} />);
+    expect(screen.getByTestId('gate-result-req:a')).toHaveTextContent(GATE_COPY.ar.processingError);
+  });
+  it('reads an existing record that still carries the old failure-action values without showing them', () => {
+    const legacy = { ...gated(), gate: { ...gated().gate, failure_action: 'hold_for_review' } } as any;
+    expect(requirementBadges(legacy, 'en').map((b) => b.label)).toEqual(['Required', 'Mandatory Gate']);
+    expect(draftFromItem(legacy)).toEqual({ mandatory: true, verification_method: 'cv_evidence', linked_question_id: null });
+    render(<GateSummary applicationId="app-1" userRole="admin" lang="en"
+      initial={{ ...summary(), gates: [{ ...summary().gates[0], failure_action: 'hold_for_review' } as any] }} />);
+    expect(screen.queryByText(/hold for review/i)).toBeNull();
+    expect(screen.queryByText(/if it fails|if the check fails/i)).toBeNull();
+  });
+  it('sends no failure action when a gate is confirmed or changed, whatever an old record carried', () => {
+    const v = view();
+    v.document.categories.skills.items[0] = { ...gated(), gate: { ...gated().gate, failure_action: 'hold_for_review' } } as any;
+    const ops = buildOperations(v, { [ids.py]: { gate: { mandatory: true, verification_method: 'manual', linked_question_id: null } } }, {}, {}, []);
+    expect(JSON.stringify(ops)).not.toMatch(/failure_action|hold_for_review/);
   });
 });
 

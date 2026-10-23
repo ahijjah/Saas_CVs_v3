@@ -34,7 +34,7 @@ package treats its inputs as read-only and returns new objects.
       "alternatives": [str, ...] | None,    # OR alternatives kept inside ONE item (>= 2 entries)
       "experience": {"subject": str | None, "min_years": int | None} | None,  # experience category only
       "gate_suggestion": {"suggested": True, "cue": str, "source_text": str | None}   # SERVER-OWNED, optional, see gates.py
-      "gate": {"mandatory": True, "verification_method": ..., "failure_action": ..., "linked_question_id": str | None,
+      "gate": {"mandatory": True, "verification_method": ..., "linked_question_id": str | None,
                "confirmed_by": str, "confirmed_at": str}                         # SERVER-STAMPED, optional, see gates.py
     }
 

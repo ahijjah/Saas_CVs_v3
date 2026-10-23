@@ -2,7 +2,7 @@
 // The server decides every rule (backend/services/requirements_v2/gates.py and services/eligibility_service.py); what is here only
 // keeps an obviously invalid choice from being sent and says the same thing in both languages.
 
-import type { GateAction, GateMethod, RequirementsItem } from '../services/requirementsApi';
+import type { GateMethod, RequirementsItem } from '../services/requirementsApi';
 import type { KnockoutQuestion } from '../types';
 
 export type GateResult = 'passed' | 'failed' | 'needs_verification' | 'not_assessed' | 'overridden';
@@ -10,15 +10,12 @@ export type EligibilityStatus = 'eligible' | 'not_eligible' | 'review_required' 
 export type Lang = 'en' | 'ar';
 
 export const GATE_METHODS: readonly GateMethod[] = ['cv_evidence', 'candidate_question', 'assessment', 'manual'];
-export const GATE_ACTIONS: readonly GateAction[] = ['not_eligible', 'hold_for_review'];
-/** A failed check sends the candidate to review, not out, unless a person chooses otherwise. */
+/** Requirement gates are verified from CV evidence. Their outcome is decided from the evidence alone: there is no failure action to choose. */
 export const DEFAULT_GATE_METHOD: GateMethod = 'cv_evidence';
-export const DEFAULT_GATE_ACTION: GateAction = 'hold_for_review';
 
 export interface GateDraft {
   mandatory: boolean;
   verification_method: GateMethod | null;
-  failure_action: GateAction;
   linked_question_id: string | null;
 }
 
@@ -26,7 +23,7 @@ export const GATE_COPY = {
   en: {
     mandatoryGate: 'Mandatory Gate',
     mandatoryGateControl: 'Mandatory Gate (eligibility)',
-    mandatoryGateHelp: 'A candidate who does not meet this cannot be eligible, whatever the score is. The requirement still counts in the normal score.',
+    mandatoryGateHelp: 'The CV must clearly meet this. Clear evidence that it is not met makes the candidate Not Eligible, whatever the score is; missing or unclear evidence sends the candidate to Review Required. The requirement still counts in the normal score.',
     preferredCannotBeGate: 'Preferred requirements cannot be gates.',
     badgeRequired: 'Required',
     badgePreferred: 'Preferred',
@@ -37,12 +34,10 @@ export const GATE_COPY = {
     removeGate: 'Remove gate',
     keepSuggestionOff: 'Not a gate',
     verificationMethod: 'Verification method',
-    failureAction: 'If the check fails',
     linkedQuestion: 'Knockout question',
     noLinkedQuestion: 'Choose a question',
     linkedQuestionHelp: 'The question must be an eligibility gate with passing criteria, on this job.',
     methods: { cv_evidence: 'CV evidence', candidate_question: 'Candidate question', assessment: 'Assessment result', manual: 'Manual verification' },
-    actions: { not_eligible: 'Not Eligible', hold_for_review: 'Hold for review' },
     problems: {
       method: 'Choose how this gate is verified.',
       link: 'Choose the knockout question that verifies this gate.',
@@ -59,7 +54,6 @@ export const GATE_COPY = {
     gateQuestion: 'Eligibility Gate',
     gateNeedsCriteria: 'Set the passing criteria before using this question as a gate.',
     linkedTo: (text: string) => `Verifies: ${text}`,
-    linkedGovernsAction: 'The failure action is set by the linked requirement in Job Analysis.',
     manageLinkInAnalysis: 'The link is set in Job Analysis.',
     // Gate Summary
     summaryTitle: 'Eligibility Gates',
@@ -74,7 +68,6 @@ export const GATE_COPY = {
     scoreNote: 'The numeric score below cannot override a failed gate.',
     result: { passed: 'Passed', failed: 'Failed', needs_verification: 'Needs verification', not_assessed: 'Not assessed', overridden: 'Overridden' },
     evidence: { cv: 'CV evidence', candidate_answer: 'Candidate answer', assessment: 'Assessment', manual: 'Manual check', none: 'No evidence yet' },
-    onFail: 'If it fails',
     method: 'Verified by',
     evidenceHeading: 'Evidence',
     history: 'History',
@@ -91,6 +84,8 @@ export const GATE_COPY = {
     recordNeedsVerification: 'Needs verification',
     summaryNote: 'Note (optional)',
     evaluateAgain: 'Check again',
+    processingError: 'Processing error',
+    processingErrorHelp: 'The check could not be completed. This says nothing about the candidate. Check again to retry.',
     loading: 'Loading eligibility…',
     loadFailed: 'The eligibility gates could not be loaded.',
     viewOnly: 'You can view the gates. Only administrators and HR managers can record or override results.',
@@ -99,7 +94,7 @@ export const GATE_COPY = {
   ar: {
     mandatoryGate: 'بوابة إلزامية',
     mandatoryGateControl: 'بوابة إلزامية (الأهلية)',
-    mandatoryGateHelp: 'المرشح الذي لا يستوفي هذا الشرط لا يمكن أن يكون مؤهلًا مهما كانت درجته. ويبقى الشرط محسوبًا في الدرجة العادية.',
+    mandatoryGateHelp: 'يجب أن تُظهر السيرة الذاتية استيفاء هذا الشرط بوضوح. الدليل الواضح على عدم الاستيفاء يجعل المرشح غير مؤهل مهما كانت درجته، أما غياب الدليل أو عدم وضوحه فيحيل المرشح إلى المراجعة. ويبقى الشرط محسوبًا في الدرجة العادية.',
     preferredCannotBeGate: 'لا يمكن أن تكون المتطلبات المفضلة بوابات.',
     badgeRequired: 'مطلوب',
     badgePreferred: 'مفضل',
@@ -110,12 +105,10 @@ export const GATE_COPY = {
     removeGate: 'إزالة البوابة',
     keepSuggestionOff: 'ليست بوابة',
     verificationMethod: 'طريقة التحقق',
-    failureAction: 'عند عدم الاستيفاء',
     linkedQuestion: 'سؤال الإقصاء',
     noLinkedQuestion: 'اختر سؤالًا',
     linkedQuestionHelp: 'يجب أن يكون السؤال بوابة أهلية لها معايير اجتياز، ضمن هذه الوظيفة.',
     methods: { cv_evidence: 'دليل من السيرة الذاتية', candidate_question: 'سؤال للمرشح', assessment: 'نتيجة تقييم', manual: 'تحقق يدوي' },
-    actions: { not_eligible: 'غير مؤهل', hold_for_review: 'تعليق للمراجعة' },
     problems: {
       method: 'اختر طريقة التحقق من هذه البوابة.',
       link: 'اختر سؤال الإقصاء الذي يتحقق من هذه البوابة.',
@@ -131,7 +124,6 @@ export const GATE_COPY = {
     gateQuestion: 'بوابة أهلية',
     gateNeedsCriteria: 'حدّد معايير الاجتياز قبل استخدام هذا السؤال كبوابة.',
     linkedTo: (text: string) => `يتحقق من: ${text}`,
-    linkedGovernsAction: 'يُحدَّد إجراء عدم الاستيفاء من المتطلب المرتبط في تحليل الوظيفة.',
     manageLinkInAnalysis: 'يتم الربط من تحليل الوظيفة.',
     summaryTitle: 'بوابات الأهلية',
     overall: 'الحالة العامة',
@@ -145,7 +137,6 @@ export const GATE_COPY = {
     scoreNote: 'لا يمكن للدرجة الرقمية أدناه أن تتجاوز بوابة فاشلة.',
     result: { passed: 'مجتاز', failed: 'غير مجتاز', needs_verification: 'يحتاج إلى تحقق', not_assessed: 'لم يُقيَّم', overridden: 'تم التجاوز' },
     evidence: { cv: 'السيرة الذاتية', candidate_answer: 'إجابة المرشح', assessment: 'التقييم', manual: 'تحقق يدوي', none: 'لا يوجد دليل بعد' },
-    onFail: 'عند عدم الاستيفاء',
     method: 'التحقق عبر',
     evidenceHeading: 'الدليل',
     history: 'السجل',
@@ -162,6 +153,8 @@ export const GATE_COPY = {
     recordNeedsVerification: 'يحتاج إلى تحقق',
     summaryNote: 'ملاحظة (اختياري)',
     evaluateAgain: 'إعادة الفحص',
+    processingError: 'خطأ في المعالجة',
+    processingErrorHelp: 'تعذّر إكمال الفحص. هذا لا يعني شيئًا عن المرشح. أعد الفحص للمحاولة مرة أخرى.',
     loading: 'جارٍ تحميل الأهلية…',
     loadFailed: 'تعذّر تحميل بوابات الأهلية.',
     viewOnly: 'يمكنك عرض البوابات. وحده المسؤول أو مدير الموارد البشرية يمكنه تسجيل النتائج أو تجاوزها.',
@@ -180,19 +173,19 @@ export function draftFromItem(item: RequirementsItem): GateDraft | null {
   const gate = item.gate;
   if (!gate) return null;
   return {
-    mandatory: true, verification_method: gate.verification_method, failure_action: gate.failure_action,
+    mandatory: true, verification_method: gate.verification_method,
     linked_question_id: gate.linked_question_id,
   };
 }
 
 /** The gate a person would confirm when accepting the suggestion: the safe defaults, nothing enforced yet. */
 export function suggestedDraft(): GateDraft {
-  return { mandatory: true, verification_method: DEFAULT_GATE_METHOD, failure_action: DEFAULT_GATE_ACTION, linked_question_id: null };
+  return { mandatory: true, verification_method: DEFAULT_GATE_METHOD, linked_question_id: null };
 }
 
 export function sameGate(a: GateDraft | null | undefined, b: GateDraft | null | undefined): boolean {
   if (!a || !b) return !a && !b;
-  return a.verification_method === b.verification_method && a.failure_action === b.failure_action
+  return a.verification_method === b.verification_method
     && (a.linked_question_id ?? null) === (b.linked_question_id ?? null);
 }
 
@@ -287,15 +280,12 @@ export function hasPassingCriteria(q: QuestionGateFields): boolean {
   return answers.length > 0;
 }
 
-/** The gate fields sent with a saved question. A question that is not a gate never carries a failure action, so it stays advisory. */
+/** The gate fields sent with a saved question. A question that is not a gate stays advisory; the failure action is retired and never sent. */
 export function questionGatePayload(
-  q: { is_eligibility_gate?: boolean; gate_failure_action?: GateAction; question_id?: string },
-): { question_id?: string; is_eligibility_gate: boolean; gate_failure_action?: GateAction } {
-  const out: { question_id?: string; is_eligibility_gate: boolean; gate_failure_action?: GateAction } = {
-    is_eligibility_gate: q.is_eligibility_gate === true,
-  };
+  q: { is_eligibility_gate?: boolean; question_id?: string },
+): { question_id?: string; is_eligibility_gate: boolean } {
+  const out: { question_id?: string; is_eligibility_gate: boolean } = { is_eligibility_gate: q.is_eligibility_gate === true };
   if (q.question_id) out.question_id = q.question_id;
-  if (out.is_eligibility_gate) out.gate_failure_action = q.gate_failure_action ?? DEFAULT_GATE_ACTION;
   return out;
 }
 

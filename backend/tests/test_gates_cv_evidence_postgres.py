@@ -38,7 +38,7 @@ def _verdict(verdict, quote, confidence=0.95, contradiction=False):
 
 
 def _cv_world(built, world, cv_text=CV):
-    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "cv_evidence", "failure_action": "not_eligible"})))
+    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "cv_evidence"})))
     app = _application(built, world["a"], job)
     if cv_text is not None:
         built.conn.cursor().execute(
@@ -114,3 +114,74 @@ async def test_a_jobs_with_no_cv_evidence_gate_never_calls_the_model(built, engi
     client = _Client(_verdict("met", "x"))
     await _run(engines, world, app, client)
     assert client.calls == []
+
+
+# ── technical failures are processing errors, never findings about the candidate ───────────────────────────────────
+
+async def _view(engines, world, app):
+    return await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.gate_view(s, app))
+
+
+@pytest.mark.parametrize("client", [
+    lambda: _Client(error=RuntimeError("upstream down")),
+    lambda: _Client("this is not json"),
+    lambda: _Client({"results": "nonsense"}),
+    lambda: _Client({"results": []}),                       # the output does not cover the requirement
+])
+async def test_a_model_or_parsing_error_is_a_processing_error_and_never_rejects_the_candidate(built, engines, world, client):
+    app = _cv_world(built, world)
+    status = await _run(engines, world, app, client())
+    assert status == G.REVIEW_REQUIRED and status != G.NOT_ELIGIBLE
+    [gate] = (await _view(engines, world, app))["gates"]
+    assert gate["result"] == "not_assessed" and gate["processing_error"] is True
+    assert gate["result"] != "failed" and "Processing error" in gate["evidence_summary"]
+
+
+async def test_missing_evidence_is_not_a_processing_error(built, engines, world):
+    app = _cv_world(built, world)
+    assert await _run(engines, world, app, _Client(_verdict("unclear", None, 0.9))) == G.REVIEW_REQUIRED
+    [gate] = (await _view(engines, world, app))["gates"]
+    assert gate["result"] == "needs_verification" and gate["processing_error"] is False
+
+
+async def test_conflicting_evidence_is_review_required_not_not_eligible(built, engines, world):
+    app = _cv_world(built, world)
+    reply = _verdict("conflicting", "valid driving licence", 0.99, contradiction=True)
+    assert await _run(engines, world, app, _Client(reply)) == G.REVIEW_REQUIRED
+    [gate] = (await _view(engines, world, app))["gates"]
+    assert gate["result"] == "needs_verification"
+
+
+async def test_evaluating_again_retries_a_processing_error_and_settles_the_gate(built, engines, world):
+    app = _cv_world(built, world)
+    assert await _run(engines, world, app, _Client(error=RuntimeError("down"))) == G.REVIEW_REQUIRED
+    assert await _run(engines, world, app, _Client(_verdict("met", "valid driving licence issued in Jordan"))) == G.ELIGIBLE
+    [gate] = (await _view(engines, world, app))["gates"]
+    assert gate["result"] == "passed" and gate["processing_error"] is False
+
+
+@pytest.mark.parametrize("earlier,status", [
+    (_verdict("met", "valid driving licence issued in Jordan"), G.ELIGIBLE),
+    (_verdict("not_met", "Five years as a backend engineer", 0.97, True), G.NOT_ELIGIBLE),
+])
+async def test_a_later_processing_error_does_not_change_an_earlier_decisive_result(built, engines, world, earlier, status):
+    app = _cv_world(built, world)
+    assert await _run(engines, world, app, _Client(earlier)) == status
+    assert await _run(engines, world, app, _Client(error=RuntimeError("down"))) == status
+    [gate] = (await _view(engines, world, app))["gates"]
+    assert gate["processing_error"] is False
+
+
+async def test_a_processing_error_can_be_overridden_by_a_person_and_the_override_is_audited(built, engines, world):
+    app = _cv_world(built, world)
+    await _run(engines, world, app, _Client(error=RuntimeError("down")))
+    admin = world["a"]["users"]["admin"]
+    status = await _in_tenant(engines(), world["a"]["tenant"], lambda s: G.override_gate(
+        s, application_id=app, gate_key="req:req_py", reason="Checked the CV by hand", user_id=admin))
+    assert status == G.ELIGIBLE
+    [gate] = (await _view(engines, world, app))["gates"]
+    assert gate["processing_error"] is False and gate["history"][-1]["event_type"] == "overridden"
+    cur = built.conn.cursor()
+    cur.execute("SELECT original_result, new_result, user_id::text, reason FROM application_gate_result_events"
+                " WHERE application_id = %s AND event_type = 'overridden'", (app,))
+    assert cur.fetchone() == ("not_assessed", "overridden", admin, "Checked the CV by hand")

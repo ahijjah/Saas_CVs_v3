@@ -136,17 +136,18 @@ function GateRow(p: RowProps) {
   const failed = gate.result === 'failed';
   const recordable = gate.verification_method === 'assessment' || gate.verification_method === 'manual';
   return (
-    <li data-testid={`gate-${gate.gate_key}`} data-result={gate.result}
+    <li data-testid={`gate-${gate.gate_key}`} data-result={gate.result} data-processing-error={gate.processing_error ? 'true' : 'false'}
       className={`rounded-xl border bg-white/80 p-3 space-y-2 ${failed ? 'border-red-500 border-s-4' : 'border-white/60'}`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p dir="auto" className="text-sm font-semibold text-slate-900 flex-1 min-w-[10rem]">{gate.label}</p>
-        <span data-testid={`gate-result-${gate.gate_key}`} className={`px-2.5 py-1 rounded-full text-xs font-bold ${tone.chip}`}>{copy.result[gate.result]}</span>
+        <span data-testid={`gate-result-${gate.gate_key}`} className={`px-2.5 py-1 rounded-full text-xs font-bold ${tone.chip}`}>{gate.processing_error ? copy.processingError : copy.result[gate.result]}</span>
       </div>
       <p className="text-xs text-slate-600">
-        {copy.method}: {copy.methods[gate.verification_method]} · {copy.onFail}: {copy.actions[gate.failure_action]}
+        {copy.method}: {copy.methods[gate.verification_method]}
         {' · '}{copy.evidenceHeading}: {copy.evidence[gate.evidence_source]}
       </p>
-      {gate.evidence_summary && <p dir="auto" className="text-xs text-slate-700">{gate.evidence_summary}</p>}
+      {gate.processing_error && <p className="text-xs text-amber-800" data-testid={`gate-processing-error-${gate.gate_key}`}>{copy.processingErrorHelp}</p>}
+      {gate.evidence_summary && !gate.processing_error && <p dir="auto" className="text-xs text-slate-700">{gate.evidence_summary}</p>}
       {gate.result === 'overridden' && (
         <div className="rounded-md bg-blue-50 border border-blue-200 p-2 text-xs text-blue-900" data-testid={`gate-override-${gate.gate_key}`}>
           <p>{copy.originalResult}: {copy.result[gate.computed_result]}</p>

@@ -32,11 +32,16 @@ GATE_KEY = "gate"
 SUGGESTION_KEY = "gate_suggestion"
 
 VERIFICATION_METHODS = ("cv_evidence", "candidate_question", "assessment", "manual")
-FAILURE_ACTIONS = ("not_eligible", "hold_for_review")
+# The failure action is a LEGACY field. The outcome of a gate is decided from the evidence alone (services/eligibility_service.py), so a
+# stored value is never read for a decision, never returned by the API and never offered in the UI. It stays valid in a stored document so
+# that documents written before this rule remain readable, and new gates keep writing the canonical value so older code can still read them.
+LEGACY_FAILURE_ACTIONS = ("not_eligible", "hold_for_review")
 DEFAULT_VERIFICATION_METHOD = "cv_evidence"
-DEFAULT_FAILURE_ACTION = "hold_for_review"          # the safer default: a failed check sends the candidate to review, not out
+DEFAULT_FAILURE_ACTION = "not_eligible"
 
-GATE_FIELDS = frozenset({"mandatory", "verification_method", "failure_action", "linked_question_id", "confirmed_by", "confirmed_at"})
+GATE_REQUIRED_FIELDS = frozenset({"mandatory", "verification_method", "linked_question_id", "confirmed_by", "confirmed_at"})
+GATE_OPTIONAL_FIELDS = frozenset({"failure_action"})
+GATE_FIELDS = GATE_REQUIRED_FIELDS | GATE_OPTIONAL_FIELDS
 SUGGESTION_FIELDS = frozenset({"suggested", "cue", "source_text"})
 SUGGESTION_CUE_LIMIT = 200
 
@@ -62,16 +67,16 @@ def shape_issues(item: dict, category: str, iid: str | None) -> list[Issue]:
             bad("bad_gate_suggestion", "gate_suggestion must be {suggested: true, cue, source_text}.")
     if GATE_KEY in item and item[GATE_KEY] is not None:
         g = item[GATE_KEY]
-        if not isinstance(g, dict) or set(g) != GATE_FIELDS:
-            bad("bad_gate", f"gate must be an object with exactly these fields: {sorted(GATE_FIELDS)}.")
+        if not isinstance(g, dict) or not GATE_REQUIRED_FIELDS <= set(g) <= GATE_FIELDS:
+            bad("bad_gate", f"gate must be an object with these fields: {sorted(GATE_REQUIRED_FIELDS)} (and optionally a legacy failure_action).")
             return out
         if g["mandatory"] is not True:
             bad("bad_gate", "a stored gate is always mandatory; clear it instead.")
         method = g["verification_method"]
         if method is not None and method not in VERIFICATION_METHODS:
             bad("bad_gate_verification_method", f"verification_method must be one of {list(VERIFICATION_METHODS)}.")
-        if g["failure_action"] not in FAILURE_ACTIONS:
-            bad("bad_gate_failure_action", f"failure_action must be one of {list(FAILURE_ACTIONS)}.")
+        if "failure_action" in g and g["failure_action"] not in LEGACY_FAILURE_ACTIONS:
+            bad("bad_gate_failure_action", f"failure_action must be one of {list(LEGACY_FAILURE_ACTIONS)} when present.")
         if g["linked_question_id"] is not None and not is_uuid(g["linked_question_id"]):
             bad("bad_gate_question_link", "linked_question_id must be a question id or null.")
         if not all(isinstance(g[k], str) and g[k] for k in ("confirmed_by", "confirmed_at")):
@@ -118,7 +123,7 @@ def iter_items(doc: dict) -> Iterable[tuple[str, dict]]:
 
 
 def confirmed_gates(doc: dict) -> list[dict]:
-    """The enforced gates of a document: [{item_id, category, text, verification_method, failure_action, linked_question_id}]. A
+    """The enforced gates of a document: [{item_id, category, text, verification_method, linked_question_id}]. A
     suggestion is never included, and a gate on a Preferred item (which validate_final refuses) is never included either."""
     out = []
     for category, item in iter_items(doc):
@@ -126,7 +131,7 @@ def confirmed_gates(doc: dict) -> list[dict]:
         if gate is None or item["importance"] != IMPORTANCE_REQUIRED or gate.get("verification_method") is None:
             continue
         out.append({"item_id": item["id"], "category": category, "text": item["text"],
-                    "verification_method": gate["verification_method"], "failure_action": gate["failure_action"],
+                    "verification_method": gate["verification_method"],
                     "linked_question_id": gate["linked_question_id"]})
     return out
 
@@ -136,15 +141,13 @@ def linked_question_ids(doc: dict) -> dict[str, str]:
     return {g["linked_question_id"].lower(): g["item_id"] for g in confirmed_gates(doc) if g["linked_question_id"]}
 
 
-def set_gate(doc: dict, item_id: str, *, verification_method: str | None, failure_action: str,
+def set_gate(doc: dict, item_id: str, *, verification_method: str | None,
              linked_question_id: str | None, user_id: str, confirmed_at: str) -> dict:
     """A new document in which the item is a confirmed Mandatory Gate. The user and the time are the caller's (server) values. Raises
     KeyError for an unknown item and ValueError for a Preferred item or an unusable value. The document-level rules (a missing method
     or link, a contradiction) are left to validate_final, so a save reports them with their stable codes."""
     if verification_method is not None and verification_method not in VERIFICATION_METHODS:
         raise ValueError(f"verification_method must be one of {list(VERIFICATION_METHODS)}")
-    if failure_action not in FAILURE_ACTIONS:
-        raise ValueError(f"failure_action must be one of {list(FAILURE_ACTIONS)}")
     if linked_question_id is not None and not is_uuid(linked_question_id):
         raise ValueError("linked_question_id must be a question id")
     out = copy.deepcopy(doc)
@@ -152,7 +155,10 @@ def set_gate(doc: dict, item_id: str, *, verification_method: str | None, failur
         if item["id"] == item_id:
             if item["importance"] != IMPORTANCE_REQUIRED:
                 raise ValueError("only a Required item can be a Mandatory Gate")
-            item[GATE_KEY] = {"mandatory": True, "verification_method": verification_method, "failure_action": failure_action,
+            previous = item.get(GATE_KEY) or {}
+            item[GATE_KEY] = {"mandatory": True, "verification_method": verification_method,
+                              # a legacy value already stored is kept as it was; it is never read for a decision
+                              "failure_action": previous.get("failure_action", DEFAULT_FAILURE_ACTION),
                               "linked_question_id": linked_question_id.lower() if linked_question_id else None,
                               "confirmed_by": user_id, "confirmed_at": confirmed_at}
             return out
@@ -177,4 +183,4 @@ def drop_gate_if_not_required(item: dict) -> None:
 def gate_summary(item: dict) -> tuple | None:
     """What counts as a change to a gate for the audit trail (never who or when)."""
     g = item.get(GATE_KEY)
-    return None if g is None else (g["verification_method"], g["failure_action"], g["linked_question_id"])
+    return None if g is None else (g["verification_method"], g["linked_question_id"])

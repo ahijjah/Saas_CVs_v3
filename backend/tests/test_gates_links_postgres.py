@@ -24,8 +24,8 @@ def _user(world, label, role):
     return E.EditingUser(user_id=world[label]["users"][role], tenant_id=world[label]["tenant"], role=role, email=f"{role}@example.test")
 
 
-def _set_gate(item="req_py", method="candidate_question", question=None, action="not_eligible"):
-    return E.parse_operations([{"op": "set_gate", "item_id": item, "verification_method": method, "failure_action": action,
+def _set_gate(item="req_py", method="candidate_question", question=None):
+    return E.parse_operations([{"op": "set_gate", "item_id": item, "verification_method": method,
                                 "linked_question_id": question}])
 
 
@@ -130,8 +130,8 @@ async def test_one_question_cannot_verify_two_requirements(built, engines, world
     job = _job(built, world["a"])
     question = _question(built, world["a"], job, gate=True)
     ops = E.parse_operations([
-        {"op": "set_gate", "item_id": "req_py", "verification_method": "candidate_question", "failure_action": "not_eligible", "linked_question_id": question},
-        {"op": "set_gate", "item_id": "req_sql", "verification_method": "candidate_question", "failure_action": "not_eligible", "linked_question_id": question}])
+        {"op": "set_gate", "item_id": "req_py", "verification_method": "candidate_question", "linked_question_id": question},
+        {"op": "set_gate", "item_id": "req_sql", "verification_method": "candidate_question", "linked_question_id": question}])
     assert "gate_question_linked_twice" in await _issue_codes(engines, world, job, ops)
 
 
@@ -171,9 +171,18 @@ async def test_a_question_saved_the_old_way_is_advisory_and_response_required_ke
 
 async def test_response_required_and_eligibility_gate_are_independent_settings(built, engines, world):
     job = _job(built, world["a"])
-    await _save_questions(engines, world, job, [_payload(is_required=False, is_eligibility_gate=True, gate_failure_action="hold_for_review")])
-    [(_, _, required, gate, action)] = await _stored(built, job)
-    assert (required, gate, action) == (False, True, "hold_for_review")
+    await _save_questions(engines, world, job, [_payload(is_required=False, is_eligibility_gate=True)])
+    [(_, _, required, gate, _)] = await _stored(built, job)
+    assert (required, gate) == (False, True)
+
+
+async def test_a_stale_client_sending_the_retired_failure_action_changes_nothing_and_a_stored_old_value_is_kept(built, engines, world):
+    job = _job(built, world["a"])
+    old = _question(built, world["a"], job, gate=True, action="hold_for_review")
+    await _save_questions(engines, world, job, [_payload(question_id=old, is_eligibility_gate=True, gate_failure_action="not_eligible")])
+    assert [r[4] for r in await _stored(built, job)] == ["hold_for_review"]             # an update never rewrites the legacy column
+    await _save_questions(engines, world, job, [_payload(is_eligibility_gate=True, gate_failure_action="hold_for_review")])
+    assert [r[4] for r in await _stored(built, job)] == ["not_eligible"]                # a new question gets the column default
 
 
 async def test_saving_with_ids_keeps_the_question_and_its_answers_and_a_save_without_ids_still_replaces(built, engines, world):
@@ -248,7 +257,8 @@ async def test_the_read_model_shows_the_gate_settings_and_the_linked_requirement
     other = _question(built, world["a"], job, gate=False, text_="Advisory one")
     rows = await _in_tenant(engines(), world["a"]["tenant"], lambda s: K.get_job_knockout_questions(s, job))
     by_id = {r["question_id"]: r for r in rows}
-    assert by_id[question]["is_eligibility_gate"] is True and by_id[question]["linked_requirement"]["item_id"] == "req_py"
+    assert by_id[question]["is_eligibility_gate"] is True and by_id[question]["linked_requirement"] == {"item_id": "req_py", "text": "Python"}
+    assert all("gate_failure_action" not in r and "failure_action" not in str(r) for r in rows)
     assert by_id[other]["is_eligibility_gate"] is False and by_id[other]["linked_requirement"] is None
 
 

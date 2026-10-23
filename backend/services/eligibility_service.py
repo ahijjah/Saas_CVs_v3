@@ -10,16 +10,22 @@ Every other knockout question stays advisory, exactly as before.
 
 Result states: passed, failed, needs_verification, not_assessed, overridden.
 
-Decision (decide):
-  * any gate that FAILED with failure action not_eligible            -> not_eligible, whatever the score is;
-  * else any gate that failed with hold_for_review, needs verification or is not assessed yet -> review_required;
-  * else (every gate passed or was overridden by a person)           -> eligible;
-  * a job without gates                                              -> not_applicable.
-Missing, ambiguous or low-confidence evidence is NEVER a failure: it is needs_verification. The score is never an input here, and the
+There is no configurable failure action. The outcome follows the evidence alone (decide):
+  * a gate with clear, affirmative evidence of non-compliance (FAILED)     -> not_eligible, whatever the score is;
+  * else a gate whose evidence is missing, unclear, conflicting, incomplete or unverifiable (needs_verification) or that was not
+    assessed yet (not_assessed)                                             -> review_required;
+  * else (every gate passed or was overridden by a person)                  -> eligible;
+  * a job without gates                                                     -> not_applicable.
+Missing evidence is NEVER a failure. A technical failure (the model call, unreadable or incomplete model output) is not a result about the
+candidate at all: it is a processing error that leaves any earlier result as it was, otherwise leaves the gate not assessed with a
+"Processing error" note (processing_error in the gate view) and is retried by evaluating again. The score is never an input here, and the
 decision never changes applications.decision, the score or the workflow status. Nothing is deleted.
 
+The failure_action stored by earlier versions (documents, questions, result rows) is a legacy value: it is still readable and is never read
+for a decision, returned by the API or offered in the UI.
+
 The CV evidence check can only pass a gate with a quoted passage that really appears in the CV, and can only fail one on an explicit,
-high-confidence, quoted contradiction; every other outcome is needs_verification.
+high-confidence, quoted contradiction; every other outcome is needs_verification (or a processing error).
 
 Overrides: admin and HR manager only (enforced by the route), with a reason; the original result, the new result, the user and the time
 are kept in application_gate_result_events. An override never edits the system's computed result.
@@ -49,7 +55,9 @@ RECORDABLE_RESULTS = (PASSED, FAILED, NEEDS_VERIFICATION)
 ELIGIBLE, NOT_ELIGIBLE, REVIEW_REQUIRED, NOT_APPLICABLE = "eligible", "not_eligible", "review_required", "not_applicable"
 STATUSES = (ELIGIBLE, NOT_ELIGIBLE, REVIEW_REQUIRED, NOT_APPLICABLE)
 
-ACTION_NOT_ELIGIBLE, ACTION_HOLD = "not_eligible", "hold_for_review"
+LEGACY_STORED_ACTION = "not_eligible"          # what the NOT NULL failure_action column of a new result row holds; never read
+PROCESSING_ERROR = "processing_error"          # an internal outcome of the CV check, never stored as a result
+PROCESSING_ERROR_PREFIX = "Processing error:"
 SOURCE_REQUIREMENT, SOURCE_QUESTION = "requirement", "question"
 
 # CV evidence thresholds. A pass needs real, quoted support; a failure needs an explicit, quoted contradiction at high confidence.
@@ -78,7 +86,6 @@ class EligibilityError(Exception):
 @dataclass(frozen=True)
 class GateState:
     result: str
-    failure_action: str
 
 
 def decide(gates: Iterable[GateState]) -> str:
@@ -86,9 +93,9 @@ def decide(gates: Iterable[GateState]) -> str:
     states = list(gates)
     if not states:
         return NOT_APPLICABLE
-    if any(g.result == FAILED and g.failure_action == ACTION_NOT_ELIGIBLE for g in states):
+    if any(g.result == FAILED for g in states):
         return NOT_ELIGIBLE
-    if any(g.result in (FAILED, NEEDS_VERIFICATION, NOT_ASSESSED) for g in states):
+    if any(g.result in (NEEDS_VERIFICATION, NOT_ASSESSED) for g in states):
         return REVIEW_REQUIRED
     return ELIGIBLE
 
@@ -147,7 +154,6 @@ class GateDef:
     source: str
     label: str
     method: str
-    action: str
     item_id: str | None
     question_id: str | None
     category: str | None = None
@@ -167,12 +173,12 @@ def gate_defs(doc: dict | None, questions: list[dict]) -> list[GateDef]:
         if g["verification_method"] == "candidate_question" and link in by_id and by_id[link].get("is_eligibility_gate"):
             question_id = str(by_id[link]["question_id"])
         out.append(GateDef(key=f"req:{g['item_id']}", source=SOURCE_REQUIREMENT, label=g["text"], method=g["verification_method"],
-                           action=g["failure_action"], item_id=g["item_id"], question_id=question_id, category=g["category"]))
+                           item_id=g["item_id"], question_id=question_id, category=g["category"]))
     for q in questions:
         qid = str(q["question_id"])
         if q.get("is_eligibility_gate") and qid.lower() not in linked:
             out.append(GateDef(key=f"q:{qid}", source=SOURCE_QUESTION, label=q["question_text"], method="candidate_question",
-                               action=q.get("gate_failure_action") or ACTION_NOT_ELIGIBLE, item_id=None, question_id=qid))
+                               item_id=None, question_id=qid))
     return out
 
 
@@ -181,14 +187,14 @@ def gate_defs(doc: dict | None, questions: list[dict]) -> list[GateDef]:
 _LOAD_APPLICATION = text("SELECT application_id::text, tenant_id::text, job_id::text FROM applications WHERE application_id = CAST(:aid AS uuid)")
 _LOAD_DOC = text("SELECT analysis_json, requirements_revision FROM job_criteria WHERE job_id = CAST(:jid AS uuid)")
 _LOAD_QUESTIONS = text(
-    "SELECT question_id::text, question_text, question_type, options, passing_criteria, is_eligibility_gate, gate_failure_action"
+    "SELECT question_id::text, question_text, question_type, options, passing_criteria, is_eligibility_gate"
     " FROM job_knockout_questions WHERE job_id = CAST(:jid AS uuid) ORDER BY display_order, created_at")
 _LOAD_ANSWERS = text(
     "SELECT question_id::text, answer_value, answer_source, answer_method FROM application_knockout_answers"
     " WHERE application_id = CAST(:aid AS uuid)")
 _LOAD_RESULTS = text(
     "SELECT gate_result_id::text, gate_key, gate_source, requirement_item_id, question_id::text, gate_label, verification_method,"
-    " failure_action, computed_result, result, evidence_source, evidence_summary, confidence, evaluated_at, recorded_by::text,"
+    " computed_result, result, evidence_source, evidence_summary, confidence, evaluated_at, recorded_by::text,"
     " override_reason, overridden_by::text, overridden_at FROM application_gate_results WHERE application_id = CAST(:aid AS uuid)")
 
 
@@ -238,14 +244,14 @@ async def _upsert_computed(db: AsyncSession, *, application_id: str, tenant_id: 
                 ON CONFLICT (application_id, gate_key) DO UPDATE SET
                     gate_source = EXCLUDED.gate_source, requirement_item_id = EXCLUDED.requirement_item_id,
                     question_id = EXCLUDED.question_id, gate_label = EXCLUDED.gate_label,
-                    verification_method = EXCLUDED.verification_method, failure_action = EXCLUDED.failure_action,
+                    verification_method = EXCLUDED.verification_method,
                     requirements_revision = EXCLUDED.requirements_revision, computed_result = EXCLUDED.computed_result,
                     result = CASE WHEN application_gate_results.result = 'overridden' THEN 'overridden' ELSE EXCLUDED.result END,
                     evidence_source = EXCLUDED.evidence_source, evidence_summary = EXCLUDED.evidence_summary,
                     confidence = EXCLUDED.confidence, evaluated_at = now(), recorded_by = EXCLUDED.recorded_by
                 RETURNING gate_result_id::text"""),
         {"aid": application_id, "tid": tenant_id, "jid": job_id, "key": gate.key, "source": gate.source, "item": gate.item_id,
-         "qid": gate.question_id, "label": _clip(gate.label, 2000) or gate.key, "method": gate.method, "action": gate.action,
+         "qid": gate.question_id, "label": _clip(gate.label, 2000) or gate.key, "method": gate.method, "action": LEGACY_STORED_ACTION,
          "rev": revision, "computed": computed, "result": result, "esource": evidence_source,
          "summary": _clip(summary, SUMMARY_LIMIT), "conf": confidence, "uid": recorded_by})).first()
     changed = existing is None or existing["computed_result"] != computed
@@ -280,7 +286,15 @@ async def refresh_application(db: AsyncSession, application_id: str, *, cv_outco
             await _upsert_computed(db, computed=computed, evidence_source=source, summary=summary, confidence=None, recorded_by=None, **common)
         elif gate.method == "cv_evidence":
             outcome = (cv_outcomes or {}).get(gate.key)
-            if outcome is not None:
+            if outcome is not None and outcome["result"] == PROCESSING_ERROR:
+                # A technical failure says nothing about the candidate: an earlier result stands; otherwise the gate stays not assessed
+                # and says why, so that evaluating again retries it.
+                if prior is not None and prior["computed_result"] in (PASSED, FAILED):
+                    await _refresh_config_only(db, prior["gate_result_id"], gate, revision)
+                else:
+                    await _upsert_computed(db, computed=NOT_ASSESSED, evidence_source="none", summary=outcome.get("summary"),
+                                           confidence=None, recorded_by=None, **common)
+            elif outcome is not None:
                 await _upsert_computed(db, computed=outcome["result"], evidence_source="cv", summary=outcome.get("summary"),
                                        confidence=outcome.get("confidence"), recorded_by=None, **common)
             elif prior is None:
@@ -316,11 +330,11 @@ def _question_result(gate: GateDef, question: dict | None, answer: dict | None) 
 
 
 async def _refresh_config_only(db: AsyncSession, gate_result_id: str, gate: GateDef, revision: int | None) -> None:
-    """Keep a recorded result and follow the gate's current wording, method and failure action."""
+    """Keep a recorded result and follow the gate's current wording and method."""
     await db.execute(
-        text("""UPDATE application_gate_results SET gate_label = :label, verification_method = :method, failure_action = :action,
+        text("""UPDATE application_gate_results SET gate_label = :label, verification_method = :method,
                     requirements_revision = :rev WHERE gate_result_id = CAST(:gid AS uuid)"""),
-        {"label": _clip(gate.label, 2000) or gate.key, "method": gate.method, "action": gate.action, "rev": revision, "gid": gate_result_id})
+        {"label": _clip(gate.label, 2000) or gate.key, "method": gate.method, "rev": revision, "gid": gate_result_id})
 
 
 async def _store_status(db: AsyncSession, application_id: str, gates: list[GateDef]) -> str:
@@ -329,9 +343,9 @@ async def _store_status(db: AsyncSession, application_id: str, gates: list[GateD
     states: list[GateState] = []
     if keys:
         rows = await db.execute(
-            text("SELECT result, failure_action FROM application_gate_results WHERE application_id = CAST(:aid AS uuid)"
+            text("SELECT result FROM application_gate_results WHERE application_id = CAST(:aid AS uuid)"
                  " AND gate_key = ANY(:keys)"), {"aid": application_id, "keys": keys})
-        states = [GateState(r[0], r[1]) for r in rows]
+        states = [GateState(r[0]) for r in rows]
     status = decide(states)
     if not gates:
         current = (await db.execute(text("SELECT eligibility_status FROM applications WHERE application_id = CAST(:aid AS uuid)"),
@@ -353,7 +367,8 @@ You check a candidate's CV against mandatory eligibility requirements of a job.
 You receive a list of requirements (gate_id and wording) and the CV text. For each requirement decide:
   verdict "met"      - the CV states it clearly and unambiguously
   verdict "not_met"  - the CV explicitly states the opposite (for example "I do not hold a licence")
-  verdict "unclear"  - anything else: not mentioned, ambiguous, implied, partial
+  verdict "unclear"  - anything else: not mentioned, ambiguous, implied, partial, incomplete, outdated, or conflicting (the CV says
+                       both that the requirement is and is not met)
 
 STRICT RULES:
 - Never guess. When in doubt, answer "unclear".
@@ -397,7 +412,8 @@ def cv_outcome(item: dict, cv_text: str) -> dict:
 
 async def evaluate_cv_evidence(db: AsyncSession, application_id: str, *, client: Any = None, model: str | None = None) -> dict[str, dict]:
     """Check the CV against the job's cv_evidence gates with ONE model call and return {gate key: outcome}. A missing CV, a failed call or
-    unreadable output gives needs_verification for every such gate; nothing here can fail a candidate by accident."""
+    unreadable output is a PROCESSING ERROR for every such gate (not a result about the candidate, see refresh_application); nothing here can
+    fail a candidate by accident. A CV with no text is missing evidence: needs_verification."""
     app = (await db.execute(_LOAD_APPLICATION, {"aid": application_id})).first()
     if app is None:
         raise EligibilityError("Application not found.", code="application_not_found", status=404)
@@ -409,6 +425,9 @@ async def evaluate_cv_evidence(db: AsyncSession, application_id: str, *, client:
 
     def unresolved(reason: str) -> dict[str, dict]:
         return {g.key: {"result": NEEDS_VERIFICATION, "confidence": None, "summary": reason} for g in targets}
+
+    def processing_error(reason: str) -> dict[str, dict]:
+        return {g.key: {"result": PROCESSING_ERROR, "confidence": None, "summary": f"{PROCESSING_ERROR_PREFIX} {reason}"} for g in targets}
 
     cv_text = (await db.execute(
         text("""SELECT extracted_text FROM application_files WHERE application_id = CAST(:aid AS uuid)
@@ -440,7 +459,7 @@ async def evaluate_cv_evidence(db: AsyncSession, application_id: str, *, client:
         output = json.loads(response.choices[0].message.content)
         results = output.get("results") if isinstance(output, dict) else None
         if not isinstance(results, list):
-            return unresolved("The CV check returned no usable result; verify this requirement.")
+            return processing_error("the CV check returned no usable result. Evaluate again to retry.")
         try:
             from services.ai_usage_service import log_ai_usage
             usage = getattr(response, "usage", None)
@@ -454,11 +473,11 @@ async def evaluate_cv_evidence(db: AsyncSession, application_id: str, *, client:
             logger.warning("[%s] AI usage log failed (gate evidence): %s", application_id, exc)
     except Exception as exc:                                        # a failed call is "not checked", never a failure of the candidate
         logger.warning("[%s] gate evidence check failed: %s", application_id, type(exc).__name__)
-        return unresolved("The CV check could not be completed; verify this requirement.")
+        return processing_error("the CV check could not be completed. Evaluate again to retry.")
 
     by_id = {str(r.get("gate_id")): r for r in results if isinstance(r, dict)}
-    return {g.key: (cv_outcome(by_id[g.key], cv_text) if g.key in by_id
-                    else {"result": NEEDS_VERIFICATION, "confidence": None, "summary": "The CV check did not cover this requirement; verify it."})
+    covered = {g.key: cv_outcome(by_id[g.key], cv_text) for g in targets if g.key in by_id}
+    return {g.key: covered.get(g.key) or processing_error("the CV check did not cover this requirement. Evaluate again to retry.")[g.key]
             for g in targets}
 
 
@@ -571,8 +590,10 @@ async def gate_view(db: AsyncSession, application_id: str) -> dict | None:
         row = existing.get(gate.key)
         items.append({
             "gate_key": gate.key, "source": gate.source, "label": gate.label, "verification_method": gate.method,
-            "failure_action": gate.action, "requirement_item_id": gate.item_id, "question_id": gate.question_id,
-            "result": row["result"] if row else NOT_ASSESSED, "computed_result": row["computed_result"] if row else NOT_ASSESSED,
+            "requirement_item_id": gate.item_id, "question_id": gate.question_id,
+            "result": row["result"] if row else NOT_ASSESSED,
+            # a technical failure of the check, not a result about the candidate: evaluating again retries it
+            "processing_error": bool(row and row["result"] == NOT_ASSESSED and (row["evidence_summary"] or "").startswith(PROCESSING_ERROR_PREFIX)), "computed_result": row["computed_result"] if row else NOT_ASSESSED,
             "evidence_source": row["evidence_source"] if row else "none", "evidence_summary": row["evidence_summary"] if row else None,
             "confidence": float(row["confidence"]) if row and row["confidence"] is not None else None,
             "evaluated_at": row["evaluated_at"].isoformat() if row and row["evaluated_at"] else None,
