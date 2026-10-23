@@ -100,13 +100,16 @@ def decide(gates: Iterable[GateState]) -> str:
     return ELIGIBLE
 
 
-def effective_decision(eligibility_status: str | None, decision: str | None) -> str | None:
-    """What an application's overall outcome is once eligibility is applied. The score's decision is returned unchanged unless a gate
-    failed or is unresolved; it is never rewritten in the database."""
+def effective_decision(eligibility_status: str | None, decision: str | None, scoring_status: str | None = None) -> str | None:
+    """What an application's overall outcome is once eligibility and the scoring status are applied. The stored decision is returned
+    unchanged unless a gate failed or is unresolved, or item-level scoring is not final (review_required) or not possible (not_scored);
+    nothing here is ever written back. The same rule, in SQL, is services/effective_decision.EFFECTIVE_DECISION_SQL."""
     if eligibility_status == NOT_ELIGIBLE:
         return NOT_ELIGIBLE
-    if eligibility_status == REVIEW_REQUIRED:
+    if eligibility_status == REVIEW_REQUIRED or scoring_status == "review_required":
         return REVIEW_REQUIRED
+    if scoring_status == "not_scored":
+        return "not_scored"
     return decision
 
 
@@ -422,6 +425,9 @@ async def evaluate_cv_evidence(db: AsyncSession, application_id: str, *, client:
     targets = [g for g in gates if g.method == "cv_evidence"]
     if not targets:
         return {}
+    stored = await _outcomes_from_item_evaluations(db, application_id, targets)
+    if stored is not None:
+        return stored                      # one evaluation of the CV requirement: the stored item result, not a second model call
 
     def unresolved(reason: str) -> dict[str, dict]:
         return {g.key: {"result": NEEDS_VERIFICATION, "confidence": None, "summary": reason} for g in targets}
@@ -479,6 +485,39 @@ async def evaluate_cv_evidence(db: AsyncSession, application_id: str, *, client:
     covered = {g.key: cv_outcome(by_id[g.key], cv_text) for g in targets if g.key in by_id}
     return {g.key: covered.get(g.key) or processing_error("the CV check did not cover this requirement. Evaluate again to retry.")[g.key]
             for g in targets}
+
+
+# The stored item evaluation of a Requirements V2 CV requirement decides its gate. met passes; a confirmed partially_met or not_met is clear
+# evidence of non-compliance (not eligible); unclear needs verification (review required). Nothing here calls a model.
+_ITEM_TO_GATE = {"met": PASSED, "partially_met": FAILED, "not_met": FAILED, "unclear": NEEDS_VERIFICATION}
+
+
+async def _outcomes_from_item_evaluations(db: AsyncSession, application_id: str, targets: list[GateDef]) -> dict[str, dict] | None:
+    """{gate key: outcome} from the CURRENT item-level run of the application, or None when it has none (older applications keep the
+    separate CV check)."""
+    rows = (await db.execute(
+        text("""SELECT e.item_id, e.result, e.ai_result, e.explanation, e.confidence, e.evidence
+                FROM application_item_evaluations e JOIN application_scoring_runs r ON r.run_id = e.run_id
+                WHERE r.application_id = CAST(:aid AS uuid) AND r.is_current AND e.importance = 'required'"""),
+        {"aid": application_id})).mappings().all()
+    has_run = (await db.execute(text("SELECT 1 FROM application_scoring_runs WHERE application_id = CAST(:aid AS uuid) AND is_current"),
+                                {"aid": application_id})).first() is not None
+    if not has_run:
+        return None
+    by_item = {r["item_id"]: r for r in rows}
+    out: dict[str, dict] = {}
+    for gate in targets:
+        row = by_item.get(gate.item_id or "")
+        if row is None:
+            out[gate.key] = {"result": NEEDS_VERIFICATION, "confidence": None,
+                             "summary": "This requirement was not part of the last scoring. Score the application again to evaluate it."}
+            continue
+        quote = (list(row["evidence"] or [""]) or [""])[0]
+        label = {"met": "Met", "partially_met": "Partially met", "not_met": "Not met", "unclear": "Unclear"}[row["result"]]
+        summary = f"Requirement evaluation: {label}." + (f" “{_clip(quote, 200)}”" if quote else "") + (" Resolved by a reviewer." if row["result"] != row["ai_result"] else "")
+        out[gate.key] = {"result": _ITEM_TO_GATE[row["result"]], "summary": summary,
+                         "confidence": None if row["confidence"] is None else float(row["confidence"])}
+    return out
 
 
 async def evaluate_application(db: AsyncSession, application_id: str, *, run_cv_check: bool = True, client: Any = None) -> str:

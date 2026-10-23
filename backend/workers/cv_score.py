@@ -43,6 +43,8 @@ import json
 import logging
 from pathlib import Path
 
+from sqlalchemy import text
+
 from workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -145,6 +147,88 @@ def score_cv_task(
         task_engine.dispose()
 
 
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=30,
+    name="workers.cv_score.rescore_application_task",
+)
+def rescore_application_task(self, application_id: str, job_id: str, tenant_id: str, requested_by: str | None = None):
+    """An explicit, operator-requested rescore of ONE application against the CURRENT requirements revision (Requirements V2 only).
+
+    It reuses the stored CV text: no file is read, no duplicate or security check runs again, and nothing is deleted. The previous run is
+    kept as history. A failure is retried; when the retries are exhausted the previous run simply stays current (the application is NOT
+    marked failed)."""
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    from sqlalchemy.pool import NullPool
+    from config import get_settings
+
+    cfg = get_settings()
+    task_engine = create_async_engine(cfg.worker_database_url or cfg.database_url, poolclass=NullPool,
+                                      connect_args={"server_settings": {"search_path": cfg.db_schema}})
+    TaskSession = async_sessionmaker(task_engine, class_=AsyncSession, expire_on_commit=False)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_rescore_async(application_id, job_id, tenant_id, requested_by, TaskSession))
+    except Exception as exc:
+        logger.error("[%s] rescore failed (attempt %d/%d): %s", application_id, self.request.retries + 1, self.max_retries + 1, exc)
+        try:
+            self.retry(exc=exc)
+        except self.MaxRetriesExceededError:
+            logger.error("[%s] Rescore retries exhausted; the previous scoring stays current.", application_id)
+    finally:
+        try:
+            if not loop.is_closed():
+                loop.close()
+        except Exception:
+            pass
+        asyncio.set_event_loop(None)
+        task_engine.dispose()
+
+
+async def _rescore_async(application_id: str, job_id: str, tenant_id: str, requested_by: str | None, Session) -> None:
+    from config import get_settings
+    from database import set_rls_context
+    from services.ai_service import load_active_prompt
+    from services.eligibility_service import evaluate_application
+    from services.local_processor import clean_text, detect_language
+    from services.requirements_v2.scoring import ScoringNotReady, scoring_inputs
+
+    cfg = get_settings()
+    async with Session() as db:
+        await set_rls_context(db, tenant_id, "super_admin")
+        row = (await db.execute(text("""
+            SELECT jc.*, j.title AS job_title, j.description AS job_description
+            FROM job_criteria jc JOIN jobs j ON j.job_id = jc.job_id
+            WHERE jc.job_id = :jid AND j.tenant_id = :tid"""), {"jid": job_id, "tid": tenant_id})).mappings().first()
+        if row is None or row["requirements_schema_version"] != 2:
+            logger.warning("[%s] Rescore skipped: the job does not use Requirements V2.", application_id)
+            return
+        try:
+            inputs = scoring_inputs(row["analysis_json"], row["original_analysis_json"], row["job_description"] or "", row["requirements_revision"])
+        except ScoringNotReady as exc:
+            logger.warning("[%s] Rescore skipped: the requirements are not ready (%s).", application_id, exc.state)
+            return
+        cv_text = (await db.execute(text("""
+            SELECT extracted_text FROM application_files WHERE application_id = CAST(:aid AS uuid) AND extraction_status = 'done'
+              AND extracted_text IS NOT NULL ORDER BY created_at DESC LIMIT 1"""), {"aid": application_id})).scalar_one_or_none()
+        if not cv_text or not cv_text.strip():
+            logger.warning("[%s] Rescore skipped: no extracted CV text is stored.", application_id)
+            return
+        cleaned = clean_text(cv_text)
+        criteria = {**dict(row), **inputs.criteria, **inputs.weights}
+        await _score_items(db, application_id=application_id, tenant_id=tenant_id, job_id=job_id, criteria=criteria, revision=inputs.revision,
+                           cv_text=cleaned, raw_cv_text=cv_text, cv_language=detect_language(cleaned), gatekeeper_hint={"rescore": True},
+                           scoring_prompt=await load_active_prompt(db, "cv_scoring"), cfg=cfg, requested_by=requested_by, rescore=True)
+        try:
+            await evaluate_application(db, application_id, run_cv_check=True)
+            await db.commit()
+        except Exception as exc:                              # gates are re-derived on the next evaluation; the score is already committed
+            await db.rollback()
+            logger.warning("[%s] Gate evaluation after a rescore failed (non-critical): %s", application_id, type(exc).__name__)
+
+
 # ── Gatekeeper decision helper ────────────────────────────────────────────────
 
 def _evaluate_gatekeeper_decision(gatekeeper_result, prompt_cfg) -> str:
@@ -241,7 +325,8 @@ async def _score_cv_async(
             already = (await db.execute(
                 text("""
                     SELECT jc.requirements_schema_version = 2 AS is_v2,
-                           EXISTS (SELECT 1 FROM application_scores s WHERE s.application_id = a.application_id) AS scored
+                           (EXISTS (SELECT 1 FROM application_scores s WHERE s.application_id = a.application_id)
+                            OR EXISTS (SELECT 1 FROM application_scoring_runs r WHERE r.application_id = a.application_id AND r.is_current)) AS scored
                     FROM applications a
                     JOIN job_criteria jc ON jc.job_id = a.job_id
                     WHERE a.application_id = :aid
@@ -625,11 +710,13 @@ async def _score_cv_async(
             from services.criteria_status import REQUIREMENTS_V2_SCHEMA_VERSION
             from services.requirements_v2.scoring import lock_revision, scoring_inputs
             scoring_revision = None
+            item_scoring = False                       # True for a Requirements V2 job: every Required item is evaluated and scored by code
             if criteria["requirements_schema_version"] == REQUIREMENTS_V2_SCHEMA_VERSION:
                 v2_inputs = scoring_inputs(criteria["analysis_json"], criteria["original_analysis_json"],
                                            criteria["job_description"] or "", criteria["requirements_revision"])
                 criteria = {**dict(criteria), **v2_inputs.criteria, **v2_inputs.weights}
                 scoring_revision = v2_inputs.revision
+                item_scoring = True
 
             weights = {
                 "weight_skills":           criteria["weight_skills"],
@@ -703,6 +790,12 @@ async def _score_cv_async(
             )
 
             bypass_reason: str | None = None
+            gatekeeper_hint = {"decision_zone": decision_zone, "similarity_pct": gatekeeper_result.semantic_similarity_pct,
+                               "skill_match_ratio": gatekeeper_result.skill_match_ratio, "cv_language": gatekeeper_result.cv_language}
+            if item_scoring and decision_zone == "clear_mismatch_rejected":
+                # Requirements V2: the whole-description similarity is a routing hint only. It never rejects, never gives a score of zero
+                # and never skips the item-level evaluation or the gates. (Legacy jobs keep the local rejection below.)
+                decision_zone = "uncertain_sent_to_ai"
 
             if decision_zone == "auto_reject_disabled":
                 gatekeeper_result.gatekeeper_passed = True
@@ -828,320 +921,328 @@ async def _score_cv_async(
             # ════════════════════════════════════════════════════════════════
             # LEVEL 3 — Full LLM scoring
             # ════════════════════════════════════════════════════════════════
-            logger.info("[%s] Starting L3 AI scoring", application_id)
-            criteria_dict = {
-                "skills":             criteria["skills"],
-                "experience":         criteria["experience"],
-                "education":          criteria["education"],
-                "certifications":     criteria["certifications"],
-                "soft_skills":        criteria["soft_skills"],
-                "domain_knowledge":   criteria["domain_knowledge"],
-                "other_requirements": criteria["other_requirements"],
-                **weights,
-            }
-            gatekeeper_context = {
-                "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
-                "matched_skills":          gatekeeper_result.matched_skills,
-                "missing_skills":          gatekeeper_result.missing_skills,
-            }
-
-            # Resolve stage model from registry (falls back to prompt/config defaults on None)
-            from services.ai_model_registry_service import resolve_stage_client as _resolve
-            _reg = await _resolve(db, "cv_scoring")
-            _effective_prompt = scoring_prompt
-            if _reg:
-                _effective_prompt = {**(scoring_prompt or {}), "model": _reg.model_name}
-
-            # Primary attempt; fallback on failure
-            _scoring_error: Exception | None = None
-            _fallback_used = False
-            try:
-                ai_result, _usage = await score_cv(
-                    cv_text=gatekeeper_result.cleaned_cv_text,
-                    criteria=criteria_dict,
-                    job_title=criteria["job_title"],
-                    cv_language=gatekeeper_result.cv_language,
-                    gatekeeper_context=gatekeeper_context,
-                    prompt_override=_effective_prompt,
-                    openai_client=_reg.client if _reg else None,
+            if item_scoring:
+                await _score_items(
+                    db, application_id=application_id, tenant_id=tenant_id, job_id=job_id, criteria=criteria,
+                    revision=scoring_revision, cv_text=gatekeeper_result.cleaned_cv_text, raw_cv_text=raw_cv_text,
+                    cv_language=gatekeeper_result.cv_language, gatekeeper_hint=gatekeeper_hint, scoring_prompt=scoring_prompt, cfg=cfg,
                 )
-            except Exception as _primary_exc:
-                _scoring_error = _primary_exc
-                logger.warning(
-                    "[%s] Primary model failed (%s), trying fallback: %s",
-                    application_id, (_reg.model_name if _reg else "default"), _primary_exc,
-                )
-                if _reg and _reg.is_fallback:
-                    raise  # already using fallback — propagate
-                # Retry with no registry client (uses settings.openai_* as last resort)
-                ai_result, _usage = await score_cv(
-                    cv_text=gatekeeper_result.cleaned_cv_text,
-                    criteria=criteria_dict,
-                    job_title=criteria["job_title"],
-                    cv_language=gatekeeper_result.cv_language,
-                    gatekeeper_context=gatekeeper_context,
-                    prompt_override=scoring_prompt,
-                    openai_client=None,
-                )
-                _fallback_used = True
-
-            # Log AI usage — never raises
-            from services.ai_usage_service import log_ai_usage as _log_ai_usage
-            await _log_ai_usage(
-                db=db,
-                stage="cv_scoring",
-                provider=_reg.provider if _reg and not _fallback_used else "openai",
-                model=_usage.get("model", ""),
-                prompt_tokens=_usage.get("prompt_tokens", 0),
-                completion_tokens=_usage.get("completion_tokens", 0),
-                total_tokens=_usage.get("total_tokens", 0),
-                latency_ms=_usage.get("latency_ms"),
-                request_status="success",
-                tenant_id=tenant_id,
-                job_id=job_id,
-                application_id=application_id,
-                prompt_key=(scoring_prompt or {}).get("prompt_code"),
-                prompt_version_id=(scoring_prompt or {}).get("version_id") or (scoring_prompt or {}).get("id"),
-                metadata={
-                    "finish_reason":           _usage.get("finish_reason"),
-                    "cv_language":             gatekeeper_result.cv_language,
-                    "gatekeeper_passed":       True,
+                _scoring_committed = True
+            else:
+                logger.info("[%s] Starting L3 AI scoring", application_id)
+                criteria_dict = {
+                    "skills":             criteria["skills"],
+                    "experience":         criteria["experience"],
+                    "education":          criteria["education"],
+                    "certifications":     criteria["certifications"],
+                    "soft_skills":        criteria["soft_skills"],
+                    "domain_knowledge":   criteria["domain_knowledge"],
+                    "other_requirements": criteria["other_requirements"],
+                    **weights,
+                }
+                gatekeeper_context = {
                     "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
-                    "registry_model_id":       _reg.model_id if _reg else None,
-                    "fallback_used":           _fallback_used,
-                    "fallback_reason":         str(_scoring_error) if _fallback_used else None,
-                },
-            )
+                    "matched_skills":          gatekeeper_result.matched_skills,
+                    "missing_skills":          gatekeeper_result.missing_skills,
+                }
 
-            final_score = compute_final_score(ai_result, weights)
-            q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
-            decision = determine_decision(final_score, q_thresh, p_thresh)
+                # Resolve stage model from registry (falls back to prompt/config defaults on None)
+                from services.ai_model_registry_service import resolve_stage_client as _resolve
+                _reg = await _resolve(db, "cv_scoring")
+                _effective_prompt = scoring_prompt
+                if _reg:
+                    _effective_prompt = {**(scoring_prompt or {}), "model": _reg.model_name}
 
-            extracted_name  = (ai_result.get("candidate_name")  or "").strip()
-            extracted_email = (ai_result.get("candidate_email") or "").strip()
-            extracted_phone = (ai_result.get("candidate_phone") or "").strip()
+                # Primary attempt; fallback on failure
+                _scoring_error: Exception | None = None
+                _fallback_used = False
+                try:
+                    ai_result, _usage = await score_cv(
+                        cv_text=gatekeeper_result.cleaned_cv_text,
+                        criteria=criteria_dict,
+                        job_title=criteria["job_title"],
+                        cv_language=gatekeeper_result.cv_language,
+                        gatekeeper_context=gatekeeper_context,
+                        prompt_override=_effective_prompt,
+                        openai_client=_reg.client if _reg else None,
+                    )
+                except Exception as _primary_exc:
+                    _scoring_error = _primary_exc
+                    logger.warning(
+                        "[%s] Primary model failed (%s), trying fallback: %s",
+                        application_id, (_reg.model_name if _reg else "default"), _primary_exc,
+                    )
+                    if _reg and _reg.is_fallback:
+                        raise  # already using fallback — propagate
+                    # Retry with no registry client (uses settings.openai_* as last resort)
+                    ai_result, _usage = await score_cv(
+                        cv_text=gatekeeper_result.cleaned_cv_text,
+                        criteria=criteria_dict,
+                        job_title=criteria["job_title"],
+                        cv_language=gatekeeper_result.cv_language,
+                        gatekeeper_context=gatekeeper_context,
+                        prompt_override=scoring_prompt,
+                        openai_client=None,
+                    )
+                    _fallback_used = True
 
-            update_parts: list[str] = []
-            update_params: dict = {"aid": application_id}
-            if extracted_name:
-                update_parts.append("candidate_name = :cname")
-                update_params["cname"] = extracted_name
-            if extracted_email:
-                update_parts.append("candidate_email_from_cv = :cv_email")
-                update_params["cv_email"] = extracted_email
-            if extracted_phone:
-                update_parts.append("candidate_phone_from_cv = :cv_phone")
-                update_params["cv_phone"] = extracted_phone
-            if update_parts:
-                await db.execute(
-                    text(f"UPDATE applications SET {', '.join(update_parts)} WHERE application_id = :aid"),
-                    update_params,
+                # Log AI usage — never raises
+                from services.ai_usage_service import log_ai_usage as _log_ai_usage
+                await _log_ai_usage(
+                    db=db,
+                    stage="cv_scoring",
+                    provider=_reg.provider if _reg and not _fallback_used else "openai",
+                    model=_usage.get("model", ""),
+                    prompt_tokens=_usage.get("prompt_tokens", 0),
+                    completion_tokens=_usage.get("completion_tokens", 0),
+                    total_tokens=_usage.get("total_tokens", 0),
+                    latency_ms=_usage.get("latency_ms"),
+                    request_status="success",
+                    tenant_id=tenant_id,
+                    job_id=job_id,
+                    application_id=application_id,
+                    prompt_key=(scoring_prompt or {}).get("prompt_code"),
+                    prompt_version_id=(scoring_prompt or {}).get("version_id") or (scoring_prompt or {}).get("id"),
+                    metadata={
+                        "finish_reason":           _usage.get("finish_reason"),
+                        "cv_language":             gatekeeper_result.cv_language,
+                        "gatekeeper_passed":       True,
+                        "semantic_similarity_pct": gatekeeper_result.semantic_similarity_pct,
+                        "registry_model_id":       _reg.model_id if _reg else None,
+                        "fallback_used":           _fallback_used,
+                        "fallback_reason":         str(_scoring_error) if _fallback_used else None,
+                    },
                 )
 
-            score_details = ai_result.get("score_details") or {}
+                final_score = compute_final_score(ai_result, weights)
+                q_thresh, p_thresh = await get_thresholds(db, tenant_id, job_id)
+                decision = determine_decision(final_score, q_thresh, p_thresh)
 
-            if scoring_revision is not None:
-                await lock_revision(db, job_id, scoring_revision)
-            await db.execute(
-                text("""
-                    INSERT INTO application_scores (
-                        application_id,
-                        score_skills, score_experience, score_education,
-                        score_certifications, score_soft_skills,
-                        score_domain_knowledge, score_other,
-                        final_score, weights_snapshot, ai_model,
-                        strengths, gaps_identified, red_flags,
-                        evaluation_notes, interview_questions,
-                        reasoning, raw_ai_response,
-                        local_similarity_score, skill_match_ratio,
-                        matched_skills, missing_skills,
-                        cv_language, gatekeeper_passed,
-                        score_details,
-                        scoring_prompt_code, scoring_prompt_version,
-                        scoring_provider,
-                        requirements_revision_used
-                    ) VALUES (
-                        :aid,
-                        :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
-                        :final, :weights, :model,
-                        :strengths, :gaps, :red_flags,
-                        :notes, :questions,
-                        :reasoning, :raw,
-                        :sim, :skill_ratio,
-                        :matched, :missing,
-                        :cv_lang, :gk_passed,
-                        :score_details,
-                        :sc_code, :sc_ver,
-                        'openai',
-                        :rev_used
+                extracted_name  = (ai_result.get("candidate_name")  or "").strip()
+                extracted_email = (ai_result.get("candidate_email") or "").strip()
+                extracted_phone = (ai_result.get("candidate_phone") or "").strip()
+
+                update_parts: list[str] = []
+                update_params: dict = {"aid": application_id}
+                if extracted_name:
+                    update_parts.append("candidate_name = :cname")
+                    update_params["cname"] = extracted_name
+                if extracted_email:
+                    update_parts.append("candidate_email_from_cv = :cv_email")
+                    update_params["cv_email"] = extracted_email
+                if extracted_phone:
+                    update_parts.append("candidate_phone_from_cv = :cv_phone")
+                    update_params["cv_phone"] = extracted_phone
+                if update_parts:
+                    await db.execute(
+                        text(f"UPDATE applications SET {', '.join(update_parts)} WHERE application_id = :aid"),
+                        update_params,
                     )
-                """),
-                {
-                    "aid":        application_id,
-                    "s_skills":   ai_result.get("score_skills", 0),
-                    "s_exp":      ai_result.get("score_experience", 0),
-                    "s_edu":      ai_result.get("score_education", 0),
-                    "s_cert":     ai_result.get("score_certifications", 0),
-                    "s_soft":     ai_result.get("score_soft_skills", 0),
-                    "s_domain":   ai_result.get("score_domain_knowledge", 0),
-                    "s_other":    ai_result.get("score_other", 0),
-                    "final":      final_score,
-                    "weights":    json.dumps(weights),
-                    "model":      (scoring_prompt or {}).get("model") or cfg.openai_model,
-                    "strengths":  ai_result.get("strengths", []),
-                    "gaps":       ai_result.get("gaps_identified", []),
-                    "red_flags":  ai_result.get("red_flags", []),
-                    "notes":      ai_result.get("evaluation_notes"),
-                    "questions":  ai_result.get("interview_questions", []),
-                    "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
-                    "rev_used":   scoring_revision,
-                    "raw":        json.dumps(ai_result, ensure_ascii=False),
-                    "sim":        gatekeeper_result.semantic_similarity_pct,
-                    "skill_ratio": gatekeeper_result.skill_match_ratio,
-                    "matched":    gatekeeper_result.matched_skills,
-                    "missing":    gatekeeper_result.missing_skills,
-                    "cv_lang":    gatekeeper_result.cv_language,
-                    "gk_passed":  gatekeeper_result.gatekeeper_passed,
-                    "score_details": json.dumps(score_details, ensure_ascii=False),
-                    "sc_code":    (scoring_prompt or {}).get("prompt_code"),
-                    "sc_ver":     (scoring_prompt or {}).get("version"),
-                },
-            )
-            await db.execute(
-                text("""
-                    UPDATE applications SET
-                        decision                 = :decision,
-                        processing_status        = 'ai_scored',
-                        evaluation_stage         = 3,
-                        qualified_threshold_used = :qt,
-                        partial_threshold_used   = :pt,
-                        scored_at                = now()
-                    WHERE application_id = :aid
-                """),
-                {"decision": decision, "qt": q_thresh, "pt": p_thresh, "aid": application_id},
-            )
-            await db.commit()
 
-            # ── Scoring committed — from here on failures are non-critical ────
-            _scoring_committed = True
-            logger.info(
-                "[%s] L3 SCORED lang=%s sim=%.1f%% final=%d decision=%s",
-                application_id,
-                gatekeeper_result.cv_language,
-                gatekeeper_result.semantic_similarity_pct,
-                final_score,
-                decision,
-            )
+                score_details = ai_result.get("score_details") or {}
 
-            # ── Post-scoring: optional AI comparison ──────────────────────────
-            # Job-level flag takes priority; falls back to system default.
-            _job_comparison_flag = criteria.get("enable_ai_comparison")
-            _run_comparison = (
-                _job_comparison_flag
-                if _job_comparison_flag is not None
-                else prompt_cfg.enable_ai_comparison_default
-            )
-            if _run_comparison:
-                try:
-                    comparison_client = await get_comparison_client_async(db)
-                    if comparison_client is not None:
-                        # Registry overrides comparison client when configured
-                        from services.ai_model_registry_service import resolve_stage_client as _resolve_comp
-                        _comp_reg = await _resolve_comp(db, "cv_comparison")
-                        _comp_client = (_comp_reg.client if _comp_reg else None) or comparison_client.client
-                        _comp_provider = (_comp_reg.provider if _comp_reg else None) or comparison_client.provider
-                        _comp_model_id = _comp_reg.model_id if _comp_reg else None
-                        _comp_prompt = {**(scoring_prompt or {}), "model": _comp_reg.model_name} if _comp_reg else scoring_prompt
-
-                        comp_result, _comp_usage = await score_cv(
-                            cv_text=gatekeeper_result.cleaned_cv_text,
-                            criteria=criteria_dict,
-                            job_title=criteria["job_title"],
-                            cv_language=gatekeeper_result.cv_language,
-                            gatekeeper_context=gatekeeper_context,
-                            prompt_override=_comp_prompt,
-                            openai_client=_comp_client,
+                if scoring_revision is not None:
+                    await lock_revision(db, job_id, scoring_revision)
+                await db.execute(
+                    text("""
+                        INSERT INTO application_scores (
+                            application_id,
+                            score_skills, score_experience, score_education,
+                            score_certifications, score_soft_skills,
+                            score_domain_knowledge, score_other,
+                            final_score, weights_snapshot, ai_model,
+                            strengths, gaps_identified, red_flags,
+                            evaluation_notes, interview_questions,
+                            reasoning, raw_ai_response,
+                            local_similarity_score, skill_match_ratio,
+                            matched_skills, missing_skills,
+                            cv_language, gatekeeper_passed,
+                            score_details,
+                            scoring_prompt_code, scoring_prompt_version,
+                            scoring_provider,
+                            requirements_revision_used
+                        ) VALUES (
+                            :aid,
+                            :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
+                            :final, :weights, :model,
+                            :strengths, :gaps, :red_flags,
+                            :notes, :questions,
+                            :reasoning, :raw,
+                            :sim, :skill_ratio,
+                            :matched, :missing,
+                            :cv_lang, :gk_passed,
+                            :score_details,
+                            :sc_code, :sc_ver,
+                            'openai',
+                            :rev_used
                         )
+                    """),
+                    {
+                        "aid":        application_id,
+                        "s_skills":   ai_result.get("score_skills", 0),
+                        "s_exp":      ai_result.get("score_experience", 0),
+                        "s_edu":      ai_result.get("score_education", 0),
+                        "s_cert":     ai_result.get("score_certifications", 0),
+                        "s_soft":     ai_result.get("score_soft_skills", 0),
+                        "s_domain":   ai_result.get("score_domain_knowledge", 0),
+                        "s_other":    ai_result.get("score_other", 0),
+                        "final":      final_score,
+                        "weights":    json.dumps(weights),
+                        "model":      (scoring_prompt or {}).get("model") or cfg.openai_model,
+                        "strengths":  ai_result.get("strengths", []),
+                        "gaps":       ai_result.get("gaps_identified", []),
+                        "red_flags":  ai_result.get("red_flags", []),
+                        "notes":      ai_result.get("evaluation_notes"),
+                        "questions":  ai_result.get("interview_questions", []),
+                        "reasoning":  json.dumps(ai_result.get("reasoning", {}), ensure_ascii=False),
+                        "rev_used":   scoring_revision,
+                        "raw":        json.dumps(ai_result, ensure_ascii=False),
+                        "sim":        gatekeeper_result.semantic_similarity_pct,
+                        "skill_ratio": gatekeeper_result.skill_match_ratio,
+                        "matched":    gatekeeper_result.matched_skills,
+                        "missing":    gatekeeper_result.missing_skills,
+                        "cv_lang":    gatekeeper_result.cv_language,
+                        "gk_passed":  gatekeeper_result.gatekeeper_passed,
+                        "score_details": json.dumps(score_details, ensure_ascii=False),
+                        "sc_code":    (scoring_prompt or {}).get("prompt_code"),
+                        "sc_ver":     (scoring_prompt or {}).get("version"),
+                    },
+                )
+                await db.execute(
+                    text("""
+                        UPDATE applications SET
+                            decision                 = :decision,
+                            processing_status        = 'ai_scored',
+                            evaluation_stage         = 3,
+                            qualified_threshold_used = :qt,
+                            partial_threshold_used   = :pt,
+                            scored_at                = now()
+                        WHERE application_id = :aid
+                    """),
+                    {"decision": decision, "qt": q_thresh, "pt": p_thresh, "aid": application_id},
+                )
+                await db.commit()
 
-                        # Log comparison usage — never raises
-                        from services.ai_usage_service import log_ai_usage as _log_ai_usage
-                        await _log_ai_usage(
-                            db=db,
-                            stage="cv_comparison",
-                            provider=_comp_provider,
-                            model=_comp_usage.get("model", comparison_client.model),
-                            prompt_tokens=_comp_usage.get("prompt_tokens", 0),
-                            completion_tokens=_comp_usage.get("completion_tokens", 0),
-                            total_tokens=_comp_usage.get("total_tokens", 0),
-                            latency_ms=_comp_usage.get("latency_ms"),
-                            request_status="success",
-                            tenant_id=tenant_id,
-                            job_id=job_id,
-                            application_id=application_id,
-                            prompt_key=(scoring_prompt or {}).get("prompt_code"),
-                            metadata={
-                                "finish_reason":     _comp_usage.get("finish_reason"),
-                                "cv_language":       gatekeeper_result.cv_language,
-                                "comparison_run":    True,
-                                "registry_model_id": _comp_model_id,
-                            },
-                        )
+                # ── Scoring committed — from here on failures are non-critical ────
+                _scoring_committed = True
+                logger.info(
+                    "[%s] L3 SCORED lang=%s sim=%.1f%% final=%d decision=%s",
+                    application_id,
+                    gatekeeper_result.cv_language,
+                    gatekeeper_result.semantic_similarity_pct,
+                    final_score,
+                    decision,
+                )
 
-                        comp_final = compute_final_score(comp_result, weights)
-                        comp_score_details = comp_result.get("score_details") or {}
+                # ── Post-scoring: optional AI comparison ──────────────────────────
+                # Job-level flag takes priority; falls back to system default.
+                _job_comparison_flag = criteria.get("enable_ai_comparison")
+                _run_comparison = (
+                    _job_comparison_flag
+                    if _job_comparison_flag is not None
+                    else prompt_cfg.enable_ai_comparison_default
+                )
+                if _run_comparison:
+                    try:
+                        comparison_client = await get_comparison_client_async(db)
+                        if comparison_client is not None:
+                            # Registry overrides comparison client when configured
+                            from services.ai_model_registry_service import resolve_stage_client as _resolve_comp
+                            _comp_reg = await _resolve_comp(db, "cv_comparison")
+                            _comp_client = (_comp_reg.client if _comp_reg else None) or comparison_client.client
+                            _comp_provider = (_comp_reg.provider if _comp_reg else None) or comparison_client.provider
+                            _comp_model_id = _comp_reg.model_id if _comp_reg else None
+                            _comp_prompt = {**(scoring_prompt or {}), "model": _comp_reg.model_name} if _comp_reg else scoring_prompt
 
-                        await db.execute(
-                            text("""
-                                INSERT INTO application_score_comparisons (
-                                    application_id, provider, model, final_score,
-                                    score_skills, score_experience, score_education,
-                                    score_certifications, score_soft_skills,
-                                    score_domain_knowledge, score_other,
-                                    score_details, weights_snapshot,
-                                    evaluation_notes, strengths, gaps_identified,
-                                    scoring_prompt_code, scoring_prompt_version,
-                                    raw_response
-                                ) VALUES (
-                                    :aid, :provider, :model, :final,
-                                    :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
-                                    :score_details, :weights,
-                                    :notes, :strengths, :gaps,
-                                    :sc_code, :sc_ver,
-                                    :raw
-                                )
-                            """),
-                            {
-                                "aid":          application_id,
-                                "provider":     comparison_client.provider,
-                                "model":        comparison_client.model,
-                                "final":        comp_final,
-                                "s_skills":     comp_result.get("score_skills", 0),
-                                "s_exp":        comp_result.get("score_experience", 0),
-                                "s_edu":        comp_result.get("score_education", 0),
-                                "s_cert":       comp_result.get("score_certifications", 0),
-                                "s_soft":       comp_result.get("score_soft_skills", 0),
-                                "s_domain":     comp_result.get("score_domain_knowledge", 0),
-                                "s_other":      comp_result.get("score_other", 0),
-                                "score_details": json.dumps(comp_score_details, ensure_ascii=False),
-                                "weights":      json.dumps(weights),
-                                "notes":        comp_result.get("evaluation_notes"),
-                                "strengths":    comp_result.get("strengths", []),
-                                "gaps":         comp_result.get("gaps_identified", []),
-                                "sc_code":      (scoring_prompt or {}).get("prompt_code"),
-                                "sc_ver":       (scoring_prompt or {}).get("version"),
-                                "raw":          json.dumps(comp_result, ensure_ascii=False),
-                            },
+                            comp_result, _comp_usage = await score_cv(
+                                cv_text=gatekeeper_result.cleaned_cv_text,
+                                criteria=criteria_dict,
+                                job_title=criteria["job_title"],
+                                cv_language=gatekeeper_result.cv_language,
+                                gatekeeper_context=gatekeeper_context,
+                                prompt_override=_comp_prompt,
+                                openai_client=_comp_client,
+                            )
+
+                            # Log comparison usage — never raises
+                            from services.ai_usage_service import log_ai_usage as _log_ai_usage
+                            await _log_ai_usage(
+                                db=db,
+                                stage="cv_comparison",
+                                provider=_comp_provider,
+                                model=_comp_usage.get("model", comparison_client.model),
+                                prompt_tokens=_comp_usage.get("prompt_tokens", 0),
+                                completion_tokens=_comp_usage.get("completion_tokens", 0),
+                                total_tokens=_comp_usage.get("total_tokens", 0),
+                                latency_ms=_comp_usage.get("latency_ms"),
+                                request_status="success",
+                                tenant_id=tenant_id,
+                                job_id=job_id,
+                                application_id=application_id,
+                                prompt_key=(scoring_prompt or {}).get("prompt_code"),
+                                metadata={
+                                    "finish_reason":     _comp_usage.get("finish_reason"),
+                                    "cv_language":       gatekeeper_result.cv_language,
+                                    "comparison_run":    True,
+                                    "registry_model_id": _comp_model_id,
+                                },
+                            )
+
+                            comp_final = compute_final_score(comp_result, weights)
+                            comp_score_details = comp_result.get("score_details") or {}
+
+                            await db.execute(
+                                text("""
+                                    INSERT INTO application_score_comparisons (
+                                        application_id, provider, model, final_score,
+                                        score_skills, score_experience, score_education,
+                                        score_certifications, score_soft_skills,
+                                        score_domain_knowledge, score_other,
+                                        score_details, weights_snapshot,
+                                        evaluation_notes, strengths, gaps_identified,
+                                        scoring_prompt_code, scoring_prompt_version,
+                                        raw_response
+                                    ) VALUES (
+                                        :aid, :provider, :model, :final,
+                                        :s_skills, :s_exp, :s_edu, :s_cert, :s_soft, :s_domain, :s_other,
+                                        :score_details, :weights,
+                                        :notes, :strengths, :gaps,
+                                        :sc_code, :sc_ver,
+                                        :raw
+                                    )
+                                """),
+                                {
+                                    "aid":          application_id,
+                                    "provider":     comparison_client.provider,
+                                    "model":        comparison_client.model,
+                                    "final":        comp_final,
+                                    "s_skills":     comp_result.get("score_skills", 0),
+                                    "s_exp":        comp_result.get("score_experience", 0),
+                                    "s_edu":        comp_result.get("score_education", 0),
+                                    "s_cert":       comp_result.get("score_certifications", 0),
+                                    "s_soft":       comp_result.get("score_soft_skills", 0),
+                                    "s_domain":     comp_result.get("score_domain_knowledge", 0),
+                                    "s_other":      comp_result.get("score_other", 0),
+                                    "score_details": json.dumps(comp_score_details, ensure_ascii=False),
+                                    "weights":      json.dumps(weights),
+                                    "notes":        comp_result.get("evaluation_notes"),
+                                    "strengths":    comp_result.get("strengths", []),
+                                    "gaps":         comp_result.get("gaps_identified", []),
+                                    "sc_code":      (scoring_prompt or {}).get("prompt_code"),
+                                    "sc_ver":       (scoring_prompt or {}).get("version"),
+                                    "raw":          json.dumps(comp_result, ensure_ascii=False),
+                                },
+                            )
+                            await db.commit()
+                            logger.info(
+                                "[%s] Comparison score: provider=%s final=%d",
+                                application_id, comparison_client.provider, comp_final,
+                            )
+                    except Exception as comp_exc:
+                        logger.warning(
+                            "[%s] AI comparison failed (non-critical): %s",
+                            application_id, comp_exc,
                         )
-                        await db.commit()
-                        logger.info(
-                            "[%s] Comparison score: provider=%s final=%d",
-                            application_id, comparison_client.provider, comp_final,
-                        )
-                except Exception as comp_exc:
-                    logger.warning(
-                        "[%s] AI comparison failed (non-critical): %s",
-                        application_id, comp_exc,
-                    )
 
             # ── Post-scoring: confirmation email ──────────────────────────────
             try:
@@ -1252,6 +1353,64 @@ async def _score_cv_async(
 
 
 # ── Duplicate-to-log conversion ───────────────────────────────────────────────
+
+async def _score_items(db, *, application_id: str, tenant_id: str, job_id: str, criteria, revision: int, cv_text: str, raw_cv_text: str,
+                       cv_language: str, gatekeeper_hint: dict, scoring_prompt, cfg, requested_by: str | None = None,
+                       rescore: bool = False):
+    """Requirements V2 item-level scoring of one application: one model call classifies every requirement, code computes every number.
+    A model or output failure raises EvaluationProcessingError (a processing error: the task retries, nothing is scored or rejected)."""
+    from services.ai_model_registry_service import resolve_stage_client
+    from services.ai_service import _get_client, _resolve_output_language
+    from services.ai_usage_service import log_ai_usage
+    from services.item_scoring.evaluator import EvaluationProcessingError, evaluate, item_specs
+    from services.item_scoring.service import record_run
+    from services.requirements_v2.contract import CATEGORIES
+    from services.requirements_v2.scoring import lock_revision
+    from services.threshold_service import get_thresholds
+
+    doc = criteria["analysis_json"]["requirements"]
+    specs = item_specs(doc)
+    weights = {c: int(doc["categories"][c]["weight"]) for c in CATEGORIES}
+    registered = await resolve_stage_client(db, "cv_scoring")
+    default_model = (scoring_prompt or {}).get("model") or cfg.openai_model
+    attempts = [(registered.client, registered.model_name)] if registered else []
+    if not registered or not registered.is_fallback:
+        attempts.append((_get_client(), default_model))
+    output = None
+    model = default_model
+    last_error: Exception | None = None
+    for client, model in attempts:
+        try:
+            output = await evaluate(client, model, specs, cv_text, job_title=criteria["job_title"], cv_language=cv_language,
+                                    output_language=_resolve_output_language(scoring_prompt), also_in=(raw_cv_text,))
+            break
+        except EvaluationProcessingError as exc:
+            last_error = exc
+            logger.warning("[%s] Item evaluation failed with model %s: %s", application_id, model, exc)
+    if output is None:
+        raise last_error or EvaluationProcessingError("no model is available for the evaluation")
+
+    thresholds = await get_thresholds(db, tenant_id, job_id)
+    await lock_revision(db, job_id, revision)
+    summary = await record_run(
+        db, application_id=application_id, tenant_id=tenant_id, job_id=job_id, revision=revision, category_weights=weights, specs=specs,
+        output=output, model=model, thresholds=thresholds, gatekeeper_hint=gatekeeper_hint, requested_by=requested_by, rescore=rescore)
+    contacts = {k: v for k, v in output.contacts.items() if v}
+    parts = {"name": "candidate_name = :cname", "email": "candidate_email_from_cv = :cv_email", "phone": "candidate_phone_from_cv = :cv_phone"}
+    params = {"cname": contacts.get("name"), "cv_email": contacts.get("email"), "cv_phone": contacts.get("phone"), "aid": application_id}
+    if contacts and not rescore:
+        await db.execute(text(f"UPDATE applications SET {', '.join(parts[k] for k in contacts)} WHERE application_id = :aid"), params)
+    await log_ai_usage(
+        db=db, stage="cv_scoring", provider=registered.provider if registered else "openai", model=output.usage.get("model", ""),
+        prompt_tokens=output.usage.get("prompt_tokens", 0), completion_tokens=output.usage.get("completion_tokens", 0),
+        total_tokens=output.usage.get("total_tokens", 0), latency_ms=output.usage.get("latency_ms"), request_status="success",
+        tenant_id=tenant_id, job_id=job_id, application_id=application_id, prompt_key="item_level_v2", prompt_version_id=None,
+        metadata={"finish_reason": output.usage.get("finish_reason"), "items": len(specs), "run_id": summary.run_id, "rescore": rescore})
+    await db.commit()
+    logger.info("[%s] ITEM SCORED status=%s final=%s decision=%s items=%d", application_id, summary.status, summary.final_score,
+                summary.decision, len(specs))
+    return summary
+
 
 async def _write_exact_dup_to_log(
     db,

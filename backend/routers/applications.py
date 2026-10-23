@@ -19,6 +19,7 @@ from auth.dependencies import CurrentUserDep, get_current_user
 from auth.roles import RequireExport, RequireManager
 from config import get_settings
 from database import get_db, set_rls_context
+from services.effective_decision import EFFECTIVE_DECISION_SQL
 from services.application_intake_service import (
     IntakeValidationError,
     process_cv_intake,
@@ -207,7 +208,8 @@ def _build_candidate_filter_clause(
     # so callers don't need to pass processing_status=ai_scored separately.
     if ai_decision:
         db_decision = "rejected" if ai_decision == "rejected_low_match" else ai_decision
-        where_parts.append("a.processing_status = 'ai_scored' AND a.decision = :ai_dec")
+        # The effective decision (a failed gate or an unfinished item-level score is not hidden behind the stored decision).
+        where_parts.append(f"a.processing_status = 'ai_scored' AND {EFFECTIVE_DECISION_SQL} = :ai_dec")
         params["ai_dec"] = db_decision
 
     # Possible duplicate flag
@@ -405,7 +407,7 @@ async def list_applications(
     sort_column = {
         "applied_at": "a.applied_at",
         "updated_at": "a.scored_at",
-        "score": "s.final_score",
+        "score": "COALESCE(a.item_final_score, s.final_score)",
         "candidate_name": "a.candidate_name",
     }.get(sort_by, "a.applied_at")
 
@@ -431,7 +433,13 @@ async def list_applications(
             jc.name                             AS campaign_name,
             j.client_organization_id,
             co.organization_name                AS client_org_name,
-            a.decision                          AS status,
+            {EFFECTIVE_DECISION_SQL}            AS status,
+            a.decision                          AS stored_decision,
+            a.scoring_status,
+            (jcr.requirements_schema_version = 2
+             AND COALESCE(scr.requirements_revision, s.requirements_revision_used) IS NOT NULL
+             AND COALESCE(scr.requirements_revision, s.requirements_revision_used) <> jcr.requirements_revision) AS score_stale,
+            COALESCE(scr.requirements_revision, s.requirements_revision_used) AS requirements_revision_used,
             a.eligibility_status,
             a.processing_status,
             a.stopped_reason,
@@ -444,8 +452,8 @@ async def list_applications(
             a.applied_at,
             a.scored_at                         AS updated_at,
             a.is_talent_pool,
-            s.final_score                       AS score,
-            s.evaluation_notes                  AS summary,
+            COALESCE(a.item_final_score, s.final_score) AS score,
+            COALESCE(s.evaluation_notes, scr.narrative ->> 'evaluation_notes') AS summary,
             j.allow_advanced_workflow_move      AS job_allow_advanced_workflow_move,
             a.assigned_user_id,
             a.assigned_at,
@@ -480,6 +488,8 @@ async def list_applications(
         FROM applications a
         JOIN jobs j ON j.job_id = a.job_id
         LEFT JOIN application_scores s ON s.application_id = a.application_id
+        LEFT JOIN application_scoring_runs scr ON scr.application_id = a.application_id AND scr.is_current
+        LEFT JOIN job_criteria jcr ON jcr.job_id = a.job_id
         LEFT JOIN job_campaigns jc ON jc.campaign_id = j.campaign_id
         LEFT JOIN client_organizations co ON co.client_organization_id = j.client_organization_id
         LEFT JOIN users au ON au.user_id = a.assigned_user_id
@@ -505,9 +515,14 @@ async def list_applications(
             "campaign_name": r["campaign_name"],
             "client_organization_id": str(r["client_organization_id"]) if r["client_organization_id"] else None,
             "client_org_name": r["client_org_name"],
+            # status is the EFFECTIVE decision: not_eligible / review_required / not_scored are not hidden behind the stored decision.
             "status": r["status"],
+            "stored_decision": r["stored_decision"],
+            "scoring_status": r["scoring_status"],
+            "score_stale": bool(r["score_stale"]),
+            "requirements_revision_used": r["requirements_revision_used"],
             "eligibility_status": r["eligibility_status"],
-            "effective_status": _effective(r["eligibility_status"], r["status"]),
+            "effective_status": r["status"],
             "processing_status": r["processing_status"],
             "stopped_reason": r["stopped_reason"],
             "duplicate_status": r["duplicate_status"] or "not_duplicate",
@@ -584,6 +599,8 @@ _AI_RECOMMENDATION_LABELS: dict[str, str] = {
     "rejected_low_match": "Rejected — Low Match",
     "low_match":          "Rejected — Low Match",
     "not_scored":         "Not Scored",
+    "not_eligible":       "Not Eligible",
+    "review_required":    "Review Required",
 }
 
 
@@ -710,6 +727,8 @@ _AI_DECISION_FILTER_LABELS: dict[str, str] = {
     "rejected":            "Rejected — Low Match",
     "rejected_low_match":  "Rejected — Low Match",
     "not_scored":          "Not Scored",
+    "not_eligible":        "Not Eligible",
+    "review_required":     "Review Required",
 }
 
 _PROCESSING_STATUS_FILTER_LABELS: dict[str, str] = {
@@ -861,13 +880,19 @@ def _build_pdf_export(
     story.append(Paragraph(f"Total candidates exported: <b>{total}</b>", body_style))
 
     # AI Recommendation summary
-    ai_counts = {"Qualified": 0, "Partial Match": 0, "Not Recommended": 0}
+    ai_counts = {"Qualified": 0, "Partial Match": 0, "Not Recommended": 0, "Not Eligible": 0, "Review Required": 0, "Not Scored": 0}
     for r in records:
         decision = (r["status"] or "").lower()
         if decision == "qualified":
             ai_counts["Qualified"] += 1
         elif decision == "partial":
             ai_counts["Partial Match"] += 1
+        elif decision == "not_eligible":
+            ai_counts["Not Eligible"] += 1
+        elif decision == "review_required":
+            ai_counts["Review Required"] += 1
+        elif decision == "not_scored":
+            ai_counts["Not Scored"] += 1
         elif decision:
             ai_counts["Not Recommended"] += 1
 
@@ -1040,7 +1065,7 @@ async def export_applications(
     sort_column = {
         "applied_at": "a.applied_at",
         "updated_at": "a.scored_at",
-        "score": "s.final_score",
+        "score": "COALESCE(a.item_final_score, s.final_score)",
         "candidate_name": "a.candidate_name",
     }.get(sort_by, "a.applied_at")
 
@@ -1053,8 +1078,8 @@ async def export_applications(
             j.job_code,
             jc.name                          AS campaign_name,
             co.organization_name             AS client_org_name,
-            s.final_score                    AS score,
-            a.decision                       AS status,
+            COALESCE(a.item_final_score, s.final_score) AS score,
+            {EFFECTIVE_DECISION_SQL}         AS status,
             a.processing_status,
             a.workflow_status,
             COALESCE(au.full_name, au.email) AS assigned_user_name,
@@ -1153,7 +1178,11 @@ async def get_application_details(
                 a.preferred_contact_email, a.preferred_contact_source,
                 a.preferred_contact_confidence,
                 a.submitted_by_user_id, a.submitted_by_name, a.submitted_by_email,
-                a.decision, a.eligibility_status, a.submission_source, a.processing_status,
+                a.decision, a.eligibility_status, a.scoring_status, a.item_final_score, a.submission_source, a.processing_status,
+                (SELECT requirements_revision FROM application_scoring_runs r2 WHERE r2.application_id = a.application_id AND r2.is_current)
+                    AS item_run_revision,
+                (SELECT requirements_revision FROM job_criteria jc3 WHERE jc3.job_id = a.job_id) AS current_requirements_revision,
+                (SELECT requirements_schema_version FROM job_criteria jc4 WHERE jc4.job_id = a.job_id) AS requirements_schema_version,
                 a.stopped_reason,
                 a.evaluation_stage, a.evaluation_exit_reason,
                 a.gatekeeper_passed,
@@ -1176,7 +1205,7 @@ async def get_application_details(
                 j.title AS job_title, j.job_id,
                 (SELECT af2.original_name FROM application_files af2
                  WHERE af2.application_id = a.application_id LIMIT 1) AS original_filename,
-                s.final_score,
+                s.final_score, s.requirements_revision_used AS legacy_revision_used,
                 s.score_skills, s.score_experience, s.score_education,
                 s.score_certifications, s.score_soft_skills,
                 s.score_domain_knowledge, s.score_other,
@@ -1379,8 +1408,18 @@ async def get_application_details(
         # Eligibility is separate from the score: the score is shown as it is and cannot override a failed gate. The Gate Summary
         # (GET /applications/{id}/gates) lists each gate.
         "eligibility_status": app["eligibility_status"],
-        "effective_decision": _effective(app["eligibility_status"], display_decision),
-        "overall_score": int(app["final_score"]) if app["final_score"] is not None else 0,
+        "effective_decision": _effective(app["eligibility_status"], display_decision, app["scoring_status"]),
+        "scoring_status": app["scoring_status"],
+        # item_level_v2: scored per Required item by code. legacy_category: the older category-level score, shown as it was and never read as
+        # item results. None: not scored.
+        "scoring_method": ("item_level_v2" if app["scoring_status"] else ("legacy_category" if app["final_score"] is not None else None)),
+        "requirements_revision_used": app["item_run_revision"] if app["scoring_status"] else app["legacy_revision_used"],
+        "current_requirements_revision": app["current_requirements_revision"],
+        "score_stale": bool(app["requirements_schema_version"] == 2 and app["current_requirements_revision"] is not None and (
+            app["item_run_revision"] if app["scoring_status"] else app["legacy_revision_used"]) is not None and (
+            app["item_run_revision"] if app["scoring_status"] else app["legacy_revision_used"]) != app["current_requirements_revision"]),
+        "overall_score": (app["item_final_score"] if app["scoring_status"] == "scored" else None) if app["scoring_status"]
+                         else (int(app["final_score"]) if app["final_score"] is not None else 0),
         "submission_source": app["submission_source"],
         "processing_status": app["processing_status"],
         "stopped_reason":    app["stopped_reason"],
@@ -2072,9 +2111,9 @@ async def update_recruiter_notes(
     return {"recruiter_notes": body.recruiter_notes}
 
 
-def _effective(eligibility_status: str | None, decision: str | None) -> str | None:
+def _effective(eligibility_status: str | None, decision: str | None, scoring_status: str | None = None) -> str | None:
     from services.eligibility_service import effective_decision
-    return effective_decision(eligibility_status, decision)
+    return effective_decision(eligibility_status, decision, scoring_status)
 
 
 async def _refresh_eligibility(db: AsyncSession, application_id: str) -> None:

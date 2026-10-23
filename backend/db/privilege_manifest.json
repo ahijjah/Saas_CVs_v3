@@ -235,6 +235,7 @@
     {
       "consumers": [
         "routers.applications",
+        "routers.item_scoring",
         "routers.jobs",
         "services.application_intake_service",
         "services.application_reuse_service",
@@ -405,6 +406,60 @@
     },
     {
       "consumers": [
+        "services.item_scoring.service"
+      ],
+      "kind": "table",
+      "object": "application_item_evaluation_events",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.item_scoring.service"
+      ],
+      "kind": "table",
+      "object": "application_item_evaluation_events",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "services.eligibility_service",
+        "services.item_scoring.service"
+      ],
+      "kind": "table",
+      "object": "application_item_evaluations",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.eligibility_service",
+        "services.item_scoring.service"
+      ],
+      "kind": "table",
+      "object": "application_item_evaluations",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
         "services.knockout_analysis_service",
         "services.screening_validation_service"
       ],
@@ -542,6 +597,7 @@
       "consumers": [
         "routers.applications",
         "routers.campaigns",
+        "routers.item_scoring",
         "workers.cv_score"
       ],
       "kind": "table",
@@ -563,6 +619,38 @@
       "privileges": [
         "SELECT",
         "INSERT"
+      ],
+      "role": "cv_worker"
+    },
+    {
+      "consumers": [
+        "routers.applications",
+        "services.eligibility_service",
+        "services.item_scoring.service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_scoring_runs",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "UPDATE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
+        "services.eligibility_service",
+        "services.item_scoring.service",
+        "workers.cv_score"
+      ],
+      "kind": "table",
+      "object": "application_scoring_runs",
+      "path": "worker",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE"
       ],
       "role": "cv_worker"
     },
@@ -594,13 +682,16 @@
         "routers.dashboard",
         "routers.gates",
         "routers.interviews",
+        "routers.item_scoring",
         "routers.jobs",
         "routers.tenant",
         "services.application_intake_service",
         "services.application_reuse_service",
         "services.communication_events",
         "services.duplicate_detection",
+        "services.effective_decision",
         "services.eligibility_service",
+        "services.item_scoring.service",
         "services.knockout_questions_service",
         "services.screening_validation_service",
         "services.subscription_service",
@@ -623,6 +714,7 @@
         "services.duplicate_detection",
         "services.eligibility_service",
         "services.intake_notification_service",
+        "services.item_scoring.service",
         "services.knockout_questions_service",
         "services.subscription_service",
         "workers.cv_score",
@@ -646,6 +738,7 @@
         "services.application_intake_service",
         "services.duplicate_detection",
         "services.eligibility_service",
+        "services.item_scoring.service",
         "services.knockout_questions_service",
         "services.subscription_service",
         "workers.cv_score"
@@ -958,12 +1051,15 @@
     },
     {
       "consumers": [
+        "routers.applications",
+        "routers.item_scoring",
         "routers.jobs",
         "services.ai_service",
         "services.application_intake_service",
         "services.application_reuse_service",
         "services.criteria_status",
         "services.eligibility_service",
+        "services.item_scoring.service",
         "services.knockout_questions_service",
         "services.requirements_edit",
         "services.requirements_v2.contract",
@@ -988,6 +1084,7 @@
         "services.application_intake_service",
         "services.criteria_status",
         "services.eligibility_service",
+        "services.item_scoring.service",
         "services.knockout_questions_service",
         "services.requirements_v2.contract",
         "services.requirements_v2.scoring",
@@ -1010,6 +1107,7 @@
         "services.application_intake_service",
         "services.criteria_status",
         "services.eligibility_service",
+        "services.item_scoring.service",
         "services.knockout_questions_service",
         "services.requirements_v2.contract",
         "services.requirements_v2.scoring",
@@ -1088,6 +1186,7 @@
         "routers.communication",
         "routers.dashboard",
         "routers.interviews",
+        "routers.item_scoring",
         "routers.job_requirements",
         "routers.jobs",
         "routers.tenant",
@@ -1467,6 +1566,7 @@
         "routers.tenant",
         "routers.workflow_policies",
         "services.eligibility_service",
+        "services.item_scoring.service",
         "services.knockout_analysis_service",
         "services.requirements_edit"
       ],
@@ -1484,6 +1584,7 @@
       "consumers": [
         "services.eligibility_service",
         "services.intake_notification_service",
+        "services.item_scoring.service",
         "services.knockout_analysis_service"
       ],
       "kind": "table",
@@ -1503,6 +1604,7 @@
         "routers.platform_config",
         "routers.subscription_plans",
         "services.eligibility_service",
+        "services.item_scoring.service",
         "services.knockout_analysis_service"
       ],
       "kind": "table",

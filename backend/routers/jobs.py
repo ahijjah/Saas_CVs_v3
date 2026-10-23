@@ -261,11 +261,14 @@ async def list_jobs(
                 -- AI Scored: primary classification by processing_status
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored')                           AS applications_scored,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
-                    AND a.decision = 'qualified')                                                                 AS applications_qualified,
+                    AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'qualified')                                                                 AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
-                    AND a.decision = 'partial')                                                                   AS applications_partial,
+                    AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'partial')                                                                   AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
-                    AND a.decision = 'rejected')                                                                  AS applications_rejected,
+                    AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'rejected')                                                                  AS applications_rejected,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored' AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'not_eligible') AS applications_not_eligible,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored' AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'review_required') AS applications_review_required,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored' AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'not_scored') AS applications_not_scored,
                 -- Stopped Before AI: processing_status = 'failed'
                 -- stopped_reason is authoritative; fall back to security_check_status for historical rows
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
@@ -324,6 +327,9 @@ async def list_jobs(
             "applications_qualified":           r["applications_qualified"],
             "applications_partial":             r["applications_partial"],
             "applications_rejected":            r["applications_rejected"],
+            "applications_not_eligible":        r["applications_not_eligible"],
+            "applications_review_required":     r["applications_review_required"],
+            "applications_not_scored":          r["applications_not_scored"],
             "applications_in_progress":         int(r["applications_in_progress"]),
             "applications_scored":              int(r["applications_scored"]),
             "applications_security_blocked":    int(r["applications_security_blocked"]),
@@ -533,11 +539,14 @@ async def get_job_details(
                 -- AI Scored: primary classification by processing_status
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored')                           AS applications_scored,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
-                    AND a.decision = 'qualified')                                                                 AS applications_qualified,
+                    AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'qualified')                                                                 AS applications_qualified,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
-                    AND a.decision = 'partial')                                                                   AS applications_partial,
+                    AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'partial')                                                                   AS applications_partial,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored'
-                    AND a.decision = 'rejected')                                                                  AS applications_rejected,
+                    AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'rejected')                                                                  AS applications_rejected,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored' AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'not_eligible') AS applications_not_eligible,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored' AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'review_required') AS applications_review_required,
+                COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored' AND (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'not_scored') AS applications_not_scored,
                 -- Stopped Before AI: processing_status = 'failed'
                 -- stopped_reason is authoritative; fall back to security_check_status for historical rows
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'failed'
@@ -695,6 +704,9 @@ async def get_job_details(
             "applications_qualified":           job["applications_qualified"],
             "applications_partial":             job["applications_partial"],
             "applications_rejected":            job["applications_rejected"],
+            "applications_not_eligible":        job["applications_not_eligible"],
+            "applications_review_required":     job["applications_review_required"],
+            "applications_not_scored":          job["applications_not_scored"],
             "applications_valid_count":         job["applications_valid_count"],
             "applications_in_progress":         int(job["applications_in_progress"]),
             "applications_scored":              int(job["applications_scored"]),
