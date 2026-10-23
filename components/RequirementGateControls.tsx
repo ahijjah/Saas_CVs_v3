@@ -2,7 +2,7 @@ import React from 'react';
 import type { RequirementsItem } from '../services/requirementsApi';
 import type { KnockoutQuestion } from '../types';
 import {
-  DEFAULT_GATE_ACTION, DEFAULT_GATE_METHOD, GATE_ACTIONS, GATE_METHODS, GateDraft, Lang, draftFromItem, gateCopy, gateProblem, linkableQuestions,
+  DEFAULT_GATE_ACTION, DEFAULT_GATE_METHOD, GATE_ACTIONS, GateDraft, Lang, draftFromItem, gateCopy, gateProblem,
   suggestedDraft,
 } from '../utils/gates';
 
@@ -20,7 +20,7 @@ interface Props {
 }
 
 /** The Mandatory Gate control of one Required item, shown while editing. Preferred items show no control, only the reason. */
-export default function RequirementGateControls({ item, draft, importance, questions, otherLinkedQuestionIds, lang, disabled, onChange }: Props) {
+export default function RequirementGateControls({ item, draft, importance, lang, disabled, onChange }: Props) {
   const copy = gateCopy(lang);
   if (importance !== 'required') {
     return item.gate || item.gate_suggestion || draft ? (
@@ -28,9 +28,14 @@ export default function RequirementGateControls({ item, draft, importance, quest
     ) : null;
   }
   const effective: GateDraft | null = draft === undefined ? draftFromItem(item) : draft;
-  const linkable = linkableQuestions(questions);
-  const problem = gateProblem(effective, importance, otherLinkedQuestionIds, lang);
-  const patch = (changes: Partial<GateDraft>) => onChange({ ...(effective ?? suggestedDraft()), ...changes });
+  const problem = gateProblem(effective, importance, [], lang);
+  const patch = (changes: Partial<GateDraft>) => onChange({
+    ...(effective ?? suggestedDraft()),
+    ...changes,
+    // Requirement gates are always verified from CV evidence. Candidate answers belong to Knockout Questions.
+    verification_method: DEFAULT_GATE_METHOD,
+    linked_question_id: null,
+  });
 
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2" data-testid={`gate-controls-${item.id}`}>
@@ -52,18 +57,7 @@ export default function RequirementGateControls({ item, draft, importance, quest
         </div>
       )}
       {effective && (
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="text-xs text-slate-700">
-            {copy.verificationMethod}
-            <select aria-label={copy.verificationMethod} disabled={disabled} className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm"
-              value={effective.verification_method ?? DEFAULT_GATE_METHOD}
-              onChange={(e) => {
-                const method = e.target.value as GateDraft['verification_method'];
-                patch({ verification_method: method, linked_question_id: method === 'candidate_question' ? effective.linked_question_id : null });
-              }}>
-              {GATE_METHODS.map((m) => <option key={m} value={m}>{copy.methods[m]}</option>)}
-            </select>
-          </label>
+        <div>
           <label className="text-xs text-slate-700">
             {copy.failureAction}
             <select aria-label={copy.failureAction} disabled={disabled} className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm"
@@ -72,18 +66,6 @@ export default function RequirementGateControls({ item, draft, importance, quest
               {GATE_ACTIONS.map((a) => <option key={a} value={a}>{copy.actions[a]}</option>)}
             </select>
           </label>
-          {effective.verification_method === 'candidate_question' && (
-            <label className="text-xs text-slate-700 sm:col-span-2">
-              {copy.linkedQuestion}
-              <select aria-label={copy.linkedQuestion} disabled={disabled} className="mt-1 w-full border border-slate-300 rounded px-2 py-1 text-sm"
-                value={effective.linked_question_id ?? ''}
-                onChange={(e) => patch({ linked_question_id: e.target.value || null })}>
-                <option value="">{copy.noLinkedQuestion}</option>
-                {linkable.map((q) => <option key={q.question_id} value={q.question_id}>{q.question_text}</option>)}
-              </select>
-              <span className="block text-[11px] text-slate-500 mt-1">{copy.linkedQuestionHelp}</span>
-            </label>
-          )}
         </div>
       )}
       {problem && <p role="alert" className="text-xs text-amber-700">{problem}</p>}

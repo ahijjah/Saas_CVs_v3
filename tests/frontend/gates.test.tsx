@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import GateSummary from '../../components/GateSummary';
 import RequirementGateControls from '../../components/RequirementGateControls';
 import QuestionGateControl from '../../components/QuestionGateControl';
@@ -125,15 +125,16 @@ describe('RequirementGateControls', () => {
     fireEvent.click(screen.getByRole('button', { name: GATE_COPY.en.confirmGate }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ mandatory: true, verification_method: 'cv_evidence', failure_action: 'hold_for_review' }));
   });
-  it('lists only gate questions for the link and clears the link when the method changes', () => {
+  it('keeps CV evidence internal and exposes only the failure action', () => {
     const onChange = vi.fn();
-    const questions = [{ question_id: Q1, question_text: 'Licence?', is_eligibility_gate: true }, { question_id: Q2, question_text: 'Advisory?', is_eligibility_gate: false }] as any;
-    render(<RequirementGateControls item={gated({ verification_method: 'candidate_question', linked_question_id: Q1 })} draft={undefined} importance="required"
-      {...props} questions={questions} onChange={onChange} />);
-    const select = screen.getByLabelText(GATE_COPY.en.linkedQuestion);
-    expect(within(select).queryByText('Advisory?')).toBeNull();
-    fireEvent.change(screen.getByLabelText(GATE_COPY.en.verificationMethod), { target: { value: 'manual' } });
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ verification_method: 'manual', linked_question_id: null }));
+    render(<RequirementGateControls item={gated({ verification_method: 'candidate_question', linked_question_id: Q1 })}
+      draft={undefined} importance="required" {...props} onChange={onChange} />);
+    expect(screen.queryByLabelText(GATE_COPY.en.verificationMethod)).toBeNull();
+    expect(screen.queryByLabelText(GATE_COPY.en.linkedQuestion)).toBeNull();
+    fireEvent.change(screen.getByLabelText(GATE_COPY.en.failureAction), { target: { value: 'not_eligible' } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      verification_method: 'cv_evidence', failure_action: 'not_eligible', linked_question_id: null,
+    }));
   });
   it('renders in Arabic', () => {
     render(<RequirementGateControls item={base} draft={undefined} importance="required" {...props} lang="ar" />);
