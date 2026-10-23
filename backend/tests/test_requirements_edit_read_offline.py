@@ -21,7 +21,7 @@ JD = "We need Python and SQL. Five years of backend work is preferred."
 ORIGINAL_JD_TEXT = "Python and SQL"
 STAMP = "2026-10-17T12:00:00+00:00"
 CANARY = "CANARY"
-ITEM_KEYS = set(E.ITEM_FIELDS) | {"experience"}
+ITEM_KEYS = set(E.ITEM_FIELDS) | {"experience", "gate", "gate_suggestion"}
 
 
 def _item(item_id, text, importance, weight=None, **kw):

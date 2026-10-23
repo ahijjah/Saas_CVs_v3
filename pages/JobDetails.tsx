@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '../services/api';
 import { canMutateApplications } from '../utils/permissions';
 import RequirementsPanel from '../components/RequirementsPanel';
+import QuestionGateControl from '../components/QuestionGateControl';
+import { gateCopy, questionGatePayload, questionGateProblem } from '../utils/gates';
 import { scoringBlockedByRequirements } from '../services/requirementsEdits';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria, AnalysisJson } from '../types';
@@ -231,7 +233,7 @@ const T = {
     knockoutTypeyesNo: 'Yes / No',
     knockoutTypeSingleChoice: 'Single Choice',
     knockoutTypeNumber: 'Number',
-    knockoutRequired: 'Required',
+    knockoutRequired: 'Response Required',
     knockoutPassing: 'Passing criteria',
     knockoutPassingAnswers: 'Passing answers',
     knockoutPassingOperator: 'Operator',
@@ -458,7 +460,7 @@ const T = {
     knockoutTypeyesNo: 'نعم / لا',
     knockoutTypeSingleChoice: 'اختيار واحد',
     knockoutTypeNumber: 'رقمي',
-    knockoutRequired: 'إلزامي',
+    knockoutRequired: 'الرد مطلوب',
     knockoutPassing: 'معايير الاجتياز',
     knockoutPassingAnswers: 'إجابات الاجتياز',
     knockoutPassingOperator: 'المعامل',
@@ -1236,8 +1238,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             is_required: q.is_required ?? true,
             options: opts,
             passing_criteria: criteria,
+            ...questionGatePayload(q),
           };
         });
+      const gateProblem = knockoutDraft.filter(q => q.question_text?.trim()).map(q => questionGateProblem(q, lang)).find(Boolean);
+      if (gateProblem) { addToast(gateProblem, 'error'); setSavingKnockout(false); return; }
       await apiService.put(
         `${WEBHOOK_CONFIG.UPDATE_JOB_URL}/${(details as any).job_id}`,
         { knockout_questions: questions },
@@ -1255,7 +1260,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     } finally {
       setSavingKnockout(false);
     }
-  }, [details, knockoutDraft, auth.token, addToast, t]);
+  }, [details, knockoutDraft, auth.token, addToast, t, lang]);
 
   const addKnockoutDraftQuestion = useCallback(() => {
     if (knockoutDraft.length >= MAX_KNOCKOUT) return;
@@ -2475,6 +2480,12 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                             {q.is_required && (
                               <span className="text-[9px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full uppercase">{(t as any).knockoutRequired}</span>
                             )}
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${q.is_eligibility_gate ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {q.is_eligibility_gate ? gateCopy(lang).gateQuestion : gateCopy(lang).advisoryQuestion}
+                            </span>
+                            {q.linked_requirement && (
+                              <span className="text-[10px] text-textMuted" data-testid="question-linked-requirement">{gateCopy(lang).linkedTo(q.linked_requirement.text)}</span>
+                            )}
                             {q.options && q.options.length > 0 && (
                               <span className="text-[10px] text-textMuted">{q.options.join(' · ')}</span>
                             )}
@@ -2527,6 +2538,8 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                             <span className="text-xs text-textMuted font-semibold">{(t as any).knockoutRequired}</span>
                           </label>
                         </div>
+                        <QuestionGateControl lang={lang} question={q}
+                          onChange={(field, value) => updateKnockoutDraftQuestion(idx, field, value)} />
 
                         {/* Options textarea — single_choice only */}
                         {q.question_type === 'single_choice' && (
@@ -2804,7 +2817,7 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
               </div>
             )}
             <RequirementsPanel jobId={details.job_id} userRole={auth.user?.role} onReadinessChange={setRequirementsCanProceed}
-              extractionStatus={details.criteria_extraction_status} />
+              extractionStatus={details.criteria_extraction_status} knockoutQuestions={details.knockout_questions} />
           </>
         )}
         <div className={`bg-white rounded-2xl border border-border shadow-sm p-6 lg:sticky lg:top-20 ${isRequirementsV2 ? 'hidden' : ''}`}>

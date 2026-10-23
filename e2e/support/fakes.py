@@ -41,6 +41,9 @@ def scripted_response(description: str) -> str:
                                                cue="preferred")]}, {"skills": 100})
     if "SCENARIO-INVALID" in description:
         return "{not json"
+    if "SCENARIO-GATES" in description:
+        return _response({"skills": [_item("Valid driving licence", "required", "must hold a valid driving licence"),
+                                     _item("Python", "preferred", "Python is a plus", cue="a plus")]}, {"skills": 100})
     if "SCENARIO-PREFERRED" in description:
         return _response({"experience": [_item("Reporting tools", "preferred", "Knowledge of reporting tools is preferred",
                                                cue="preferred")]}, {})

@@ -89,6 +89,30 @@ class Api:
             raise ApiError(f"upload failed: {status} {body}")
         return body
 
+    def application_id(self, job, timeout=60):
+        """The id of the job's first application, once the upload has created it."""
+        for _ in range(timeout):
+            with self._worker_connect() as conn, conn.cursor() as cur:
+                cur.execute("SELECT application_id::text FROM applications WHERE job_id = %s ORDER BY created_at LIMIT 1", (job,))
+                row = cur.fetchone()
+            if row:
+                return row[0]
+            time.sleep(1)
+        raise ApiError(f"no application for {job}")
+
+    def gates(self, token, application):
+        return _request("GET", f"{self.base}/applications/{application}/gates", token)
+
+    def gate_status(self, token, application, wanted, timeout=60):
+        """The Gate Summary once its eligibility status is `wanted` (the scoring worker evaluates the gates after it scores)."""
+        body = None
+        for _ in range(timeout):
+            status, body = self.gates(token, application)
+            if status == 200 and body["eligibility_status"] == wanted:
+                return body
+            time.sleep(1)
+        raise ApiError(f"gates never reached {wanted} for {application}: {body}")
+
     def _connect(self, dsn=None):
         conn = psycopg2.connect(dsn or self.stack.psycopg_dsn, options="-c search_path=cv_analyzer")
         conn.autocommit = True

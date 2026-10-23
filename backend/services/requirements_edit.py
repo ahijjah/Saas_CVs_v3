@@ -48,6 +48,7 @@ from services.requirements_v2.readiness import (
 from services.requirements_v2.structural_review import (
     DECISIONS, READINESS_INVALID, STATUS_OPEN, STRUCTURAL_KEY, StructuralResolutionError, resolve_finding, structural_status,
 )
+from services.requirements_v2 import gates as gate_rules
 from services.requirements_v2.structure import StructureError, confirm_structure, record_structure_edits, structure_status
 from services.requirements_v2.validation import validate_final, validate_structure
 
@@ -141,6 +142,7 @@ class SaveAudit:
     revision_before: int | None = None
     revision_after: int | None = None
     review_actions: tuple[tuple[str, str, str | None], ...] = ()   # (action kind, id, decision or None): no text
+    gate_changes: tuple[tuple[str, str], ...] = ()                 # (item id, "confirmed" | "changed" | "cleared"): no text
 
 
 @dataclass(frozen=True)
@@ -245,12 +247,27 @@ class ReorderItems:
     item_ids: tuple[str, ...]
 
 
+# Mandatory Gates. Both are statements by the signed-in admin or HR manager: confirming a gate (accepting the extraction's suggestion
+# or choosing one) and withdrawing it. The user and the time are taken on the server, like every review action.
+@dataclass(frozen=True)
+class SetGate:
+    item_id: str
+    verification_method: str | None
+    failure_action: str
+    linked_question_id: str | None
+
+
+@dataclass(frozen=True)
+class ClearGate:
+    item_id: str
+
+
 REVIEW_OPERATIONS = (ConfirmNoNumericScore, AcknowledgeClassificationWarning, ConfirmStructure, ResolveStructuralFinding,
-                     ReorderItems)
+                     ReorderItems, SetGate, ClearGate)
 
 Operation = Union[SetText, SetImportance, SetItemWeight, SetAlternatives, SetExperience, SetCategoryWeight,
                   AddItem, RemoveItem, ConfirmNoNumericScore, AcknowledgeClassificationWarning, ConfirmStructure,
-                  ResolveStructuralFinding, ReorderItems]
+                  ResolveStructuralFinding, ReorderItems, SetGate, ClearGate]
 
 # The exact field set of each operation. Anything else is refused, so a protected field can never be sent.
 OPERATION_FIELDS: dict[str, frozenset[str]] = {
@@ -267,6 +284,8 @@ OPERATION_FIELDS: dict[str, frozenset[str]] = {
     "confirm_structure": frozenset({"item_id"}),
     "resolve_structural_finding": frozenset({"finding_id", "decision", "note", "evidence_item_ids"}),
     "reorder_items": frozenset({"category", "item_ids"}),
+    "set_gate": frozenset({"item_id", "verification_method", "failure_action", "linked_question_id"}),
+    "clear_gate": frozenset({"item_id"}),
 }
 EXPERIENCE_FIELDS = frozenset({"subject", "min_years"})
 OPERATION_NAMES: dict[type, str] = {
@@ -275,7 +294,7 @@ OPERATION_NAMES: dict[type, str] = {
     AddItem: "add_item", RemoveItem: "remove_item",
     ConfirmNoNumericScore: "confirm_no_numeric_score", AcknowledgeClassificationWarning: "acknowledge_classification_warning",
     ConfirmStructure: "confirm_structure", ResolveStructuralFinding: "resolve_structural_finding",
-    ReorderItems: "reorder_items",
+    ReorderItems: "reorder_items", SetGate: "set_gate", ClearGate: "clear_gate",
 }
 
 
@@ -414,6 +433,24 @@ def _experience(value: object, pos: int) -> dict | None:
     return {"subject": value["subject"], "min_years": value["min_years"]}
 
 
+def _gate_method(value: object, pos: int) -> str | None:
+    if value is not None and value not in gate_rules.VERIFICATION_METHODS:
+        raise InvalidOperation(f"Operation {pos}: verification_method must be one of {', '.join(gate_rules.VERIFICATION_METHODS)}.")
+    return value
+
+
+def _gate_action(value: object, pos: int) -> str:
+    if value not in gate_rules.FAILURE_ACTIONS:
+        raise InvalidOperation(f"Operation {pos}: failure_action must be one of {', '.join(gate_rules.FAILURE_ACTIONS)}.")
+    return value
+
+
+def _question_id_or_none(value: object, pos: int) -> str | None:
+    if value is not None and not gate_rules.is_uuid(value):
+        raise InvalidOperation(f"Operation {pos}: linked_question_id must be a question id or null.")
+    return value
+
+
 _BUILDERS = {
     "set_text": lambda r, p: SetText(_item_id(r["item_id"], p), _str(r["text"], "text", p)),
     "set_importance": lambda r, p: SetImportance(_item_id(r["item_id"], p), _importance(r["importance"], p)),
@@ -432,6 +469,9 @@ _BUILDERS = {
         _token(r["finding_id"], "finding_id", p), _decision(r["decision"], p), _note(r["note"], p),
         _evidence(r["evidence_item_ids"], p)),
     "reorder_items": lambda r, p: ReorderItems(_category(r["category"], p), _item_id_list(r["item_ids"], p)),
+    "set_gate": lambda r, p: SetGate(_item_id(r["item_id"], p), _gate_method(r["verification_method"], p),
+                                     _gate_action(r["failure_action"], p), _question_id_or_none(r["linked_question_id"], p)),
+    "clear_gate": lambda r, p: ClearGate(_item_id(r["item_id"], p)),
 }
 
 
@@ -523,6 +563,11 @@ def _apply_review(doc: dict, op: Operation, pos: int, *, user_id: str, now: str,
             return resolve_finding(doc, op.finding_id, decision=op.decision, user_id=user_id, resolved_at=now,
                                    jd_text=jd_text or "", note=op.note,
                                    evidence_item_ids=list(op.evidence_item_ids) if op.evidence_item_ids is not None else None)
+        if isinstance(op, SetGate):
+            return gate_rules.set_gate(doc, op.item_id, verification_method=op.verification_method, failure_action=op.failure_action,
+                                       linked_question_id=op.linked_question_id, user_id=user_id, confirmed_at=now)
+        if isinstance(op, ClearGate):
+            return gate_rules.clear_gate(doc, op.item_id)
         return reorder_items(doc, op.category, list(op.item_ids))
     except (AcknowledgmentError, ConfirmationError, StructureError, StructuralResolutionError) as exc:
         raise InvalidOperation(f"Operation {pos}: {exc}", code=exc.code if hasattr(exc, "code") else "invalid_review_action") from exc
@@ -564,7 +609,24 @@ def _save_audit(stored: dict, document: dict, ops: tuple[Operation, ...], record
         readiness_before=compute_readiness(stored, original=original, jd_text=jd_text).state,
         readiness_after=compute_readiness(document, original=original, jd_text=jd_text).state,
         review_actions=tuple(_review_action(op) for op in ops if isinstance(op, REVIEW_OPERATIONS)),
+        gate_changes=_gate_changes(before, after),
     )
+
+
+def _gate_changes(before: dict[str, dict], after: dict[str, dict]) -> tuple[tuple[str, str], ...]:
+    """Which items gained, changed or lost a confirmed gate in this save. Who and when are not compared: re-confirming the same
+    configuration is not a change."""
+    changes = []
+    for item_id in sorted(before.keys() | after.keys()):
+        old = gate_rules.gate_summary(before[item_id]) if item_id in before else None
+        new = gate_rules.gate_summary(after[item_id]) if item_id in after else None
+        if old == new:
+            continue
+        if new is None:
+            changes.append((item_id, "cleared"))
+        else:
+            changes.append((item_id, "confirmed" if old is None else "changed"))
+    return tuple(changes)
 
 
 def _review_action(op: Operation) -> tuple[str, str, str | None]:
@@ -578,6 +640,8 @@ def _review_action(op: Operation) -> tuple[str, str, str | None]:
         return kind, op.finding_id, op.decision
     if isinstance(op, ReorderItems):
         return kind, op.category, None
+    if isinstance(op, (SetGate, ClearGate)):
+        return kind, op.item_id, None
     return kind, "", None
 
 
@@ -647,6 +711,40 @@ _UPDATE_CRITERIA = text(
     " RETURNING requirements_revision")
 
 
+_LOAD_LINKED_QUESTIONS = text(
+    "SELECT question_id::text, job_id::text, question_type, options, passing_criteria, is_eligibility_gate"
+    " FROM job_knockout_questions WHERE tenant_id = CAST(:tid AS uuid) AND question_id = ANY(CAST(:ids AS uuid[]))")
+
+
+async def verify_question_links(db: AsyncSession, tenant_id: str, job_id: str, doc: dict) -> None:
+    """The checks on a gate's linked knockout question that need the database. The question must exist for this tenant (another
+    tenant's question is invisible, so it is reported as not found), belong to this job, have valid passing criteria, and be an eligibility
+    gate itself. Raises InvalidRequirements with item-level issues; nothing is changed."""
+    from services.knockout_questions_service import passing_criteria_problem
+    gates = [g for g in gate_rules.confirmed_gates(doc) if g["linked_question_id"]]
+    if not gates:
+        return
+    ids = sorted({g["linked_question_id"].lower() for g in gates})
+    rows = {r[0].lower(): r for r in (await db.execute(_LOAD_LINKED_QUESTIONS, {"tid": tenant_id, "ids": ids})).all()}
+    issues: list[Issue] = []
+    for g in gates:
+        row = rows.get(g["linked_question_id"].lower())
+
+        def bad(code: str, message: str) -> None:
+            issues.append(Issue(code, message, category=g["category"], item_id=g["item_id"]))
+
+        if row is None:
+            bad("linked_question_not_found", "The linked knockout question does not exist.")
+        elif row[1].lower() != str(job_id).lower():
+            bad("linked_question_other_job", "The linked knockout question belongs to another job.")
+        elif passing_criteria_problem(row[2], row[4], row[3]) is not None:
+            bad("linked_question_invalid_criteria", "The linked knockout question has no valid passing criteria.")
+        elif not row[5]:
+            bad("linked_question_not_a_gate", "Turn on 'Use as Eligibility Gate' for the linked knockout question first.")
+    if issues:
+        raise InvalidRequirements("A gate is linked to a knockout question that cannot verify it.", issues=tuple(issues))
+
+
 async def save_operations(db: AsyncSession, user: EditingUser, job_id: str, *, client_revision: int,
                           ops: tuple[Operation, ...], now: str) -> SaveResult:
     """Apply a save inside the caller's transaction. Nothing is written unless every check passes. The revision is incremented
@@ -684,6 +782,8 @@ async def save_operations(db: AsyncSession, user: EditingUser, job_id: str, *, c
     original_analysis = original_json if isinstance(original_json, dict) else {}
     planned = plan_operations(stored, original_analysis.get(REQUIREMENTS_KEY), retired, ops,
                               user_id=user.user_id, now=now, jd_text=job[0])
+
+    await verify_question_links(db, user.tenant_id, job_id, planned.document)
 
     written = (await db.execute(_UPDATE_CRITERIA, {
         "doc": json.dumps(planned.document, ensure_ascii=False),
@@ -831,6 +931,12 @@ def _project_document(doc: dict) -> dict:
             projected = {k: copy.deepcopy(item[k]) for k in ITEM_FIELDS}
             exp = item.get("experience")
             projected["experience"] = None if exp is None else {"subject": exp["subject"], "min_years": exp["min_years"]}
+            gate, suggestion = item.get("gate"), item.get("gate_suggestion")
+            # The confirmed gate without the identity of who confirmed it; the suggestion as the extraction left it.
+            projected["gate"] = None if gate is None else {
+                "mandatory": True, "verification_method": gate["verification_method"], "failure_action": gate["failure_action"],
+                "linked_question_id": gate["linked_question_id"], "confirmed_at": gate["confirmed_at"]}
+            projected["gate_suggestion"] = None if suggestion is None else {"cue": suggestion["cue"], "source_text": suggestion.get("source_text")}
             items.append(projected)
         categories[c] = {"weight": doc["categories"][c]["weight"], "items": items}
     projected = {"schema_version": doc["schema_version"], "categories": categories}
@@ -975,6 +1081,7 @@ def audit_details(audit: SaveAudit) -> dict:
         "readiness": {"before": audit.readiness_before, "after": audit.readiness_after},
         "review_actions": [{"kind": kind, "id": ident, **({"decision": decision} if decision else {})}
                            for kind, ident, decision in audit.review_actions],
+        "gate_changes": [{"item_id": item_id, "kind": kind} for item_id, kind in audit.gate_changes],
     }
 
 

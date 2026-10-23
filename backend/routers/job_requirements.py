@@ -45,6 +45,21 @@ class ExperienceOut(_Strict):
     min_years: int | None
 
 
+class GateOut(_Strict):
+    """A confirmed Mandatory Gate. The confirming user is never returned."""
+    mandatory: Literal[True]
+    verification_method: Literal["cv_evidence", "candidate_question", "assessment", "manual"] | None
+    failure_action: Literal["not_eligible", "hold_for_review"]
+    linked_question_id: str | None
+    confirmed_at: str
+
+
+class GateSuggestionOut(_Strict):
+    """What the extraction suggested from the job description's own explicit wording. It enforces nothing."""
+    cue: str
+    source_text: str | None
+
+
 class ItemOut(_Strict):
     id: str
     text: str
@@ -54,6 +69,8 @@ class ItemOut(_Strict):
     source_text: str | None
     alternatives: list[str] | None
     experience: ExperienceOut | None
+    gate: GateOut | None = None
+    gate_suggestion: GateSuggestionOut | None = None
 
 
 class CategoryOut(_Strict):

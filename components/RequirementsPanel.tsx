@@ -3,6 +3,11 @@ import {
   canEditRequirements, getRequirements, ImportanceLevel, RequirementsApiError, RequirementsCategory, RequirementsContext,
   RequirementsOperation, RequirementsView, saveRequirementEdits,
 } from '../services/requirementsApi';
+import { useLanguage } from '../context/LanguageContext';
+import type { KnockoutQuestion } from '../types';
+import RequirementGateControls from './RequirementGateControls';
+import { draftFromItem, gateCopy, gateProblem, requirementBadges } from '../utils/gates';
+import type { GateDraft, RequirementBadge } from '../utils/gates';
 import {
   acknowledgeWarning, buildFindingOperation, buildOperations, buildReorderOperation, CONFIRM_NO_NUMERIC_SCORE, confirmStructure,
   currentOrder, FindingDecision, FindingDraft, findingProblem, findItem, FINDING_DECISIONS, ItemDraft, moveItem, NewItemDraft,
@@ -54,14 +59,26 @@ interface Props {
   // The job's requirements extraction status. The panel reloads on every change, so a completed or retried extraction
   // replaces the waiting state without a browser refresh.
   extractionStatus?: string | null;
+  // The job's knockout questions: a candidate-question gate names one of its eligibility-gate questions.
+  knockoutQuestions?: KnockoutQuestion[] | null;
 }
+
+const BADGE_CLASSES: Record<RequirementBadge['tone'], string> = {
+  neutral: 'bg-slate-100 text-slate-700',
+  amber: 'bg-amber-50 text-amber-800',
+  red: 'bg-red-50 text-red-800 border border-red-200',
+  blue: 'bg-blue-50 text-blue-800',
+  violet: 'bg-violet-50 text-violet-800 border border-violet-200',
+};
 
 const EXTRACTION_IN_PROGRESS = new Set(['pending', 'processing']);
 
 let newItemCounter = 0;
 
-export default function RequirementsPanel({ jobId, userRole, onReadinessChange, extractionStatus }: Props) {
+export default function RequirementsPanel({ jobId, userRole, onReadinessChange, extractionStatus, knockoutQuestions }: Props) {
   const canEdit = canEditRequirements(userRole);
+  const { lang } = useLanguage();
+  const gateText = gateCopy(lang);
   const [view, setView] = useState<RequirementsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [itemDrafts, setItemDrafts] = useState<Record<string, ItemDraft>>({});
@@ -226,6 +243,18 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
   const requiredCount = allItems.filter((item) => item.importance === 'required').length;
   const preferredCount = allItems.length - requiredCount;
   const categoryWeightTotal = Object.values(view.document.categories).reduce((total, category) => total + category.weight, 0);
+
+  /** The questions that other requirements' gates name (the document's, overlaid with the unsaved drafts). */
+  const otherLinked = (itemId: string): string[] => allItems.filter((i) => i.id !== itemId).flatMap((i) => {
+    const effective: GateDraft | null | undefined = itemDrafts[i.id]?.gate !== undefined ? itemDrafts[i.id].gate : draftFromItem(i);
+    return effective?.linked_question_id ? [effective.linked_question_id] : [];
+  });
+  const gateProblems = allItems.filter((i) => !itemDrafts[i.id]?.removed).flatMap((i) => {
+    const draftGate = itemDrafts[i.id]?.gate;
+    const effective = draftGate !== undefined ? draftGate : draftFromItem(i);
+    const problem = gateProblem(effective, itemDrafts[i.id]?.importance ?? i.importance, otherLinked(i.id), lang);
+    return problem ? [problem] : [];
+  });
 
   return (
     <section className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 space-y-6" aria-labelledby="requirements-heading">
@@ -512,12 +541,25 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
                           {showSourceEvidence && item.source_text && (
                             <p dir="auto" className="mt-2 text-xs text-slate-500">From the job description: “{item.source_text}”</p>
                           )}
+                          {item.gate && item.importance === 'required' && (
+                            <p className="mt-1 text-xs text-red-800" data-testid={`gate-detail-${item.id}`}>
+                              {gateText.verificationMethod}: {item.gate.verification_method ? gateText.methods[item.gate.verification_method] : '—'}
+                              {' · '}{gateText.failureAction}: {gateText.actions[item.gate.failure_action]}
+                            </p>
+                          )}
+                          {!item.gate && item.gate_suggestion && item.importance === 'required' && (
+                            <p dir="auto" className="mt-1 text-xs text-violet-800" data-testid={`gate-suggested-${item.id}`}>
+                              {gateText.aiSuggestedHelp(item.gate_suggestion.cue)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`text-xs font-medium px-2 py-1 rounded-full ${item.importance === 'preferred'
-                            ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
-                            {item.importance === 'preferred' ? 'Preferred' : 'Required'}
-                          </span>
+                          {requirementBadges(item, lang).map((badge) => (
+                            <span key={badge.key} data-testid={`badge-${badge.key}`}
+                              className={`text-xs font-medium px-2 py-1 rounded-full ${BADGE_CLASSES[badge.tone]}`}>
+                              {badge.label}
+                            </span>
+                          ))}
                           {item.importance === 'required' && item.weight !== null && (
                             <span className="text-sm font-medium text-slate-900">{item.weight}%</span>
                           )}
@@ -567,6 +609,11 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
                       </p>
                     )}
                     {item.source_text && <p dir="auto" className="text-xs text-slate-500">From the job description: “{item.source_text}”</p>}
+                    {canEdit && (
+                      <RequirementGateControls item={item} draft={draft.gate} importance={importance} questions={knockoutQuestions}
+                        otherLinkedQuestionIds={otherLinked(item.id)} lang={lang} disabled={busy}
+                        onChange={(next) => editItem(item.id, { gate: next })} />
+                    )}
                   </li>
                 );
               })}
@@ -613,7 +660,7 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
               Cancel
             </button>
             <button type="button" className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm disabled:opacity-50"
-              disabled={pendingOps.length === 0 || busy || conflict !== null}
+              disabled={pendingOps.length === 0 || busy || conflict !== null || gateProblems.length > 0}
               onClick={() => void submit(pendingOps, 'Saved.', 'all', true)}>
               {busy ? 'Saving…' : 'Save changes'}
             </button>

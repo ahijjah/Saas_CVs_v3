@@ -26,6 +26,8 @@ DB0_FILES = ("095_repair_010_platform_control.sql", "096_repair_070_sla_policy_i
              "097_repair_087_knockout_answer_tenant.sql", "098_application_scores_requirements_revision.sql")
 # Hardening migrations: functions and policies are allowed, and each is reviewed by name. DB0 files keep their stricter rules.
 HARDENING_FILES = ("099_platform_secret_accessors.sql", "100_runtime_rls_identity.sql", "101_job_code_sequence.sql")
+# Feature migrations: tables, columns, constraints and tenant policies are allowed; the forbidden constructs below apply to them too.
+FEATURE_FILES = ("102_gates_knockout_criteria.sql",)
 
 FORBIDDEN_IN_NEW_MIGRATIONS = {
     "role creation": re.compile(r"\bCREATE\s+(ROLE|USER)\b", re.I),
@@ -58,7 +60,7 @@ def test_manifest_lists_every_migration_file_exactly_once():
 
 
 def test_lint_scope_is_exactly_the_files_numbered_095_and_later():
-    assert [p.name for p in _new_migrations()] == sorted(DB0_FILES + HARDENING_FILES)
+    assert [p.name for p in _new_migrations()] == sorted(DB0_FILES + HARDENING_FILES + FEATURE_FILES)
 
 
 @pytest.mark.parametrize("label", list(FORBIDDEN_IN_NEW_MIGRATIONS))

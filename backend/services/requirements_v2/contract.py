@@ -32,8 +32,15 @@ package treats its inputs as read-only and returns new objects.
       "origin": "stated" | "from_responsibilities" | "recruiter_added",
       "source_text": str | None,            # verbatim JD wording (None for recruiter-added items)
       "alternatives": [str, ...] | None,    # OR alternatives kept inside ONE item (>= 2 entries)
-      "experience": {"subject": str | None, "min_years": int | None} | None   # experience category only
+      "experience": {"subject": str | None, "min_years": int | None} | None,  # experience category only
+      "gate_suggestion": {"suggested": True, "cue": str, "source_text": str | None}   # SERVER-OWNED, optional, see gates.py
+      "gate": {"mandatory": True, "verification_method": ..., "failure_action": ..., "linked_question_id": str | None,
+               "confirmed_by": str, "confirmed_at": str}                         # SERVER-STAMPED, optional, see gates.py
     }
+
+    An item may be a Mandatory Gate (eligibility). Only a Required item can be one. The extraction may SUGGEST a gate when the job
+    description states it in explicit language; a suggestion enforces nothing. A gate is enforced only after an admin or HR manager
+    confirms it (the `gate` block, stamped with that user and time on the server). Documents without either key are valid and unchanged.
 
 Used by the extraction worker (workers/requirements_v2_worker.py), the editing service and its router, and the scoring path.
 The package itself has no side effects and never touches the database or a model.
@@ -82,7 +89,7 @@ CONFIRMATION_KIND = "no_numeric_score"
 CONFIRMATION_KEYS = frozenset({"kind", "user_id", "confirmed_at", "basis_hash"})
 
 ITEM_REQUIRED_KEYS = frozenset({"id", "text", "importance", "weight", "origin"})
-ITEM_OPTIONAL_KEYS = frozenset({"source_text", "alternatives", "experience"})
+ITEM_OPTIONAL_KEYS = frozenset({"source_text", "alternatives", "experience", "gate_suggestion", "gate"})
 ITEM_KEYS = ITEM_REQUIRED_KEYS | ITEM_OPTIONAL_KEYS
 
 ITEM_ID_RE = re.compile(r"^req_[A-Za-z0-9]{1,32}$")

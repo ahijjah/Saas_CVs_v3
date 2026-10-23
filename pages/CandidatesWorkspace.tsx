@@ -42,6 +42,7 @@ import {
 } from '../constants/workflow';
 import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
 import { TagChip } from '../components/TagChip';
+import GateSummary from '../components/GateSummary';
 import { canExportApplications, canMutateApplications } from '../utils/permissions';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -3696,6 +3697,11 @@ const CandidateDetailDrawer: React.FC<CandidateDetailDrawerProps> = ({
 
           {/* Divider */}
           <div className="h-px bg-slate-200" />
+
+          {/* Eligibility gates: above the numeric score, because the score cannot override a failed gate */}
+          {candidate.processing_status === 'ai_scored' && (
+            <GateSummary key={candidate.application_id} applicationId={candidate.application_id} userRole={userRole} lang={lang} />
+          )}
 
           {/* AI Evaluation Summary — lazy-loaded from detail endpoint */}
           {candidate.processing_status === 'ai_scored' && (

@@ -432,6 +432,7 @@ async def list_applications(
             j.client_organization_id,
             co.organization_name                AS client_org_name,
             a.decision                          AS status,
+            a.eligibility_status,
             a.processing_status,
             a.stopped_reason,
             a.duplicate_status,
@@ -505,6 +506,8 @@ async def list_applications(
             "client_organization_id": str(r["client_organization_id"]) if r["client_organization_id"] else None,
             "client_org_name": r["client_org_name"],
             "status": r["status"],
+            "eligibility_status": r["eligibility_status"],
+            "effective_status": _effective(r["eligibility_status"], r["status"]),
             "processing_status": r["processing_status"],
             "stopped_reason": r["stopped_reason"],
             "duplicate_status": r["duplicate_status"] or "not_duplicate",
@@ -1150,7 +1153,7 @@ async def get_application_details(
                 a.preferred_contact_email, a.preferred_contact_source,
                 a.preferred_contact_confidence,
                 a.submitted_by_user_id, a.submitted_by_name, a.submitted_by_email,
-                a.decision, a.submission_source, a.processing_status,
+                a.decision, a.eligibility_status, a.submission_source, a.processing_status,
                 a.stopped_reason,
                 a.evaluation_stage, a.evaluation_exit_reason,
                 a.gatekeeper_passed,
@@ -1373,6 +1376,10 @@ async def get_application_details(
         "submitted_by_email": app["submitted_by_email"],
         "original_filename":  app["original_filename"],
         "decision": display_decision,
+        # Eligibility is separate from the score: the score is shown as it is and cannot override a failed gate. The Gate Summary
+        # (GET /applications/{id}/gates) lists each gate.
+        "eligibility_status": app["eligibility_status"],
+        "effective_decision": _effective(app["eligibility_status"], display_decision),
         "overall_score": int(app["final_score"]) if app["final_score"] is not None else 0,
         "submission_source": app["submission_source"],
         "processing_status": app["processing_status"],
@@ -2065,6 +2072,22 @@ async def update_recruiter_notes(
     return {"recruiter_notes": body.recruiter_notes}
 
 
+def _effective(eligibility_status: str | None, decision: str | None) -> str | None:
+    from services.eligibility_service import effective_decision
+    return effective_decision(eligibility_status, decision)
+
+
+async def _refresh_eligibility(db: AsyncSession, application_id: str) -> None:
+    """Re-evaluate the gates that depend on knockout answers after an answer changed. Never blocks the answer: a failure is logged and
+    rolled back to a savepoint, and the gates are re-evaluated at the next evaluation."""
+    try:
+        from services.eligibility_service import refresh_application
+        async with db.begin_nested():
+            await refresh_application(db, application_id)
+    except Exception as exc:
+        logger.warning("[%s] Eligibility refresh after an answer failed (non-critical): %s", application_id, type(exc).__name__)
+
+
 @router.patch("/{application_id}/knockout-answers", status_code=status.HTTP_200_OK, dependencies=[RequireManager])
 async def update_knockout_answer(
     application_id: str,
@@ -2096,6 +2119,7 @@ async def update_knockout_answer(
         answer_method="manual_entry",
         updated_by=current_user.user_id,
     )
+    await _refresh_eligibility(db, application_id)
     await db.commit()
     return {"status": "ok"}
 
@@ -2278,6 +2302,7 @@ async def accept_knockout_suggestion_endpoint(
         accepted_by_user_id=current_user.user_id,
         override_answer=body.override_answer,
     )
+    await _refresh_eligibility(db, application_id)
     await db.commit()
     return {"status": "ok"}
 

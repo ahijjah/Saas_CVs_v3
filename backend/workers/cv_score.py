@@ -1222,6 +1222,22 @@ async def _score_cv_async(
                     application_id, ko_exc,
                 )
 
+            # ── Post-scoring: eligibility gates ───────────────────────────────
+            # Evaluates the job's confirmed Mandatory Gates and eligibility-gate questions for this application. It never changes the
+            # score or the decision, and a failure here (including an unavailable model) leaves the application scored and the gates
+            # "not assessed" for a person to resolve.
+            try:
+                from services.eligibility_service import evaluate_application
+                await db.rollback()
+                await evaluate_application(db, application_id, run_cv_check=True)
+                await db.commit()
+            except Exception as gate_exc:
+                await db.rollback()
+                logger.warning(
+                    "[%s] Eligibility gate evaluation failed (non-critical): %s",
+                    application_id, type(gate_exc).__name__,
+                )
+
     except Exception as exc:
         # Session context manager has already rolled back and closed the
         # connection by the time we reach here — safe to open a new session.
