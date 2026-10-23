@@ -29,7 +29,7 @@ type StopReasonFilter =
   | 'extraction_failed'
   | 'processing_error';
 
-type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | 'not_scored';
+type AiResultFilter = 'all' | 'qualified' | 'partial' | 'rejected_low_match' | 'not_eligible' | 'review_required' | 'not_scored';
 
 type WorkflowFilter =
   | 'all'
@@ -70,6 +70,9 @@ function fromLegacyFilter(f: ApplicationFilter): AppFilters {
     case 'partial':            return { ...base, processing: 'ai_scored', aiResult: 'partial' };
     case 'rejected':
     case 'low_match':          return { ...base, processing: 'ai_scored', aiResult: 'rejected_low_match' };
+    case 'not_eligible':       return { ...base, processing: 'ai_scored', aiResult: 'not_eligible' };
+    case 'review_required':    return { ...base, processing: 'ai_scored', aiResult: 'review_required' };
+    case 'not_scored':         return { ...base, processing: 'ai_scored', aiResult: 'not_scored' };
     case 'security_blocked':   return { ...base, processing: 'stopped_before_ai', stopReason: 'security_blocked' };
     case 'duplicate_blocked':  return { ...base, processing: 'stopped_before_ai', stopReason: 'duplicate_blocked' };
     case 'failed_needs_review': return { ...base, processing: 'stopped_before_ai', stopReason: 'processing_error' };
@@ -147,6 +150,11 @@ const T = {
     aiPartial:           'Partial',
     aiRejectedLowMatch:  'Rejected / Low Match',
     aiNotScored:         'Not Scored',
+    aiNotEligible:       'Not Eligible',
+    aiReviewRequired:    'Review Required',
+    decNotEligible:      'Not Eligible',
+    decReviewRequired:   'Review Required',
+    decNotScored:        'Not Scored',
     // Workflow options
     wfAll: 'All Workflow',
     // Flag labels
@@ -200,6 +208,11 @@ const T = {
     aiPartial:           'جزئي',
     aiRejectedLowMatch:  'مرفوض / تطابق منخفض',
     aiNotScored:         'لم يُقيَّم',
+    aiNotEligible:       'غير مؤهل',
+    aiReviewRequired:    'مطلوب مراجعة',
+    decNotEligible:      'غير مؤهل',
+    decReviewRequired:   'مطلوب مراجعة',
+    decNotScored:        'بدون درجة',
     wfAll: 'جميع المراحل',
     flagPossibleDuplicate: 'مكرر محتمل',
     flagHasNotes:          'له ملاحظات',
@@ -527,8 +540,12 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
         if (!(isAiScored(a) && a.status === 'partial')) return false; break;
       case 'rejected_low_match':
         if (!(isAiScored(a) && normaliseStatus((a.status ?? '').toLowerCase()) === 'rejected')) return false; break;
+      case 'not_eligible':
+        if (!(isAiScored(a) && a.status === 'not_eligible')) return false; break;
+      case 'review_required':
+        if (!(isAiScored(a) && a.status === 'review_required')) return false; break;
       case 'not_scored':
-        if (isAiScored(a)) return false; break;
+        if (isAiScored(a) && a.status !== 'not_scored') return false; break;
     }
 
     // Dimension 3: Workflow (recruiter pipeline state, independent of processing)
@@ -589,6 +606,9 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     if (isPending(app) || isInProgress(app)) return { pill: 'bg-blue-100 text-blue-700', badge: 'bg-blue-300', label: t.statusProcessing, score: '…' };
     const s = normaliseStatus((app.status ?? '').toLowerCase().trim());
     if (s === 'qualified') return { pill: 'bg-green-100 text-green-800', badge: 'bg-success',  label: t.decQualified, score: app.score != null ? String(app.score) : '—' };
+    if (s === 'not_eligible')     return { pill: 'bg-red-100 text-red-800',     badge: 'bg-error',     label: t.decNotEligible,    score: app.score != null ? String(app.score) : '—' };
+    if (s === 'review_required')  return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning',   label: t.decReviewRequired, score: app.score != null ? String(app.score) : '—' };
+    if (s === 'not_scored')       return { pill: 'bg-slate-100 text-slate-700', badge: 'bg-slate-400', label: t.decNotScored,      score: '—' };
     if (s === 'partial')   return { pill: 'bg-amber-100 text-amber-800', badge: 'bg-warning',  label: t.decPartial,   score: app.score != null ? String(app.score) : '—' };
     return                        { pill: 'bg-red-100   text-red-800',   badge: 'bg-error',    label: t.decRejected,  score: app.score != null ? String(app.score) : '—' };
   };
@@ -616,6 +636,8 @@ export const ApplicationsList: React.FC<ApplicationsListProps> = ({
     { value: 'qualified',        label: t.aiQualified        },
     { value: 'partial',          label: t.aiPartial          },
     { value: 'rejected_low_match', label: t.aiRejectedLowMatch },
+    { value: 'not_eligible',     label: t.aiNotEligible      },
+    { value: 'review_required',  label: t.aiReviewRequired   },
     { value: 'not_scored',       label: t.aiNotScored        },
   ];
 

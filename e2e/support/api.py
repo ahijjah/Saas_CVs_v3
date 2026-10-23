@@ -123,16 +123,28 @@ class Api:
         return self._connect(self.stack.worker_psycopg_dsn)
 
     def score_row(self, job, timeout=60):
-        """requirements_revision_used and final_score of the job's first score, once the scoring worker has written it."""
+        """requirements_revision_used and final_score of the job's first score, once the scoring worker has written it. A Requirements V2 job is
+        scored per item (application_scoring_runs; final_score is None while Review Required or Not scored); an older job in application_scores."""
         for _ in range(timeout):
             with self._worker_connect() as conn, conn.cursor() as cur:
-                cur.execute("SELECT s.requirements_revision_used, s.final_score FROM application_scores s"
-                            " JOIN applications a ON a.application_id = s.application_id WHERE a.job_id = %s", (job,))
+                cur.execute("SELECT r.requirements_revision, r.final_score FROM application_scoring_runs r"
+                            " JOIN applications a ON a.application_id = r.application_id WHERE a.job_id = %s AND r.is_current", (job,))
                 row = cur.fetchone()
+                if not row:
+                    cur.execute("SELECT s.requirements_revision_used, s.final_score FROM application_scores s"
+                                " JOIN applications a ON a.application_id = s.application_id WHERE a.job_id = %s", (job,))
+                    row = cur.fetchone()
             if row:
                 return {"requirements_revision_used": row[0], "final_score": row[1]}
             time.sleep(1)
         return None
+
+    def resolve_item(self, token, application, item_id, result, reason):
+        return _request("POST", f"{self.base}/applications/{application}/item-scoring/items/{item_id}/resolve", token,
+                        {"result": result, "reason": reason})
+
+    def item_scoring(self, token, application):
+        return _request("GET", f"{self.base}/applications/{application}/item-scoring", token)
 
     def retry_state(self, job, retries, timeout=60):
         """(status, retry_count) once the job has reached `retries` retries and the extraction has settled to failed."""

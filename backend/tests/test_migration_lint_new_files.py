@@ -27,7 +27,7 @@ DB0_FILES = ("095_repair_010_platform_control.sql", "096_repair_070_sla_policy_i
 # Hardening migrations: functions and policies are allowed, and each is reviewed by name. DB0 files keep their stricter rules.
 HARDENING_FILES = ("099_platform_secret_accessors.sql", "100_runtime_rls_identity.sql", "101_job_code_sequence.sql")
 # Feature migrations: tables, columns, constraints and tenant policies are allowed; the forbidden constructs below apply to them too.
-FEATURE_FILES = ("102_gates_knockout_criteria.sql",)
+FEATURE_FILES = ("102_gates_knockout_criteria.sql", "103_item_level_scoring.sql")
 
 FORBIDDEN_IN_NEW_MIGRATIONS = {
     "role creation": re.compile(r"\bCREATE\s+(ROLE|USER)\b", re.I),

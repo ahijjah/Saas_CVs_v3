@@ -107,16 +107,27 @@ def world(built, monkeypatch, tmp_path):
     scored = []
     world_hooks = {"during": None}
 
-    async def fake_score(cv_text, criteria, job_title, **kwargs):
-        scored.append(criteria)
-        if world_hooks["during"] is not None:
-            await world_hooks["during"]()
-        return {"score_skills": 80, "score_experience": 70, "score_education": 60, "score_certifications": 50,
-                "score_soft_skills": 50, "score_domain_knowledge": 50, "score_other": 50, "strengths": [], "gaps_identified": [],
-                "red_flags": [], "evaluation_notes": "fixture", "interview_questions": [], "reasoning": {}, "score_details": {}}, \
-            {"model": "test-model", "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2, "finish_reason": "stop"}
+    class _ItemClient:
+        """The model of the item-level evaluation: every Required item is met, every Preferred item yes, quoting CV_TEXT."""
 
-    monkeypatch.setattr(ai_service, "score_cv", fake_score)
+        def __init__(self):
+            self.chat = type("Chat", (), {"completions": self})()
+
+        async def create(self, **kwargs):
+            user = kwargs["messages"][1]["content"]
+            requirements = json.loads(user.split("Requirements:\n", 1)[1].split("\n\nCV Text:", 1)[0])
+            scored.append({c: [r["requirement"] for r in requirements if r["category"] == c and r["importance"] == "required"]
+                           for c in C.CATEGORIES})
+            if world_hooks["during"] is not None:
+                await world_hooks["during"]()
+            evaluations = [{"item_id": r["item_id"], "result": "met" if r["importance"] == "required" else "yes",
+                            "evidence_quotes": ["Python engineer with five years of backend experience"], "explanation": "stated",
+                            "confidence": 0.95} for r in requirements]
+            content = json.dumps({"candidate_name": "Jane Candidate", "evaluations": evaluations, "evaluation_notes": "fixture"})
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content), finish_reason="stop")],
+                                   usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2))
+
+    monkeypatch.setattr(ai_service, "_get_client", lambda: _ItemClient())          # a v2 job is scored per item through this client
     # Requests run as cv_app; worker tasks run as cv_worker. The two sessions are kept apart so each path is tested as its own login.
     engine = async_engine(built, "cv_app")
     worker_engine = async_engine(built, "cv_worker")
@@ -176,7 +187,7 @@ def _criteria(built, job):
 
 def _scores(built, app):
     cur = built.conn.cursor()
-    cur.execute("SELECT final_score, requirements_revision_used FROM application_scores WHERE application_id = %s", (app,))
+    cur.execute("SELECT final_score, requirements_revision FROM application_scoring_runs WHERE application_id = %s AND is_current", (app,))
     return cur.fetchall()
 
 

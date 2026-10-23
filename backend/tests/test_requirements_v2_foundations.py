@@ -25,10 +25,13 @@ APPROVED_SERVICE_IMPORTERS = {
     # gate routes, the knockout-question routes and the scoring worker's post-scoring step, none of which edit or score a document.
     "services/eligibility_service.py",
     "services/knockout_questions_service.py",
+    # Item-level scoring: reads the confirmed document's items and revision to build the evaluation and to guard the rescore.
+    "services/item_scoring/evaluator.py",
+    "services/item_scoring/service.py",
 }
 # The workers approved to import the package: the requirements-v2 extraction worker, and the scoring worker's requirements-v2 branch
 # (the adapter and revision guard in services/requirements_v2/scoring.py). No other production module may import it.
-APPROVED_WORKER_IMPORTERS = {"workers/requirements_v2_worker.py", "workers/cv_score.py"}
+APPROVED_WORKER_IMPORTERS = {"workers/requirements_v2_worker.py", "workers/cv_score.py", "routers/item_scoring.py"}
 
 
 def _case(name: str) -> dict:

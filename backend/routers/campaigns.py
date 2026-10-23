@@ -415,9 +415,12 @@ async def get_campaign(
         text("""
             SELECT
                 COUNT(a.application_id)                                              AS applications_total,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'qualified')     AS applications_qualified,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'partial')       AS applications_partial,
-                COUNT(a.application_id) FILTER (WHERE a.decision = 'rejected')      AS applications_rejected,
+                COUNT(a.application_id) FILTER (WHERE (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'qualified')     AS applications_qualified,
+                COUNT(a.application_id) FILTER (WHERE (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'partial')       AS applications_partial,
+                COUNT(a.application_id) FILTER (WHERE (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'rejected')      AS applications_rejected,
+                COUNT(a.application_id) FILTER (WHERE (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'not_eligible')    AS applications_not_eligible,
+                COUNT(a.application_id) FILTER (WHERE (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'review_required') AS applications_review_required,
+                COUNT(a.application_id) FILTER (WHERE (CASE WHEN a.eligibility_status = 'not_eligible' THEN 'not_eligible' WHEN a.eligibility_status = 'review_required' OR a.scoring_status = 'review_required' THEN 'review_required' WHEN a.scoring_status = 'not_scored' THEN 'not_scored' ELSE a.decision END) = 'not_scored')      AS applications_not_scored,
                 COUNT(a.application_id) FILTER (WHERE a.processing_status = 'ai_scored') AS applications_scored
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id
@@ -432,10 +435,14 @@ async def get_campaign(
         out["applications_qualified"] = int(sr["applications_qualified"])
         out["applications_partial"]   = int(sr["applications_partial"])
         out["applications_rejected"]  = int(sr["applications_rejected"])
+        out["applications_not_eligible"] = int(sr["applications_not_eligible"])
+        out["applications_review_required"] = int(sr["applications_review_required"])
+        out["applications_not_scored"] = int(sr["applications_not_scored"])
         out["applications_scored"]    = int(sr["applications_scored"])
     else:
         out["applications_total"] = out["applications_qualified"] = 0
         out["applications_partial"] = out["applications_rejected"] = 0
+        out["applications_not_eligible"] = out["applications_review_required"] = out["applications_not_scored"] = 0
         out["applications_scored"] = 0
 
     return out
@@ -743,7 +750,7 @@ async def get_campaign_candidates(
                 a.workflow_status,
                 a.processing_status,
                 a.applied_at,
-                s.final_score AS ai_score,
+                COALESCE(a.item_final_score, s.final_score) AS ai_score,
                 j.title       AS job_title
             FROM applications a
             JOIN jobs j ON j.job_id = a.job_id

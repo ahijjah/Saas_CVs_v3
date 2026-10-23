@@ -92,6 +92,10 @@ MATRIX: dict[tuple[str, str], frozenset[str]] = {
     ("POST", "/applications/{id}/gates/{id}/override"): REQUIREMENTS_EDITOR_ROLES,
     ("DELETE", "/applications/{id}/gates/{id}/override"): REQUIREMENTS_EDITOR_ROLES,
     ("POST", "/applications/{id}/gates/{id}/result"): REQUIREMENTS_EDITOR_ROLES,
+    # item-level scoring: every tenant role reads the breakdown; only an admin or an HR manager resolves an unclear item or rescores
+    ("GET", "/applications/{id}/item-scoring"): REQUIREMENTS_READER_ROLES,
+    ("POST", "/applications/{id}/item-scoring/items/{id}/resolve"): REQUIREMENTS_EDITOR_ROLES,
+    ("POST", "/applications/{id}/item-scoring/rescore"): REQUIREMENTS_EDITOR_ROLES,
     # campaigns
     ("POST", "/campaigns"): MANAGERS,
     ("PATCH", "/campaigns/{id}"): MANAGERS,

@@ -10,6 +10,8 @@ import {
 } from '../constants/workflow';
 import { WorkflowActionMenu } from '../components/WorkflowActionMenu';
 import GateSummary from '../components/GateSummary';
+import ItemScoring from '../components/ItemScoring';
+import { outcomeLabel, scoreText } from '../utils/itemScoring';
 import { gateCopy, overridesScoreDecision, statusLabel, statusTone } from '../utils/gates';
 import { canMutateApplications } from '../utils/permissions';
 
@@ -715,6 +717,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   };
 
   const candidateName = data.candidate_name || 'Candidate Analysis';
+  const itemLevel = data.scoring_method === 'item_level_v2';
   const score = data.overall_score || 0;
   const analysis = data.analysis || ({} as ApplicationDetailedAnalysis['analysis']);
   const scores = data.scores || {};
@@ -745,7 +748,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
   }));
   const weightedEvidenceDims = evidenceDims.filter(d => !d.dim || (d.dim.weight ?? 1) > 0);
   const zeroWeightEvidenceDims = evidenceDims.filter(d => d.dim && d.dim.weight === 0);
-  const hasEvidenceSection = !isLowMatch && (data.score_details != null || evidenceDims.some(d => d.dim));
+  const hasEvidenceSection = !isLowMatch && !itemLevel && (data.score_details != null || evidenceDims.some(d => d.dim));
 
   const hasIntelligence = data.local_similarity_score != null || data.cv_language || (data.matched_skills?.length ?? 0) > 0 || (data.missing_skills?.length ?? 0) > 0;
   const hasRedFlags = (data.red_flags?.length ?? 0) > 0;
@@ -757,13 +760,19 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
     partial:   'bg-amber-100 text-amber-800',
     rejected:  'bg-red-100 text-red-800',
     low_match: 'bg-slate-100 text-slate-600',
+    not_scored: 'bg-slate-100 text-slate-600',
+    review_required: 'bg-amber-100 text-amber-800',
   };
   const decisionLabel: Record<string, string> = {
     qualified: lang === 'ar' ? 'مؤهل' : 'Qualified',
     partial:   lang === 'ar' ? 'جزئي' : 'Partial',
     rejected:  lang === 'ar' ? 'مرفوض' : 'Rejected',
     low_match: t.lowMatch,
+    not_scored: outcomeLabel('not_scored', lang),
+    review_required: outcomeLabel('review_required', lang),
   };
+  // An item-level score that is not final shows its scoring status where the stored decision would be (the decision is not stored yet).
+  const shownDecision = data.scoring_status === 'review_required' || data.scoring_status === 'not_scored' ? data.scoring_status : data.decision;
 
   return (
     <div className="space-y-8 animate-fade-in max-w-6xl mx-auto pb-12">
@@ -2003,18 +2012,24 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           onStatus={(status) => setEligibility(status)} />
       )}
 
+      {/* Requirement-by-requirement scoring (Requirements V2): per category and per Required item, with evidence */}
+      {!isSecurityBlocked && data.application_id && (
+        <ItemScoring applicationId={data.application_id} userRole={userRole} lang={lang} />
+      )}
+
       {/* Profile & Scoring — hidden for security-blocked applications */}
       {!isSecurityBlocked && <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 bg-white rounded-3xl border border-border shadow-sm overflow-hidden">
           <div className="p-8 bg-slate-50 border-b border-border flex items-center gap-8">
             <div className={`w-24 h-24 rounded-3xl flex flex-col items-center justify-center font-black text-white shadow-xl rotate-3 transform hover:rotate-0 transition-transform ${
               isLowMatch ? 'bg-slate-400'
+                : itemLevel && data.overall_score == null ? 'bg-slate-400'
                 : data.decision === 'qualified' ? 'bg-success'
                 : data.decision === 'partial'   ? 'bg-warning'
                 : data.decision === 'rejected'  ? 'bg-error'
                 : score >= 80 ? 'bg-success' : score >= 60 ? 'bg-warning' : 'bg-error'
             }`}>
-              <span className="text-3xl">{isLowMatch ? '—' : score}</span>
+              <span className="text-3xl">{isLowMatch ? '—' : itemLevel ? scoreText(data.overall_score) : score}</span>
               <span className="text-[10px] opacity-80 uppercase leading-none tracking-tighter">{t.points}</span>
             </div>
             <div>
@@ -2025,9 +2040,9 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
                     {statusLabel(eligibility, lang)}
                   </span>
                 ) : null}
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${decisionStyles[data.decision] || 'bg-slate-100 text-slate-600'}`}
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${decisionStyles[shownDecision] || 'bg-slate-100 text-slate-600'}`}
                   title={overridesScoreDecision(eligibility) ? gateCopy(lang).scoreNote : undefined}>
-                  {decisionLabel[data.decision] || data.decision || t.noDecision}
+                  {decisionLabel[shownDecision] || shownDecision || t.noDecision}
                 </span>
                 {data.duplicate_status === 'possible_duplicate' && (
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-orange-100 text-orange-700">
@@ -2050,7 +2065,8 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           )}
         </div>
 
-        <div className="bg-white rounded-3xl border border-border shadow-sm p-6 flex flex-col">
+        {/* The category bars belong to the earlier method; an item-level score is shown by the Requirement scoring section above */}
+        {!itemLevel && <div className="bg-white rounded-3xl border border-border shadow-sm p-6 flex flex-col">
           <h4 className="text-[10px] font-black text-textMain uppercase tracking-widest flex items-center mb-5">
             <span className={`w-2 h-4 bg-primary rounded-full ${isAr ? 'ml-3' : 'mr-3'}`}></span> {t.scoreOverview}
           </h4>
@@ -2076,7 +2092,7 @@ export const ApplicationDetails: React.FC<ApplicationDetailsProps> = ({ data, on
           <div className="pt-4 mt-4 border-t border-slate-100">
             <p className="text-[10px] text-textMuted italic leading-relaxed">{t.scoringNote}</p>
           </div>
-        </div>
+        </div>}
       </div>}
 
       {/* Intelligence Analysis Panel */}

@@ -9,6 +9,7 @@ import { scoringBlockedByRequirements } from '../services/requirementsEdits';
 import { WEBHOOK_CONFIG } from '../config';
 import { JobDetails as JobDetailsType, AuthState, UploadedCV, UploadQueueStatus, KnockoutQuestion, PassingCriteria, AnalysisJson } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { outcomeLabel } from '../utils/itemScoring';
 import { usePageTitle } from '../context/PageTitleContext';
 import { evaluateJobDescriptionQuality, validateJobTitle } from '../utils/jobDescriptionQuality';
 
@@ -1335,6 +1336,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
     { value: details.applications_partial   || 0, filter: 'partial',   color: 'text-warning',   hoverBg: 'hover:bg-amber-50  hover:border-amber-200',  hoverText: 'group-hover:text-warning' },
     { value: details.applications_rejected  || 0, filter: 'rejected',  color: 'text-error',     hoverBg: 'hover:bg-red-50    hover:border-red-200',    hoverText: 'group-hover:text-error'   },
   ];
+  const extraOutcomes = [
+    { filter: 'not_eligible',    value: details.applications_not_eligible    || 0, color: 'text-error'   },
+    { filter: 'review_required', value: details.applications_review_required || 0, color: 'text-warning' },
+    { filter: 'not_scored',      value: details.applications_not_scored      || 0, color: 'text-textMuted' },
+  ];
   const blockedTotal = ((details as any).applications_security_blocked || 0) +
     ((details as any).applications_duplicate_blocked || 0) +
     ((details as any).applications_failed_needs_review || 0);
@@ -1535,6 +1541,18 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
                 </button>
               ))}
             </div>
+            {/* Outcomes that are not a stored decision: a failed gate, an unresolved Required item, no Required items */}
+            {extraOutcomes.some((o) => o.value > 0) && (
+              <div data-testid="extra-outcomes" className="grid grid-cols-3 gap-2 mt-2">
+                {extraOutcomes.map((o) => (
+                  <button key={o.filter} onClick={() => onViewApplications(details.job_id, o.filter)} data-testid={`outcome-${o.filter}`}
+                    className="flex flex-col items-center py-2 px-2 rounded-xl bg-slate-50 border border-transparent hover:bg-slate-100 transition-all cursor-pointer">
+                    <span className={`text-lg font-black ${o.color}`}>{o.value}</span>
+                    <span className="text-[9px] font-black text-textMuted uppercase tracking-wider mt-0.5">{outcomeLabel(o.filter, lang as 'en' | 'ar')}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Right — Blocked Before Scoring (30%) */}

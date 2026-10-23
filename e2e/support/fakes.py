@@ -44,6 +44,11 @@ def scripted_response(description: str) -> str:
     if "SCENARIO-GATES" in description:
         return _response({"skills": [_item("Valid driving licence", "required", "must hold a valid driving licence"),
                                      _item("Python", "preferred", "Python is a plus", cue="a plus")]}, {"skills": 100})
+    if "SCENARIO-ITEMS" in description:
+        return _response({"skills": [_item("Python", "required", "Python is required"),
+                                     _item("Arabic fluency", "required", "Fluent Arabic is required")],
+                          "experience": [_item("Backend experience", "preferred", "Backend experience is preferred", cue="preferred")]},
+                         {"skills": 100})
     if "SCENARIO-PREFERRED" in description:
         return _response({"experience": [_item("Reporting tools", "preferred", "Knowledge of reporting tools is preferred",
                                                cue="preferred")]}, {})
@@ -88,8 +93,38 @@ class _Response:
         self.choices = [_Choice(content)]
 
 
+def scripted_item_evaluation(user_message: str) -> str:
+    """The item-level evaluation of the E2E CV (backend/tests/fixtures/requirements_v2_cv_smoke.pdf). The results depend on the requirement's wording:
+    Python is met, SQL partially met, anything about Arabic or a licence is unclear (the CV does not say), a Preferred backend item is a yes.
+    Every quotation is copied from the CV text, as the real evaluation must do."""
+    requirements = json.loads(re.search(r"Requirements:\n(.*?)\n\nCV Text:", user_message, re.S).group(1))
+    out = []
+    for r in requirements:
+        text = r["requirement"].lower()
+        if r["importance"] == "preferred":
+            if "backend" in text:
+                out.append({"item_id": r["item_id"], "result": "yes", "evidence_quotes": ["five years of backend experience"],
+                            "explanation": "The CV states five years of backend experience.", "confidence": 0.9})
+            else:
+                out.append({"item_id": r["item_id"], "result": "not_clear", "evidence_quotes": [], "explanation": "Not stated.", "confidence": 0.7})
+        elif "python" in text or "بايثون" in text:
+            out.append({"item_id": r["item_id"], "result": "met", "evidence_quotes": ["Strong Python and SQL skills"],
+                        "explanation": "The CV shows strong Python skills.", "confidence": 0.95})
+        elif "sql" in text:
+            out.append({"item_id": r["item_id"], "result": "partially_met", "evidence_quotes": ["query tuning, migrations and data modelling"],
+                        "explanation": "SQL skills are shown, but not at the stated depth.", "confidence": 0.8})
+        else:
+            out.append({"item_id": r["item_id"], "result": "unclear", "evidence_quotes": [], "explanation": "The CV does not say.", "confidence": 0.5})
+    return json.dumps({"candidate_name": "Jane Candidate", "candidate_email": "", "candidate_phone": "", "evaluations": out,
+                       "evaluation_notes": "E2E evaluation.", "strengths": ["Python"], "gaps_identified": [], "red_flags": [],
+                       "interview_questions": []}, ensure_ascii=False)
+
+
 class _Completions:
     async def create(self, **request):
+        system = request["messages"][0]["content"] if request["messages"] else ""
+        if isinstance(system, str) and system.startswith("You are an expert HR analyst. You check ONE candidate CV"):
+            return _Response(scripted_item_evaluation(request["messages"][-1]["content"]))
         description = request["messages"][-1]["content"]
         match = re.search(r"<<<JD\n(.*?)\nJD>>>", description, re.S)
         return _Response(scripted_response(match.group(1) if match else description))
@@ -165,3 +200,4 @@ def patch_external(files_root: str) -> None:
     v2.extract_requirements_v2_task.delay = queue_in_thread(v2.extract_requirements_v2_task)
     legacy.extract_criteria_task.delay = queue_in_thread(legacy.extract_criteria_task)
     cv_score.score_cv_task.delay = queue_in_thread(cv_score.score_cv_task)
+    cv_score.rescore_application_task.delay = queue_in_thread(cv_score.rescore_application_task)
