@@ -20,7 +20,7 @@ interface Props {
 }
 
 /** The Mandatory Gate control of one Required item, shown while editing. Preferred items show no control, only the reason. */
-export default function RequirementGateControls({ item, draft, importance, questions, otherLinkedQuestionIds, lang, disabled, onChange }: Props) {
+export default function RequirementGateControls({ item, draft, importance, lang, disabled, onChange }: Props) {
   const copy = gateCopy(lang);
   if (importance !== 'required') {
     return item.gate || item.gate_suggestion || draft ? (
