@@ -98,7 +98,6 @@ export function buildOperations(
         if (current) ops.push({ op: 'clear_gate', item_id: itemId });
       } else if (!current || !sameGate(draft.gate, current)) {
         ops.push({ op: 'set_gate', item_id: itemId, verification_method: draft.gate.verification_method,
-                   failure_action: draft.gate.failure_action,
                    linked_question_id: draft.gate.verification_method === 'candidate_question' ? draft.gate.linked_question_id : null });
       }
     }

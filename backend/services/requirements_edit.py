@@ -253,7 +253,6 @@ class ReorderItems:
 class SetGate:
     item_id: str
     verification_method: str | None
-    failure_action: str
     linked_question_id: str | None
 
 
@@ -284,9 +283,12 @@ OPERATION_FIELDS: dict[str, frozenset[str]] = {
     "confirm_structure": frozenset({"item_id"}),
     "resolve_structural_finding": frozenset({"finding_id", "decision", "note", "evidence_item_ids"}),
     "reorder_items": frozenset({"category", "item_ids"}),
-    "set_gate": frozenset({"item_id", "verification_method", "failure_action", "linked_question_id"}),
+    "set_gate": frozenset({"item_id", "verification_method", "linked_question_id"}),
     "clear_gate": frozenset({"item_id"}),
 }
+# Fields an operation may carry but that change nothing. A stale client that still sends the retired failure action is not broken by it, and
+# the value is still validated, so a malformed one is refused.
+LEGACY_OPERATION_FIELDS: dict[str, frozenset[str]] = {"set_gate": frozenset({"failure_action"})}
 EXPERIENCE_FIELDS = frozenset({"subject", "min_years"})
 OPERATION_NAMES: dict[type, str] = {
     SetText: "set_text", SetImportance: "set_importance", SetItemWeight: "set_item_weight",
@@ -333,8 +335,11 @@ def _parse_one(raw: object, pos: int) -> Operation:
     if kind not in OPERATION_FIELDS:
         raise InvalidOperation(f"Operation {pos} has an unknown name {kind!r}.")
     expected = OPERATION_FIELDS[kind] | {"op"}
-    if set(raw) != expected:
+    allowed = expected | LEGACY_OPERATION_FIELDS.get(kind, frozenset())
+    if not expected <= set(raw) <= allowed:
         raise InvalidOperation(f"Operation {pos} ({kind}) must have exactly the fields {sorted(expected)}.")
+    if "failure_action" in raw:
+        _legacy_gate_action(raw["failure_action"], pos)
     builder = _BUILDERS[kind]
     return builder(raw, pos)
 
@@ -439,10 +444,9 @@ def _gate_method(value: object, pos: int) -> str | None:
     return value
 
 
-def _gate_action(value: object, pos: int) -> str:
-    if value not in gate_rules.FAILURE_ACTIONS:
-        raise InvalidOperation(f"Operation {pos}: failure_action must be one of {', '.join(gate_rules.FAILURE_ACTIONS)}.")
-    return value
+def _legacy_gate_action(value: object, pos: int) -> None:
+    if value not in gate_rules.LEGACY_FAILURE_ACTIONS:
+        raise InvalidOperation(f"Operation {pos}: failure_action must be one of {', '.join(gate_rules.LEGACY_FAILURE_ACTIONS)} when sent.")
 
 
 def _question_id_or_none(value: object, pos: int) -> str | None:
@@ -470,7 +474,7 @@ _BUILDERS = {
         _evidence(r["evidence_item_ids"], p)),
     "reorder_items": lambda r, p: ReorderItems(_category(r["category"], p), _item_id_list(r["item_ids"], p)),
     "set_gate": lambda r, p: SetGate(_item_id(r["item_id"], p), _gate_method(r["verification_method"], p),
-                                     _gate_action(r["failure_action"], p), _question_id_or_none(r["linked_question_id"], p)),
+                                     _question_id_or_none(r["linked_question_id"], p)),
     "clear_gate": lambda r, p: ClearGate(_item_id(r["item_id"], p)),
 }
 
@@ -564,7 +568,7 @@ def _apply_review(doc: dict, op: Operation, pos: int, *, user_id: str, now: str,
                                    jd_text=jd_text or "", note=op.note,
                                    evidence_item_ids=list(op.evidence_item_ids) if op.evidence_item_ids is not None else None)
         if isinstance(op, SetGate):
-            return gate_rules.set_gate(doc, op.item_id, verification_method=op.verification_method, failure_action=op.failure_action,
+            return gate_rules.set_gate(doc, op.item_id, verification_method=op.verification_method,
                                        linked_question_id=op.linked_question_id, user_id=user_id, confirmed_at=now)
         if isinstance(op, ClearGate):
             return gate_rules.clear_gate(doc, op.item_id)
@@ -934,7 +938,7 @@ def _project_document(doc: dict) -> dict:
             gate, suggestion = item.get("gate"), item.get("gate_suggestion")
             # The confirmed gate without the identity of who confirmed it; the suggestion as the extraction left it.
             projected["gate"] = None if gate is None else {
-                "mandatory": True, "verification_method": gate["verification_method"], "failure_action": gate["failure_action"],
+                "mandatory": True, "verification_method": gate["verification_method"],
                 "linked_question_id": gate["linked_question_id"], "confirmed_at": gate["confirmed_at"]}
             projected["gate_suggestion"] = None if suggestion is None else {"cue": suggestion["cue"], "source_text": suggestion.get("source_text")}
             items.append(projected)

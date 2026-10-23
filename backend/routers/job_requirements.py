@@ -49,7 +49,6 @@ class GateOut(_Strict):
     """A confirmed Mandatory Gate. The confirming user is never returned."""
     mandatory: Literal[True]
     verification_method: Literal["cv_evidence", "candidate_question", "assessment", "manual"] | None
-    failure_action: Literal["not_eligible", "hold_for_review"]
     linked_question_id: str | None
     confirmed_at: str
 

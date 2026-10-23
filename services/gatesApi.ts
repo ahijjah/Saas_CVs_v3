@@ -19,7 +19,8 @@ export interface GateItem {
   source: 'requirement' | 'question';
   label: string;
   verification_method: 'cv_evidence' | 'candidate_question' | 'assessment' | 'manual';
-  failure_action: 'not_eligible' | 'hold_for_review';
+  /** A technical failure of the check, not a result about the candidate: checking again retries it. */
+  processing_error: boolean;
   requirement_item_id: string | null;
   question_id: string | null;
   result: GateResult;

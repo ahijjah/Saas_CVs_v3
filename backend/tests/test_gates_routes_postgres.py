@@ -35,7 +35,7 @@ def _client(engine, world, label, role):
 
 
 def _manual(built, world):
-    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual", "failure_action": "not_eligible"})))
+    job = _job(built, world["a"], _doc(("req_py", {"verification_method": "manual"})))
     return job, _application(built, world["a"], job)
 
 

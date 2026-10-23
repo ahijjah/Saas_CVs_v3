@@ -580,9 +580,8 @@ export interface KnockoutQuestion {
   display_order: number;
   /** "Use as Eligibility Gate". Absent or false means the question is advisory, as it always was. */
   is_eligibility_gate?: boolean;
-  gate_failure_action?: 'not_eligible' | 'hold_for_review';
   /** Read-only: the Job Analysis requirement this question verifies (set in Job Analysis), if any. */
-  linked_requirement?: { item_id: string; text: string; failure_action: 'not_eligible' | 'hold_for_review' } | null;
+  linked_requirement?: { item_id: string; text: string } | null;
 }
 
 /** Public question shape — candidate-facing API. passing_criteria omitted. */

@@ -106,10 +106,11 @@ def _validate_question(q: dict) -> None:
     gate = q.get("is_eligibility_gate", False)
     if not isinstance(gate, bool):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="is_eligibility_gate must be true or false.")
-    action = q.get("gate_failure_action", "not_eligible")
-    if action not in GATE_FAILURE_ACTIONS:
+    # gate_failure_action is retired: the outcome follows the evidence. A stale client may still send it, so a valid value is accepted
+    # and ignored (it is never stored or read), and a malformed one is refused.
+    if "gate_failure_action" in q and q["gate_failure_action"] not in GATE_FAILURE_ACTIONS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"gate_failure_action must be one of {sorted(GATE_FAILURE_ACTIONS)}.")
+                            detail=f"gate_failure_action must be one of {sorted(GATE_FAILURE_ACTIONS)} when sent.")
     question_id = q.get("question_id")
     if question_id is not None and not _is_uuid(question_id):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="question_id must be a question id.")
@@ -145,7 +146,7 @@ async def get_public_job_knockout_questions(db: AsyncSession, job_id: str) -> li
 # ── Links from Job Analysis requirements (a requirement gate names the question that verifies it) ──────────────────
 
 async def linked_requirements(db: AsyncSession, job_id: str) -> dict[str, dict]:
-    """{question id (lower case): {item_id, text, failure_action}} for the confirmed requirement gates of the job that name a question.
+    """{question id (lower case): {item_id, text}} for the confirmed requirement gates of the job that name a question.
     Empty when the job has no Requirements v2 document or the document cannot be read. The link is stored once, in the document."""
     from services.requirements_v2 import gates as gate_rules
     from services.requirements_v2.validation import validate_structure
@@ -154,7 +155,7 @@ async def linked_requirements(db: AsyncSession, job_id: str) -> dict[str, dict]:
     doc = analysis.get("requirements") if isinstance(analysis, dict) else None
     if not isinstance(doc, dict) or validate_structure(doc):
         return {}
-    return {g["linked_question_id"].lower(): {"item_id": g["item_id"], "text": g["text"], "failure_action": g["failure_action"]}
+    return {g["linked_question_id"].lower(): {"item_id": g["item_id"], "text": g["text"]}
             for g in gate_rules.confirmed_gates(doc) if g["linked_question_id"]}
 
 
@@ -166,7 +167,7 @@ async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict
         text("""
             SELECT question_id, question_text, question_type,
                    is_required, options, passing_criteria, display_order,
-                   is_eligibility_gate, gate_failure_action
+                   is_eligibility_gate
             FROM job_knockout_questions
             WHERE job_id = :jid
             ORDER BY display_order, created_at
@@ -187,10 +188,8 @@ async def get_job_knockout_questions(db: AsyncSession, job_id: str) -> list[dict
             "passing_criteria": r["passing_criteria"],
             "display_order":    r["display_order"],
             "is_eligibility_gate": r["is_eligibility_gate"],
-            "gate_failure_action": r["gate_failure_action"],
-            # read-only: the failure action that governs when the question verifies a requirement gate, and the requirement itself
-            "linked_requirement": None if link is None else {"item_id": link["item_id"], "text": link["text"],
-                                                              "failure_action": link["failure_action"]},
+            # read-only: the requirement this question verifies, when a Job Analysis gate is linked to it
+            "linked_requirement": None if link is None else {"item_id": link["item_id"], "text": link["text"]},
         })
     return out
 
@@ -257,7 +256,6 @@ async def save_job_knockout_questions(
             "criteria": json.dumps(criteria) if criteria is not None else None,
             "order":    i,
             "gate":     bool(q.get("is_eligibility_gate", False)),
-            "action":   q.get("gate_failure_action", "not_eligible"),
         }
         if q.get("question_id"):
             await db.execute(
@@ -265,7 +263,7 @@ async def save_job_knockout_questions(
                     UPDATE job_knockout_questions SET
                         question_text = :qtext, question_type = :qtype, is_required = :required,
                         options = CAST(:opts AS jsonb), passing_criteria = CAST(:criteria AS jsonb), display_order = :order,
-                        is_eligibility_gate = :gate, gate_failure_action = :action
+                        is_eligibility_gate = :gate
                     WHERE question_id = CAST(:qid AS uuid) AND job_id = :jid
                 """),
                 {**params, "qid": str(q["question_id"])},
@@ -276,10 +274,10 @@ async def save_job_knockout_questions(
                 INSERT INTO job_knockout_questions
                     (job_id, tenant_id, question_text, question_type,
                      is_required, options, passing_criteria, display_order,
-                     is_eligibility_gate, gate_failure_action)
+                     is_eligibility_gate)
                 VALUES (:jid, :tid, :qtext, :qtype, :required,
                         CAST(:opts AS jsonb), CAST(:criteria AS jsonb), :order,
-                        :gate, :action)
+                        :gate)
             """),
             params,
         )

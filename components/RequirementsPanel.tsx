@@ -544,7 +544,6 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
                           {item.gate && item.importance === 'required' && (
                             <p className="mt-1 text-xs text-red-800" data-testid={`gate-detail-${item.id}`}>
                               {gateText.verificationMethod}: {item.gate.verification_method ? gateText.methods[item.gate.verification_method] : '—'}
-                              {' · '}{gateText.failureAction}: {gateText.actions[item.gate.failure_action]}
                             </p>
                           )}
                           {!item.gate && item.gate_suggestion && item.importance === 'required' && (
