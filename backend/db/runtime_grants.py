@@ -33,6 +33,7 @@ MATRIX: dict[str, dict[str, str]] = {
     "application_item_evaluation_events":        {APP: "IS", WORKER: "IS"},
     "application_item_evaluations":              {APP: "SU", WORKER: "IS"},
     "application_scoring_runs":                  {APP: "SU", WORKER: "ISU"},
+    "candidate_matrix_configs":                  {APP: "DISU"},
     "application_intake_log":                    {APP: "ISU", ADMIN: "ISU", WORKER: "ISU"},
     "application_knockout_answer_suggestions":   {APP: "ISU", WORKER: "ISU"},
     "application_knockout_answer_validations":   {APP: "ISU"},

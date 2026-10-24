@@ -78,6 +78,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_comments TO cv_app
 GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_communications TO cv_app;
 GRANT SELECT, INSERT, UPDATE ON cv_analyzer.candidate_interview_feedback TO cv_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_interviews TO cv_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_matrix_configs TO cv_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_message_templates TO cv_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON cv_analyzer.candidate_saved_views TO cv_app;
 GRANT SELECT, INSERT, DELETE ON cv_analyzer.candidate_tags TO cv_app;

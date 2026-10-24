@@ -19,6 +19,8 @@ interface JobDetailsProps {
   onBack: () => void;
   onViewApplications: (jobId: string, filter: string) => void;
   onOpenApplication: (jobId: string, applicationId: string) => void;
+  /** Opens the Final Candidate Matrix of this job. */
+  onOpenMatrix?: (jobId: string) => void;
   addToast: (msg: string, type: 'success' | 'error' | 'info') => void;
 }
 
@@ -131,6 +133,7 @@ const T = {
     confirmPlatformEmail: 'Send confirmation to candidate email on platform email',
     allowAdvancedWorkflowMove: 'Allow advanced workflow moves for this job',
     viewApplications: 'View Applications',
+    candidateMatrix: 'Candidate Matrix',
     editCriteria: 'Edit Criteria',
     saveCriteria: 'Save Criteria',
     savingCriteria: 'Saving...',
@@ -362,6 +365,7 @@ const T = {
     confirmPlatformEmail: 'إرسال تأكيد لبريد المرشح عبر البريد المخصص',
     allowAdvancedWorkflowMove: 'السماح بنقلات سير عمل متقدمة لهذه الوظيفة',
     viewApplications: 'عرض الطلبات',
+    candidateMatrix: 'مصفوفة المرشحين',
     editCriteria: 'تعديل المعايير',
     saveCriteria: 'حفظ المعايير',
     savingCriteria: 'جارٍ الحفظ...',
@@ -486,7 +490,7 @@ const T = {
 const CRITERIA_POLL_MS = 5000;
 const CRITERIA_POLL_LIMIT = 120;
 
-export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, onOpenApplication, addToast }) => {
+export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onViewApplications, onOpenApplication, onOpenMatrix, addToast }) => {
   const { lang, isAr } = useLanguage();
   const t = T[lang];
   const { setPageTitle } = usePageTitle();
@@ -1498,6 +1502,11 @@ export const JobDetails: React.FC<JobDetailsProps> = ({ jobId, auth, onBack, onV
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             {t.viewApplications}
           </button>
+          {onOpenMatrix && (
+            <button onClick={() => onOpenMatrix(details.job_id)} data-testid="open-candidate-matrix"
+              className="flex items-center gap-1.5 px-4 py-1.5 border border-slate-300 bg-white text-slate-800 text-[10px] font-black rounded-lg hover:bg-slate-50 transition-colors">
+              {t.candidateMatrix}
+            </button>)}
         </div>
       </div>
 

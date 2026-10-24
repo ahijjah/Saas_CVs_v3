@@ -76,18 +76,43 @@ class Api:
     def item_id(self, token, job, category, index):
         return self.requirements(token, job)["document"]["categories"][category]["items"][index]["id"]
 
-    def upload_cv(self, token, job, name):
+    def upload_cv(self, token, job, name, pdf=None):
         boundary = "----e2e"
         parts = [(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n').encode()
                  for k, v in (("job_id", job), ("candidate_name", name), ("candidate_email", f"{name.lower()}@e2e-candidate.com"))]
         parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="cv.pdf"\r\n'
-                      f'Content-Type: application/pdf\r\n\r\n').encode() + FIXTURE.read_bytes() + b"\r\n")
+                      f'Content-Type: application/pdf\r\n\r\n').encode() + (pdf if pdf is not None else FIXTURE.read_bytes()) + b"\r\n")
         parts.append(f"--{boundary}--\r\n".encode())
         status, body = _request("POST", f"{self.base}/applications/upload", token, raw=b"".join(parts),
                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
         if status != 202:
             raise ApiError(f"upload failed: {status} {body}")
         return body
+
+    def score_pending(self, token, job):
+        status, body = _request("POST", f"{self.base}/applications/score-pending", token, {"job_id": job})
+        if status != 202:
+            raise ApiError(f"score-pending failed: {status} {body}")
+        return body
+
+    def wait_scored(self, job, count, timeout=120):
+        """Wait until `count` applications of the job have a current item-level scoring run."""
+        got = 0
+        for _ in range(timeout):
+            with self._worker_connect() as conn, conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM application_scoring_runs r JOIN applications a ON a.application_id = r.application_id"
+                            " WHERE a.job_id = %s AND r.is_current", (job,))
+                got = cur.fetchone()[0]
+            if got >= count:
+                return got
+            time.sleep(1)
+        raise ApiError(f"only {got} of {count} applications were scored for {job}")
+
+    def matrix_put(self, token, job, scope, layout, expected_version=None):
+        return _request("PUT", f"{self.base}/candidate-matrix/jobs/{job}/config/{scope}", token, {"layout": layout, "expected_version": expected_version})
+
+    def matrix_rows(self, token, job, **body):
+        return _request("POST", f"{self.base}/candidate-matrix/jobs/{job}/rows", token, body)
 
     def application_id(self, job, timeout=60):
         """The id of the job's first application, once the upload has created it."""

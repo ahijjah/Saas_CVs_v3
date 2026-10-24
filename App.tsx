@@ -19,6 +19,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { JobsDashboard } from './pages/JobsDashboard';
 import { JobDetails } from './pages/JobDetails';
+import CandidateMatrix from './pages/CandidateMatrix';
 import { ApplicationsList } from './pages/ApplicationsList';
 import { AddJobModal } from './components/AddJobModal';
 import { Settings } from './pages/Settings';
@@ -65,8 +66,9 @@ const JobDetailsRoute: React.FC<{
   auth: AuthState;
   onViewApplications: (jobId: string, filter: string) => void;
   onOpenApplication: (jobId: string, applicationId: string) => void;
+  onOpenMatrix?: (jobId: string) => void;
   addToast: (msg: string, type: ToastType) => void;
-}> = ({ auth, onViewApplications, onOpenApplication, addToast }) => {
+}> = ({ auth, onViewApplications, onOpenApplication, onOpenMatrix, addToast }) => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   if (!jobId) return <Navigate to="/jobs" replace />;
@@ -77,9 +79,21 @@ const JobDetailsRoute: React.FC<{
       onBack={() => navigate('/jobs')}
       onViewApplications={onViewApplications}
       onOpenApplication={onOpenApplication}
+      onOpenMatrix={onOpenMatrix}
       addToast={addToast}
     />
   );
+};
+
+// ── Route wrapper: /jobs/:jobId/matrix ─────────────────────────────────────
+const CandidateMatrixRoute: React.FC<{
+  auth: AuthState;
+  onOpenApplication: (jobId: string, applicationId: string) => void;
+}> = ({ auth, onOpenApplication }) => {
+  const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  if (!jobId) return <Navigate to="/jobs" replace />;
+  return <CandidateMatrix jobId={jobId} auth={auth} onBack={() => navigate(`/jobs/${encodeURIComponent(jobId)}`)} onOpenApplication={onOpenApplication} />;
 };
 
 // ── Route wrapper: /applications?job_id=...&filter=...&app_id=... ──────────
@@ -386,11 +400,16 @@ const AppInner: React.FC = () => {
             element={
               <JobDetailsRoute
                 auth={auth}
+                onOpenMatrix={(id) => navigate(`/jobs/${encodeURIComponent(id)}/matrix`)}
                 onViewApplications={handleViewApplications}
                 onOpenApplication={handleOpenApplication}
                 addToast={addToast}
               />
             }
+          />
+          <Route
+            path="/jobs/:jobId/matrix"
+            element={<CandidateMatrixRoute auth={auth} onOpenApplication={handleOpenApplication} />}
           />
           <Route
             path="/applications"

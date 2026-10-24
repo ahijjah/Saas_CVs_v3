@@ -68,6 +68,7 @@ MANAGER_ROLES = frozenset({"super_admin", "admin", "hr_manager"})
 REQUIREMENTS_EDITOR_ROLES = frozenset({"admin", "hr_manager"})
 REQUIREMENTS_READER_ROLES = frozenset({"admin", "hr_manager", "recruiter", "viewer"})
 EXPORT_ROLES = frozenset({"super_admin", "admin", "hr_manager", "recruiter"})
+MATRIX_PERSONAL_ROLES = frozenset({"admin", "hr_manager", "recruiter"})
 ADMIN_OR_PLATFORM_ROLES = frozenset({"super_admin", "admin"})
 TENANT_ADMIN_ROLES = frozenset({"admin"})
 USAGE_ROLES = frozenset({"admin", "hr_manager"})
@@ -96,6 +97,19 @@ MATRIX: dict[tuple[str, str], frozenset[str]] = {
     ("GET", "/applications/{id}/item-scoring"): REQUIREMENTS_READER_ROLES,
     ("POST", "/applications/{id}/item-scoring/items/{id}/resolve"): REQUIREMENTS_EDITOR_ROLES,
     ("POST", "/applications/{id}/item-scoring/rescore"): REQUIREMENTS_EDITOR_ROLES,
+    # candidate matrix: every tenant role reads; a layout for the tenant or the job needs an admin or HR manager; one's own view needs a
+    # recruiter or above (a viewer is read-only); the CSV export follows the existing export roles
+    ("GET", "/candidate-matrix/jobs/{id}/columns"): REQUIREMENTS_READER_ROLES,
+    ("GET", "/candidate-matrix/jobs/{id}/config"): REQUIREMENTS_READER_ROLES,
+    ("POST", "/candidate-matrix/jobs/{id}/rows"): REQUIREMENTS_READER_ROLES,
+    ("PUT", "/candidate-matrix/jobs/{id}/config/job"): REQUIREMENTS_EDITOR_ROLES,
+    ("DELETE", "/candidate-matrix/jobs/{id}/config/job"): REQUIREMENTS_EDITOR_ROLES,
+    ("PUT", "/candidate-matrix/jobs/{id}/config/personal"): MATRIX_PERSONAL_ROLES,
+    ("DELETE", "/candidate-matrix/jobs/{id}/config/personal"): MATRIX_PERSONAL_ROLES,
+    ("GET", "/candidate-matrix/tenant-config"): REQUIREMENTS_READER_ROLES,
+    ("PUT", "/candidate-matrix/tenant-config"): REQUIREMENTS_EDITOR_ROLES,
+    ("DELETE", "/candidate-matrix/tenant-config"): REQUIREMENTS_EDITOR_ROLES,
+    ("POST", "/candidate-matrix/jobs/{id}/export"): EXPORT_ROLES,
     # campaigns
     ("POST", "/campaigns"): MANAGERS,
     ("PATCH", "/campaigns/{id}"): MANAGERS,

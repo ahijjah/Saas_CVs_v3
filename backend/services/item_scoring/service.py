@@ -120,15 +120,16 @@ async def record_run(db: AsyncSession, *, application_id: str, tenant_id: str, j
         evaluation_id = (await db.execute(text("""
             INSERT INTO application_item_evaluations
                 (run_id, application_id, tenant_id, requirements_revision, position, item_id, category, importance, item_text, item_weight,
-                 ai_result, result, evidence, explanation, confidence, evaluation_source)
+                 ai_result, result, evidence, explanation, confidence, evaluation_source, review_reason)
             VALUES (CAST(:rid AS uuid), CAST(:aid AS uuid), CAST(:tid AS uuid), :rev, :pos, :item, :cat, :imp, :txt, :w, :res, :res,
-                    CAST(:evidence AS jsonb), :expl, :conf, :src)
+                    CAST(:evidence AS jsonb), :expl, :conf, :src, :why)
             ON CONFLICT (run_id, item_id) DO NOTHING
             RETURNING evaluation_id::text"""), {
             "rid": run_id, "aid": application_id, "tid": tenant_id, "rev": revision, "pos": position, "item": spec.item_id, "cat": spec.category,
             "imp": spec.importance, "txt": spec.text[:2000], "w": spec.weight, "res": evaluated.result,
             "evidence": json.dumps(list(evaluated.evidence), ensure_ascii=False), "expl": evaluated.explanation or None,
-            "conf": None if evaluated.confidence is None else format(evaluated.confidence, "f"), "src": source[:100]})).scalar_one_or_none()
+            "conf": None if evaluated.confidence is None else format(evaluated.confidence, "f"), "src": source[:100],
+            "why": evaluated.review_reason})).scalar_one_or_none()
         if evaluation_id is not None:
             await db.execute(text("""
                 INSERT INTO application_item_evaluation_events (evaluation_id, run_id, application_id, tenant_id, event_type, new_result)

@@ -9,7 +9,7 @@ from database import AdminSessionLocal, AsyncSessionLocal, assert_runtime_role, 
 from services import local_processor
 from routers import (
     admin, ai_models, ai_prompts, ai_usage, analytics, applications, approvals, audit_logs, auth,
-    campaigns, client_organizations, comments, dashboard, gates, interviews, item_scoring, job_requirements, jobs, platform_config,
+    campaigns, candidate_matrix, client_organizations, comments, dashboard, gates, interviews, item_scoring, job_requirements, jobs, platform_config,
     platform_secrets, public, saved_views, subscription_plans, tenant, workflow_policies,
 )
 from routers.candidate_tags import app_router as candidate_tags_app, tag_router as candidate_tags_tags
@@ -55,6 +55,7 @@ app.include_router(job_requirements.router)
 app.include_router(applications.router)
 app.include_router(gates.router)
 app.include_router(item_scoring.router)
+app.include_router(candidate_matrix.router)
 app.include_router(comments.router)
 app.include_router(interviews.router)
 app.include_router(approvals.router)

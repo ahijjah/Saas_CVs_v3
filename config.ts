@@ -71,6 +71,8 @@ export const WEBHOOK_CONFIG = {
   DUPLICATE_CV_BASE_URL:        `${API_BASE}/jobs`,
   // Mandatory Gate results of an application (append /{application_id}/gates)
   APPLICATION_GATES_BASE_URL:   `${API_BASE}/applications`,
+  // Final Candidate Matrix (append /jobs/{job_id}/columns|config|rows|export, or /tenant-config)
+  CANDIDATE_MATRIX_BASE_URL:    `${API_BASE}/candidate-matrix`,
   // CV file download (append /{application_id}/cv)
   CV_DOWNLOAD_BASE_URL:         `${API_BASE}/applications`,
   // Workflow status transition (append /{application_id}/workflow-status)
