@@ -5,6 +5,7 @@
         "routers.applications",
         "routers.approvals",
         "routers.campaigns",
+        "routers.candidate_matrix",
         "routers.client_organizations",
         "routers.dashboard",
         "routers.interviews",
@@ -220,7 +221,8 @@
     {
       "consumers": [
         "routers.applications",
-        "routers.candidate_tags"
+        "routers.candidate_tags",
+        "services.matrix.query"
       ],
       "kind": "table",
       "object": "application_candidate_tags",
@@ -321,7 +323,8 @@
     },
     {
       "consumers": [
-        "services.eligibility_service"
+        "services.eligibility_service",
+        "services.matrix.query"
       ],
       "kind": "table",
       "object": "application_gate_results",
@@ -433,7 +436,8 @@
     {
       "consumers": [
         "services.eligibility_service",
-        "services.item_scoring.service"
+        "services.item_scoring.service",
+        "services.matrix.query"
       ],
       "kind": "table",
       "object": "application_item_evaluations",
@@ -598,6 +602,7 @@
         "routers.applications",
         "routers.campaigns",
         "routers.item_scoring",
+        "services.matrix.query",
         "workers.cv_score"
       ],
       "kind": "table",
@@ -627,6 +632,7 @@
         "routers.applications",
         "services.eligibility_service",
         "services.item_scoring.service",
+        "services.matrix.query",
         "workers.cv_score"
       ],
       "kind": "table",
@@ -676,6 +682,7 @@
         "routers.applications",
         "routers.approvals",
         "routers.campaigns",
+        "routers.candidate_matrix",
         "routers.candidate_tags",
         "routers.comments",
         "routers.communication",
@@ -693,6 +700,7 @@
         "services.eligibility_service",
         "services.item_scoring.service",
         "services.knockout_questions_service",
+        "services.matrix.query",
         "services.screening_validation_service",
         "services.subscription_service",
         "workers.cv_score"
@@ -874,6 +882,22 @@
     },
     {
       "consumers": [
+        "routers.candidate_matrix",
+        "services.matrix.config"
+      ],
+      "kind": "table",
+      "object": "candidate_matrix_configs",
+      "path": "request",
+      "privileges": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "role": "cv_app"
+    },
+    {
+      "consumers": [
         "routers.communication",
         "services.communication_events"
       ],
@@ -907,7 +931,8 @@
       "consumers": [
         "main",
         "routers.applications",
-        "routers.candidate_tags"
+        "routers.candidate_tags",
+        "services.matrix.query"
       ],
       "kind": "table",
       "object": "candidate_tags",
@@ -924,6 +949,7 @@
         "main",
         "routers.applications",
         "routers.campaigns",
+        "routers.candidate_matrix",
         "routers.client_organizations",
         "routers.jobs"
       ],
@@ -1052,6 +1078,7 @@
     {
       "consumers": [
         "routers.applications",
+        "routers.candidate_matrix",
         "routers.item_scoring",
         "routers.jobs",
         "services.ai_service",
@@ -1061,6 +1088,7 @@
         "services.eligibility_service",
         "services.item_scoring.service",
         "services.knockout_questions_service",
+        "services.matrix.query",
         "services.requirements_edit",
         "services.requirements_v2.contract",
         "services.requirements_v2.scoring",
@@ -1181,6 +1209,7 @@
         "routers.applications",
         "routers.approvals",
         "routers.campaigns",
+        "routers.candidate_matrix",
         "routers.candidate_tags",
         "routers.client_organizations",
         "routers.communication",
@@ -1196,6 +1225,7 @@
         "services.communication_events",
         "services.knockout_analysis_service",
         "services.knockout_questions_service",
+        "services.matrix.query",
         "services.prompt_config",
         "services.requirements_edit",
         "services.screening_validation_service",
@@ -1474,6 +1504,7 @@
         "database",
         "routers.applications",
         "routers.campaigns",
+        "routers.candidate_matrix",
         "routers.client_organizations",
         "routers.dashboard",
         "routers.jobs",
@@ -1568,6 +1599,8 @@
         "services.eligibility_service",
         "services.item_scoring.service",
         "services.knockout_analysis_service",
+        "services.matrix.config",
+        "services.matrix.query",
         "services.requirements_edit"
       ],
       "kind": "table",

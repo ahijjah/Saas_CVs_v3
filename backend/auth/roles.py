@@ -39,6 +39,8 @@ MANAGER_ROLES = REQUIREMENTS_EDITOR_ROLES | {SUPER_ADMIN}
 REQUIREMENTS_READER_ROLES = TENANT_ROLES
 # Downloading the applications export. A viewer is read-only on screen and may not take the data out.
 EXPORT_ROLES = frozenset({ADMIN, HR_MANAGER, RECRUITER, SUPER_ADMIN})
+# Saving one's own Candidate Matrix layout. The shared job and tenant layouts need REQUIREMENTS_EDITOR_ROLES; a viewer is read-only.
+MATRIX_PERSONAL_ROLES = frozenset({ADMIN, HR_MANAGER, RECRUITER})
 # Destructive or configuration actions that were already admin-only.
 ADMIN_OR_PLATFORM_ROLES = frozenset({ADMIN, SUPER_ADMIN})
 # Tenant usage figures.
@@ -67,5 +69,6 @@ RequireRequirementsEditor = Depends(require_roles(REQUIREMENTS_EDITOR_ROLES))
 RequireRequirementsReader = Depends(require_roles(REQUIREMENTS_READER_ROLES))
 RequireManager = Depends(require_roles(MANAGER_ROLES))
 RequireExport = Depends(require_roles(EXPORT_ROLES))
+RequireMatrixPersonal = Depends(require_roles(MATRIX_PERSONAL_ROLES))
 RequireAdminOrPlatform = Depends(require_roles(ADMIN_OR_PLATFORM_ROLES))
 RequireUsage = Depends(require_roles(USAGE_ROLES))

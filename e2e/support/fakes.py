@@ -49,6 +49,13 @@ def scripted_response(description: str) -> str:
                                      _item("Arabic fluency", "required", "Fluent Arabic is required")],
                           "experience": [_item("Backend experience", "preferred", "Backend experience is preferred", cue="preferred")]},
                          {"skills": 100})
+    if "SCENARIO-MATRIX" in description:
+        return _response({"skills": [_item("SQL troubleshooting", "required", "SQL troubleshooting is required"),
+                                     _item("Python", "required", "Python is required"),
+                                     _item("Incident management", "required", "Incident management is required"),
+                                     _item("English fluency", "required", "English fluency is required"),
+                                     _item("Arabic fluency", "required", "Arabic fluency is required"),
+                                     _item("Kubernetes", "preferred", "Kubernetes is preferred", cue="preferred")]}, {"skills": 100})
     if "SCENARIO-PREFERRED" in description:
         return _response({"experience": [_item("Reporting tools", "preferred", "Knowledge of reporting tools is preferred",
                                                cue="preferred")]}, {})
@@ -98,9 +105,20 @@ def scripted_item_evaluation(user_message: str) -> str:
     Python is met, SQL partially met, anything about Arabic or a licence is unclear (the CV does not say), a Preferred backend item is a yes.
     Every quotation is copied from the CV text, as the real evaluation must do."""
     requirements = json.loads(re.search(r"Requirements:\n(.*?)\n\nCV Text:", user_message, re.S).group(1))
+    cv_text = user_message.split("CV Text:\n", 1)[1] if "CV Text:\n" in user_message else ""
+    # A CV may state a level per requirement as "<Requirement>: advanced|basic|none|yes." and is then evaluated by that sentence, quoted exactly.
+    stated = {m.group(1).strip().lower(): (m.group(0), m.group(2)) for m in re.finditer(r"([A-Za-z][A-Za-z /]{2,40}): (advanced|basic|none|yes)\.", cv_text)}
     out = []
     for r in requirements:
         text = r["requirement"].lower()
+        if text in stated:
+            sentence, level = stated[text]
+            result = {"advanced": "met", "basic": "partially_met", "none": "not_met", "yes": "yes"}[level]
+            if r["importance"] == "preferred" and result != "yes":
+                result = "no"
+            out.append({"item_id": r["item_id"], "result": result, "evidence_quotes": [sentence],
+                        "explanation": f"The CV states {level}.", "confidence": 0.9})
+            continue
         if r["importance"] == "preferred":
             if "backend" in text:
                 out.append({"item_id": r["item_id"], "result": "yes", "evidence_quotes": ["five years of backend experience"],
@@ -115,7 +133,8 @@ def scripted_item_evaluation(user_message: str) -> str:
                         "explanation": "SQL skills are shown, but not at the stated depth.", "confidence": 0.8})
         else:
             out.append({"item_id": r["item_id"], "result": "unclear", "evidence_quotes": [], "explanation": "The CV does not say.", "confidence": 0.5})
-    return json.dumps({"candidate_name": "Jane Candidate", "candidate_email": "", "candidate_phone": "", "evaluations": out,
+    named = re.match(r"\s*([A-Za-z][A-Za-z ]{2,40}) - candidate summary", cv_text)
+    return json.dumps({"candidate_name": named.group(1) if named else "Jane Candidate", "candidate_email": "", "candidate_phone": "", "evaluations": out,
                        "evaluation_notes": "E2E evaluation.", "strengths": ["Python"], "gaps_identified": [], "red_flags": [],
                        "interview_questions": []}, ensure_ascii=False)
 
