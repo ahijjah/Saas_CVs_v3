@@ -35,12 +35,16 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.requirements_v2.contract import CATEGORIES, Issue
+from services.requirements_v2.logic import has_ambiguity
 
 STRUCTURE_KEY = "structure_review"
 KIND_CONFIRMED, KIND_CORRECTED, KIND_ENTERED = "confirmed", "corrected", "entered"
 KINDS = (KIND_CONFIRMED, KIND_CORRECTED, KIND_ENTERED)
 RECORD_KEYS = frozenset({"item_id", "kind", "user_id", "recorded_at", "basis", "basis_hash"})
 BASIS_KEYS = frozenset({"text", "alternatives", "experience"})
+# An item with a `logic` block (options, examples, ambiguity: services/requirements_v2/logic.py) adds it to the basis. Items without one hash
+# exactly as before, so no existing record, approval or digest changes.
+BASIS_OPTIONAL_KEYS = frozenset({"logic"})
 
 REASON_ITEM_REMOVED = "item_removed"
 REASON_ITEM_CHANGED = "item_changed"
@@ -59,18 +63,21 @@ class StructureError(ValueError):
 
 
 def has_structure(item: dict) -> bool:
-    return bool(item.get("alternatives")) or item.get("experience") is not None
+    return bool(item.get("alternatives")) or item.get("experience") is not None or item.get("logic") is not None
 
 
 def basis_of(item: dict) -> dict:
     """What a confirmation is given for: the wording and the structured fields, as they are right now."""
-    return {"text": item["text"], "alternatives": copy.deepcopy(item.get("alternatives")),
-            "experience": copy.deepcopy(item.get("experience"))}
+    basis = {"text": item["text"], "alternatives": copy.deepcopy(item.get("alternatives")),
+             "experience": copy.deepcopy(item.get("experience"))}
+    if item.get("logic") is not None:
+        basis["logic"] = copy.deepcopy(item["logic"])
+    return basis
 
 
 def basis_hash(basis: dict) -> str:
-    blob = json.dumps({k: basis.get(k) for k in sorted(BASIS_KEYS)}, sort_keys=True, ensure_ascii=False,
-                      separators=(",", ":"))
+    keys = sorted(BASIS_KEYS | ({"logic"} if basis.get("logic") is not None else set()))
+    blob = json.dumps({k: basis.get(k) for k in keys}, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -94,7 +101,7 @@ def block_issues(block: Any) -> list[Issue]:
     for r in block["records"]:
         ok = (isinstance(r, dict) and set(r) == RECORD_KEYS and isinstance(r["item_id"], str) and r["kind"] in KINDS
               and all(isinstance(r[k], str) and r[k] for k in ("user_id", "recorded_at", "basis_hash"))
-              and isinstance(r["basis"], dict) and set(r["basis"]) == BASIS_KEYS
+              and isinstance(r["basis"], dict) and set(r["basis"]) in (BASIS_KEYS, BASIS_KEYS | BASIS_OPTIONAL_KEYS)
               and isinstance(r["basis"]["text"], str) and basis_hash(r["basis"]) == r["basis_hash"])
         if not ok:
             out.append(Issue("bad_structure_record", "A structure review record is malformed."))
@@ -146,7 +153,8 @@ def structure_status(doc: dict, original: dict | None) -> StructureStatus:
         for item in doc["categories"][c]["items"]:
             if not has_structure(item):
                 continue
-            if _matches_original(item, base.get(item["id"], (None, None))[1]):
+            # The AI's own reading settles an item, unless the AI flagged a meaningful ambiguity in it: that always needs a person.
+            if _matches_original(item, base.get(item["id"], (None, None))[1]) and not has_ambiguity(item):
                 out["original"].append(item["id"])
                 continue
             rec = _record_for(block, item["id"])
@@ -246,7 +254,8 @@ def record_structure_edits(stored: dict, doc: dict, original: dict | None, *, us
                 continue
             if prior is None:
                 kind = KIND_ENTERED
-            elif (prior[1].get("alternatives"), prior[1].get("experience")) != (item.get("alternatives"), item.get("experience")):
+            elif ((prior[1].get("alternatives"), prior[1].get("experience"), prior[1].get("logic"))
+                  != (item.get("alternatives"), item.get("experience"), item.get("logic"))):
                 kind = KIND_CORRECTED
             else:
                 continue

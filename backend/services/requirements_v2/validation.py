@@ -125,6 +125,14 @@ def _item_structure_issues(item: Any, category: str, seen_ids: set[str]) -> list
                              or not all(isinstance(a, str) and a.strip() for a in alts)):
         bad("bad_alternatives", "alternatives must be null or a list of at least two non-empty strings.")
 
+    from services.requirements_v2.logic import shape_problems as logic_shape_problems
+    for code, message in logic_shape_problems(item.get("logic"), item):
+        bad(code, message)
+    also = item.get("also_source_texts")
+    if also is not None and (not isinstance(also, list) or not 1 <= len(also) <= 5
+                             or not all(isinstance(a, str) and a.strip() for a in also)):
+        bad("bad_also_source_texts", "also_source_texts must be null or 1 to 5 non-empty strings.")
+
     exp = item.get("experience")
     if exp is not None:
         if category != EXPERIENCE_CATEGORY:

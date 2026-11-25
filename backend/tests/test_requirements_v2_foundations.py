@@ -15,7 +15,7 @@ from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA25
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 FIXTURES = BACKEND / "tests" / "fixtures" / "requirements_v2_foundations"
-PROMPT_FILE = BACKEND / "services" / "requirements_v2" / "extraction" / "prompts" / "criteria_extraction_v2-3.txt"
+PROMPT_FILE = BACKEND / "services" / "requirements_v2" / "extraction" / "prompts" / "criteria_extraction_v2-4.txt"
 PRODUCTION_PATHS = ["routers", "workers", "auth", "main.py", "database.py", "config.py"]
 # The one service module approved to import the package. It is reachable from no route, worker, auth, startup or config path,
 # which PRODUCTION_PATHS checks for every module.
@@ -28,6 +28,7 @@ APPROVED_SERVICE_IMPORTERS = {
     # Item-level scoring: reads the confirmed document's items and revision to build the evaluation and to guard the rescore.
     "services/item_scoring/evaluator.py",
     "services/item_scoring/service.py",
+    "services/item_scoring/combine.py",
 }
 # The workers approved to import the package: the requirements-v2 extraction worker, and the scoring worker's requirements-v2 branch
 # (the adapter and revision guard in services/requirements_v2/scoring.py). No other production module may import it.
@@ -44,8 +45,8 @@ B12 = _case("B12_ar_injection")
 
 def test_pinned_prompt_identity_is_unchanged():
     assert PROMPT_CODE == "criteria_extraction_v2"
-    assert PROMPT_VERSION == "criteria_extraction_v2-3"
-    assert PROMPT_SHA256 == "f819010376ba287c8b7febb14639b2a3128d6a7a51be74a4f148d575a1fd5125"
+    assert PROMPT_VERSION == "criteria_extraction_v2-4"
+    assert PROMPT_SHA256 == "d30bed05d8319a482b74fae210a5a33c8b01b2d90addb1f21fe36747e44619e4"
     assert PROMPT_FILE.read_bytes().decode("utf-8") == load_prompt()
 
 

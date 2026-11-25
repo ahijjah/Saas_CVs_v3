@@ -23,6 +23,7 @@ import copy
 from typing import Iterable
 
 from services.requirements_v2.acknowledgment import get_review, reconcile_classification_review
+from services.requirements_v2.logic import apply as apply_logic
 
 from services.requirements_v2.contract import (
     CATEGORIES, IMPORTANCE_PREFERRED, IMPORTANCE_REQUIRED, IMPORTANCES, ORIGIN_RECRUITER_ADDED,
@@ -105,7 +106,7 @@ def set_text(doc: dict, item_id: str, text: str) -> dict:
 _UNSET = object()
 
 
-def set_structure(doc: dict, item_id: str, *, alternatives=_UNSET, experience=_UNSET) -> dict:
+def set_structure(doc: dict, item_id: str, *, alternatives=_UNSET, experience=_UNSET, logic=_UNSET) -> dict:
     """Change the structured fields only (OR alternatives and / or experience subject + min_years). The wording,
     provenance, source wording, classification and weight are untouched. Pass None to clear a field. Nothing is
     interpreted or normalised, and nothing here records a confirmation: the structure review (structure.py) is
@@ -117,6 +118,8 @@ def set_structure(doc: dict, item_id: str, *, alternatives=_UNSET, experience=_U
         item["alternatives"] = None if alternatives is None else list(alternatives)
     if experience is not _UNSET:
         item["experience"] = None if experience is None else dict(experience)
+    if logic is not _UNSET:                      # options / examples / ambiguity (logic.py); `alternatives` then mirrors the option texts
+        out["categories"][category]["items"][idx] = apply_logic(item, logic)
     return out
 
 

@@ -88,4 +88,4 @@ def test_optional_is_never_stored_for_any_input():
 
 
 def test_the_pinned_prompt_identity_is_unchanged():
-    assert PROMPT_SHA256 == "f819010376ba287c8b7febb14639b2a3128d6a7a51be74a4f148d575a1fd5125"
+    assert PROMPT_SHA256 == "d30bed05d8319a482b74fae210a5a33c8b01b2d90addb1f21fe36747e44619e4"

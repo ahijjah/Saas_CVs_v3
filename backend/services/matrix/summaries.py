@@ -84,6 +84,9 @@ def flags(row: Mapping[str, Any], flagged: Sequence[Mapping[str, Any]]) -> dict[
     add("conflicting_evidence", "medium", targets(lambda f: f["review_reason"] == "conflicting_evidence"))
     add("evidence_not_found", "medium", targets(lambda f: f["review_reason"] == "no_verified_evidence"))
     add("low_confidence", "low", targets(lambda f: f["review_reason"] == "low_confidence"))
+    # A review-only alternative that was met, or an ambiguous criterion the evidence does not establish: a person decides (never a fail).
+    add("conditional_alternative", "medium", targets(lambda f: f["review_reason"] == "conditional_alternative"))
+    add("ambiguous_requirement", "medium", targets(lambda f: f["review_reason"] == "ambiguous_requirement"))
     if _int(row.get("fl_proc")):
         add("processing_error", "high", [{"type": "application", "id": str(row["application_id"])}])
     review_targets = [{"type": "item", "id": f["item_id"]} for f in unclear_required] + list(row.get("review_gate_targets") or [])

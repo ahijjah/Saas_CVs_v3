@@ -51,6 +51,8 @@ _EV = f"""
            count(*) FILTER (WHERE {_OPEN} AND e.review_reason = 'no_verified_evidence')             AS fl_noev,
            count(*) FILTER (WHERE {_OPEN} AND e.review_reason = 'low_confidence')                   AS fl_low,
            count(*) FILTER (WHERE {_OPEN} AND e.review_reason = 'conflicting_evidence')             AS fl_conflict,
+           count(*) FILTER (WHERE {_OPEN} AND e.review_reason = 'conditional_alternative')          AS fl_cond,
+           count(*) FILTER (WHERE {_OPEN} AND e.review_reason = 'ambiguous_requirement')            AS fl_ambig,
            count(*) FILTER (WHERE e.result IN ('unclear', 'not_clear') OR ({_OPEN} AND e.review_reason IS NOT NULL)) AS fl_items
     FROM application_item_evaluations e
     WHERE e.run_id IN (SELECT run_id FROM base WHERE run_id IS NOT NULL)
@@ -84,7 +86,7 @@ _MATRIX = f"""
     m AS (
         SELECT b.*, {_ELIGIBILITY} AS eligibility, {_SCORING} AS scoring_state, {_STALE} AS stale,
                ev.m_total, ev.m_met, ev.m_partial, ev.m_not_met, ev.m_unclear, ev.p_total, ev.p_yes, ev.p_no, ev.p_unclear,
-               ev.fl_unclear, ev.fl_noev, ev.fl_low, ev.fl_conflict, ev.fl_items,
+               ev.fl_unclear, ev.fl_noev, ev.fl_low, ev.fl_conflict, ev.fl_cond, ev.fl_ambig, ev.fl_items,
                COALESCE(gt.g_total, 0) AS g_total, COALESCE(gt.g_passed, 0) AS g_passed, COALESCE(gt.g_failed, 0) AS g_failed,
                COALESCE(gt.g_review, 0) AS g_review, COALESCE(gt.g_na, 0) AS g_na,
                (b.processing_status = 'failed' AND b.stopped_reason IN ('processing_error', 'extraction_failed'))::int AS fl_proc,
@@ -126,6 +128,7 @@ _CELL_RANK = {
 _FLAG_PREDICATE = {
     "unclear_criteria": "COALESCE(m.fl_unclear, 0) > 0", "conflicting_evidence": "COALESCE(m.fl_conflict, 0) > 0",
     "evidence_not_found": "COALESCE(m.fl_noev, 0) > 0", "low_confidence": "COALESCE(m.fl_low, 0) > 0", "processing_error": "m.fl_proc > 0",
+    "conditional_alternative": "COALESCE(m.fl_cond, 0) > 0", "ambiguous_requirement": "COALESCE(m.fl_ambig, 0) > 0",
     "unresolved_review": "(COALESCE(m.m_unclear, 0) + m.g_review) > 0",
 }
 

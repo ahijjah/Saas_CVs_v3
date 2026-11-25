@@ -36,7 +36,8 @@ PREFERRED_RESULTS = ("yes", "no", "unclear", "not_assessed")      # a Preferred 
 GATE_RESULTS = ("passed", "failed", "review_required", "not_assessed")
 ELIGIBILITY = ("eligible", "not_eligible", "review_required", "not_assessed")
 SCORING_STATUSES = ("scored", "review_required", "not_scored", "legacy", "none")
-FLAG_KINDS = ("unclear_criteria", "conflicting_evidence", "evidence_not_found", "low_confidence", "processing_error", "unresolved_review")
+FLAG_KINDS = ("unclear_criteria", "conflicting_evidence", "evidence_not_found", "low_confidence", "processing_error", "unresolved_review",
+              "conditional_alternative", "ambiguous_requirement")
 SEVERITIES = ("high", "medium", "low")
 
 

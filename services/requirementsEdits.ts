@@ -5,6 +5,8 @@
 import type { ImportanceLevel, RequirementsItem, RequirementsOperation, RequirementsView } from './requirementsApi';
 import { draftFromItem, sameGate } from '../utils/gates';
 import type { GateDraft } from '../utils/gates';
+import { buildLogicOperation } from '../utils/requirementLogic';
+import type { RequirementsLogicInput } from './requirementsApi';
 
 export const FINDING_DECISIONS = ['fixed', 'accepted_as_is', 'dismissed_false_positive'] as const;
 export type FindingDecision = (typeof FINDING_DECISIONS)[number];
@@ -16,6 +18,8 @@ export interface ItemDraft {
   removed?: boolean;
   /** undefined: no change. null: remove the gate. A draft: confirm (or change) the Mandatory Gate. */
   gate?: GateDraft | null;
+  /** undefined: no change. null: clear the interpretation. An input: correct it (options, examples, ambiguity). */
+  logic?: RequirementsLogicInput | null;
 }
 
 export interface NewItemDraft {
@@ -91,6 +95,8 @@ export function buildOperations(
     if (draft.weight !== undefined && effectiveImportance === 'required' && draft.weight !== item.weight) {
       ops.push({ op: 'set_item_weight', item_id: itemId, weight: draft.weight });
     }
+    const logicOp = buildLogicOperation(item, draft.logic);
+    if (logicOp) ops.push(logicOp);
     // A Mandatory Gate belongs to Required items only. When the item becomes Preferred the server removes the gate itself, so nothing is sent.
     if (draft.gate !== undefined && effectiveImportance === 'required') {
       const current = draftFromItem(item);

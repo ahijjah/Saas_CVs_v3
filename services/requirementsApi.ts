@@ -24,6 +24,26 @@ export interface RequirementsGateSuggestion {
   source_text: string | null;
 }
 
+/** How one criterion's wording combines. Any ONE direct option satisfies it; an option with parts needs all of them; a review option is
+ *  accepted only after a person decides; examples are illustrations, never requirements; an ambiguity is a doubt the AI flagged for the recruiter. */
+export interface RequirementsLogicOption {
+  id: string;
+  text: string;
+  acceptance: 'direct' | 'review';
+  all_of: string[] | null;
+}
+export interface RequirementsLogic {
+  options: RequirementsLogicOption[] | null;
+  examples: string[] | null;
+  ambiguity: { note: string } | null;
+}
+/** What the recruiter sends to correct it: option ids are assigned by the server. */
+export interface RequirementsLogicInput {
+  options: { text: string; acceptance: 'direct' | 'review'; all_of: string[] | null }[] | null;
+  examples: string[] | null;
+  ambiguity: { note: string } | null;
+}
+
 export interface RequirementsItem {
   id: string;
   text: string;
@@ -35,6 +55,9 @@ export interface RequirementsItem {
   experience: { subject: string | null; min_years: number | null } | null;
   gate?: RequirementsGate | null;
   gate_suggestion?: RequirementsGateSuggestion | null;
+  logic?: RequirementsLogic | null;
+  /** Other statements of the same obligation that were merged into this criterion (verbatim). */
+  also_source_texts?: string[] | null;
 }
 
 export interface RequirementsCategory {
@@ -82,6 +105,7 @@ export type RequirementsOperation =
   | { op: 'set_item_weight'; item_id: string; weight: number | null }
   | { op: 'set_alternatives'; item_id: string; alternatives: string[] | null }
   | { op: 'set_experience'; item_id: string; experience: { subject: string | null; min_years: number | null } | null }
+  | { op: 'set_logic'; item_id: string; logic: RequirementsLogicInput | null }
   | { op: 'set_category_weight'; category: string; weight: number }
   | { op: 'add_item'; category: string; text: string; importance: ImportanceLevel; weight: number | null;
       alternatives: string[] | null; experience: { subject: string | null; min_years: number | null } | null }

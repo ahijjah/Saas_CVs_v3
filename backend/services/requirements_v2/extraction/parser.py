@@ -48,6 +48,7 @@ from services.requirements_v2.contract import (
 )
 from services.requirements_v2.extraction.cues import jd_marks_preferred
 from services.requirements_v2.extraction.gate_cues import suggest_gate
+from services.requirements_v2.extraction.logic_reading import convert_also, convert_logic
 from services.requirements_v2.extraction.completeness import missed_context_statements, missed_preferred_statements
 from services.requirements_v2.extraction.prompt import PROMPT_CODE, PROMPT_SHA256, PROMPT_VERSION
 from services.requirements_v2.extraction.text import (
@@ -65,7 +66,7 @@ STATUS_FAILED = "failed"
 
 SCOREABILITY_STATUSES = ("scoreable", "open_broad", "insufficient")
 CONDITION_LISTS = ("non_scoreable_requirements", "post_hiring_conditions", "informational_items")
-_ITEM_FIELDS = {"text", "importance", "importance_cue", "source_text", "origin", "alternatives", "experience"}
+_ITEM_FIELDS = {"text", "importance", "importance_cue", "source_text", "origin", "alternatives", "experience", "logic", "also_stated_in"}
 _QUOTE_PREVIEW = 80
 
 NEEDS_REVIEW = "Needs review: "
@@ -242,8 +243,20 @@ def _convert_item(raw: Any, category: str, position: int, jd: str, new_id: Calla
 
     experience = _convert_experience(raw.get("experience"), category, source or claimed, note, iid)
 
+    # How the wording combines (options, parts that must all be met, examples, ambiguity): read, checked against the job description,
+    # and mirrored into `alternatives`. Merged duplicate statements keep every source; a merge that may have lost a distinct obligation is flagged.
+    logic = convert_logic(raw.get("logic"), jd, source, span, note, iid)
+    also_texts, merge_doubt = convert_also(raw.get("also_stated_in"), jd, source, note, iid)
+    if merge_doubt:
+        note("merged_statements_differ", merge_doubt, iid, prefix=NEEDS_REVIEW)
+        logic = dict(logic or {"options": None, "examples": None, "ambiguity": None})
+        existing = (logic.get("ambiguity") or {}).get("note")
+        logic["ambiguity"] = {"note": f"{existing} {merge_doubt}" if existing else merge_doubt}
+    if logic and logic.get("options"):
+        alternatives = [o["text"] for o in logic["options"]]
+
     item = make_item(text.strip(), importance, item_id=iid, origin=origin, source_text=source,
-                     alternatives=alternatives, experience=experience)
+                     alternatives=alternatives, experience=experience, logic=logic, also_source_texts=also_texts)
     # A Mandatory Gate is only SUGGESTED, and only for a Required item whose wording the job description states explicitly. The
     # suggestion enforces nothing; an admin or HR manager confirms or refuses it (services/requirements_v2/gates.py).
     if importance == IMPORTANCE_REQUIRED and span is not None:
@@ -397,7 +410,8 @@ def _meaningful_experience(value: Any) -> bool:
 def _mergeable(raw: Any) -> bool:
     """An item that can be one alternative of a requirement: it has source wording and a stated importance, no structured
     experience, and either no alternatives or a valid list of its own (it then contributes them)."""
-    if not (isinstance(raw, dict) and not _meaningful_experience(raw.get("experience"))
+    if not (isinstance(raw, dict) and not raw.get("logic") and not raw.get("also_stated_in")        # an interpreted item is never re-merged by position
+            and not _meaningful_experience(raw.get("experience"))
             and isinstance(raw.get("source_text"), str) and raw["source_text"].strip()
             and isinstance(raw.get("importance"), str) and isinstance(raw.get("text"), str) and raw["text"].strip()):
         return False

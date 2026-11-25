@@ -88,7 +88,10 @@ def basis_hash(doc: dict) -> str:
     rows = []
     for c in CATEGORIES:
         for i in sorted(doc["categories"][c]["items"], key=lambda x: x["id"]):
-            rows.append([c, i["id"], i["importance"], i["text"], i.get("alternatives"), i.get("experience")])
+            row = [c, i["id"], i["importance"], i["text"], i.get("alternatives"), i.get("experience")]
+            if i.get("logic") is not None:                  # only an item that has one: every other digest is unchanged
+                row.append(i["logic"])
+            rows.append(row)
     blob = json.dumps(rows, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 

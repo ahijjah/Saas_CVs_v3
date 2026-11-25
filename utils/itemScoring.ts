@@ -16,6 +16,19 @@ export interface ItemHistoryEvent {
   by: string | null;
 }
 
+/** One option of a criterion that lists options, as it was assessed: the application combines these (backend/services/item_scoring/combine.py). */
+export interface OptionResultView {
+  option_id: string;
+  text: string;
+  acceptance: 'direct' | 'review';
+  result: RequiredResult;
+  parts: { text: string; result: RequiredResult }[] | null;
+  evidence: string[];
+  explanation: string;
+  confidence: string | null;
+  review_reason: string | null;
+}
+
 export interface ItemView {
   item_id: string;
   text: string;
@@ -30,6 +43,11 @@ export interface ItemView {
   evaluated_at: string | null;
   resolution: { by: string | null; at: string; reason: string | null; previous_result: string } | null;
   history: ItemHistoryEvent[];
+  /** Why a person must look at this item (no_verified_evidence, low_confidence, conflicting_evidence, conditional_alternative, ambiguous_requirement). */
+  review_reason?: string | null;
+  /** The option that was met, and every option's result, for a criterion that lists options. */
+  matched_option?: string | null;
+  option_results?: OptionResultView[] | null;
 }
 
 export interface CategoryView {
@@ -120,6 +138,14 @@ const COPY = {
     noDecision: 'No decision yet', thresholds: (q: number | null, p: number | null) => `Thresholds ${q ?? '–'} / ${p ?? '–'}`,
     history: 'History', unclearCount: (n: number) => `${n} unclear Required item${n === 1 ? '' : 's'}`,
     pts: 'pts',
+    metThrough: 'Met through', options: 'Options assessed', afterReview: 'accepted only after review', parts: 'All of',
+    reasons: {
+      conditional_alternative: 'An alternative that is accepted only after review was met, so a person decides.',
+      ambiguous_requirement: 'The requirement is ambiguous and the evidence does not establish it, so a person decides.',
+      no_verified_evidence: 'No quotation from the CV could be verified for this result.',
+      low_confidence: 'The assessment was not confident enough to count.',
+      conflicting_evidence: 'The CV contradicts itself about this requirement.',
+    } as Record<string, string>,
   },
   ar: {
     title: 'تقييم المتطلبات',
@@ -153,6 +179,14 @@ const COPY = {
     noDecision: 'لا قرار بعد', thresholds: (q: number | null, p: number | null) => `الحدود ${q ?? '–'} / ${p ?? '–'}`,
     history: 'السجل', unclearCount: (n: number) => `${n} بنود مطلوبة غير واضحة`,
     pts: 'نقطة',
+    metThrough: 'تم الاستيفاء عبر', options: 'الخيارات التي تم تقييمها', afterReview: 'مقبول بعد المراجعة فقط', parts: 'جميع',
+    reasons: {
+      conditional_alternative: 'تم استيفاء بديل لا يُقبل إلا بعد المراجعة، لذلك يقرر شخص.',
+      ambiguous_requirement: 'المتطلب غامض والأدلة لا تثبته، لذلك يقرر شخص.',
+      no_verified_evidence: 'تعذّر التحقق من أي اقتباس من السيرة الذاتية لهذه النتيجة.',
+      low_confidence: 'لم تكن ثقة التقييم كافية لاحتسابه.',
+      conflicting_evidence: 'تتعارض السيرة الذاتية مع نفسها بشأن هذا المتطلب.',
+    } as Record<string, string>,
   },
 } as const;
 

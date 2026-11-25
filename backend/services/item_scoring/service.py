@@ -120,16 +120,17 @@ async def record_run(db: AsyncSession, *, application_id: str, tenant_id: str, j
         evaluation_id = (await db.execute(text("""
             INSERT INTO application_item_evaluations
                 (run_id, application_id, tenant_id, requirements_revision, position, item_id, category, importance, item_text, item_weight,
-                 ai_result, result, evidence, explanation, confidence, evaluation_source, review_reason)
+                 ai_result, result, evidence, explanation, confidence, evaluation_source, review_reason, matched_option, option_results)
             VALUES (CAST(:rid AS uuid), CAST(:aid AS uuid), CAST(:tid AS uuid), :rev, :pos, :item, :cat, :imp, :txt, :w, :res, :res,
-                    CAST(:evidence AS jsonb), :expl, :conf, :src, :why)
+                    CAST(:evidence AS jsonb), :expl, :conf, :src, :why, :matched, CAST(:options AS jsonb))
             ON CONFLICT (run_id, item_id) DO NOTHING
             RETURNING evaluation_id::text"""), {
             "rid": run_id, "aid": application_id, "tid": tenant_id, "rev": revision, "pos": position, "item": spec.item_id, "cat": spec.category,
             "imp": spec.importance, "txt": spec.text[:2000], "w": spec.weight, "res": evaluated.result,
             "evidence": json.dumps(list(evaluated.evidence), ensure_ascii=False), "expl": evaluated.explanation or None,
             "conf": None if evaluated.confidence is None else format(evaluated.confidence, "f"), "src": source[:100],
-            "why": evaluated.review_reason})).scalar_one_or_none()
+            "why": evaluated.review_reason, "matched": evaluated.matched_option,
+            "options": None if evaluated.option_results is None else json.dumps(list(evaluated.option_results), ensure_ascii=False)})).scalar_one_or_none()
         if evaluation_id is not None:
             await db.execute(text("""
                 INSERT INTO application_item_evaluation_events (evaluation_id, run_id, application_id, tenant_id, event_type, new_result)
@@ -231,7 +232,8 @@ async def load_view(db: AsyncSession, application_id: str) -> dict | None:
         return None
     evaluations = [dict(r) for r in (await db.execute(text("""
         SELECT e.evaluation_id::text, e.item_id, e.category, e.importance, e.item_text, e.item_weight, e.ai_result, e.result, e.evidence,
-               e.explanation, e.confidence, e.evaluation_source, e.evaluated_at, e.resolved_at, e.resolution_reason, u.full_name AS resolved_by_name
+               e.explanation, e.confidence, e.evaluation_source, e.evaluated_at, e.resolved_at, e.resolution_reason, u.full_name AS resolved_by_name,
+               e.review_reason, e.matched_option, e.option_results
         FROM application_item_evaluations e LEFT JOIN users u ON u.user_id = e.resolved_by
         WHERE e.run_id = CAST(:rid AS uuid) ORDER BY e.position"""), {"rid": run["run_id"]})).mappings()]
     history: dict[str, list[dict]] = {}
@@ -259,6 +261,8 @@ async def load_view(db: AsyncSession, application_id: str) -> dict | None:
             "evaluated_at": e["evaluated_at"].isoformat() if e["evaluated_at"] else None,
             "resolution": {"by": e["resolved_by_name"], "at": e["resolved_at"].isoformat(), "reason": e["resolution_reason"],
                            "previous_result": e["ai_result"]} if resolved else None,
+            "review_reason": e["review_reason"], "matched_option": e["matched_option"],
+            "option_results": e["option_results"] if isinstance(e["option_results"], list) or e["option_results"] is None else json.loads(e["option_results"]),
             "history": history.get(e["evaluation_id"], [])}
 
     categories = []

@@ -37,7 +37,8 @@ const COPY = {
     method: { item_level_v2: 'Item-level', legacy_category: 'Legacy category', none: '' } as Record<string, string>,
     stale: 'Out of date', staleHelp: (used: number | null) => `Scored against requirements revision ${used ?? '?'}; the requirements have changed since.`,
     summary: { met: 'Met', partially_met: 'Partially Met', not_met: 'Not Met', unclear: 'Unclear', yes: 'Yes', no: 'No', passed: 'Passed', failed: 'Failed', review_required: 'Review Required', not_assessed: 'Not Assessed', total: 'Total' } as Record<string, string>,
-    flag: { unclear_criteria: 'Unclear criteria', conflicting_evidence: 'Conflicting evidence', evidence_not_found: 'Evidence not found in CV', low_confidence: 'Low confidence', processing_error: 'Processing error', unresolved_review: 'Unresolved review' } as Record<FlagKind, string>,
+    flag: { unclear_criteria: 'Unclear criteria', conflicting_evidence: 'Conflicting evidence', evidence_not_found: 'Evidence not found in CV', low_confidence: 'Low confidence', processing_error: 'Processing error', unresolved_review: 'Unresolved review',
+      conditional_alternative: 'Conditional alternative', ambiguous_requirement: 'Ambiguous requirement' } as Record<FlagKind, string>,
     severity: { high: 'High', medium: 'Medium', low: 'Low' } as Record<Severity, string>,
     noFlags: 'None', gateOverridden: 'Overridden by a person',
     drawerTitle: 'Evidence and review', drawerClose: 'Close', evidence: 'Evidence', noEvidence: 'No supporting quotation from the CV', explanation: 'Explanation',
@@ -72,7 +73,8 @@ const COPY = {
     method: { item_level_v2: 'على مستوى البنود', legacy_category: 'على مستوى الفئات', none: '' } as Record<string, string>,
     stale: 'قديمة', staleHelp: (used: number | null) => `تم التقييم وفق نسخة المتطلبات ${used ?? '؟'}؛ وقد تغيّرت المتطلبات منذ ذلك الحين.`,
     summary: { met: 'مستوفى', partially_met: 'جزئي', not_met: 'غير مستوفى', unclear: 'غير واضح', yes: 'نعم', no: 'لا', passed: 'اجتاز', failed: 'لم يجتز', review_required: 'مراجعة', not_assessed: 'لم يُقيَّم', total: 'الإجمالي' } as Record<string, string>,
-    flag: { unclear_criteria: 'معايير غير واضحة', conflicting_evidence: 'أدلة متعارضة', evidence_not_found: 'الدليل غير موجود في السيرة الذاتية', low_confidence: 'ثقة منخفضة', processing_error: 'خطأ في المعالجة', unresolved_review: 'مراجعة غير محسومة' } as Record<FlagKind, string>,
+    flag: { unclear_criteria: 'معايير غير واضحة', conflicting_evidence: 'أدلة متعارضة', evidence_not_found: 'الدليل غير موجود في السيرة الذاتية', low_confidence: 'ثقة منخفضة', processing_error: 'خطأ في المعالجة', unresolved_review: 'مراجعة غير محسومة',
+      conditional_alternative: 'بديل مشروط', ambiguous_requirement: 'متطلب غامض' } as Record<FlagKind, string>,
     severity: { high: 'مرتفعة', medium: 'متوسطة', low: 'منخفضة' } as Record<Severity, string>,
     noFlags: 'لا يوجد', gateOverridden: 'تجاوزه شخص',
     drawerTitle: 'الدليل والمراجعة', drawerClose: 'إغلاق', evidence: 'الدليل', noEvidence: 'لا يوجد اقتباس داعم من السيرة الذاتية', explanation: 'التفسير',
@@ -160,7 +162,8 @@ export function hasFilters(f: MatrixFilters): boolean {
 export const EMPTY_FILTERS: MatrixFilters = { mandatory: [], preferred: [], gates: [] };
 export const WORKFLOW_STATUSES = ['awaiting_review', 'under_review', 'shortlisted', 'interviewing', 'offer_made', 'hired', 'rejected', 'withdrawn', 'on_hold'] as const;
 export const ELIGIBILITIES: Eligibility[] = ['eligible', 'not_eligible', 'review_required', 'not_assessed'];
-export const FLAG_KINDS: FlagKind[] = ['unclear_criteria', 'conflicting_evidence', 'evidence_not_found', 'low_confidence', 'processing_error', 'unresolved_review'];
+export const FLAG_KINDS: FlagKind[] = ['unclear_criteria', 'conflicting_evidence', 'evidence_not_found', 'low_confidence', 'processing_error', 'unresolved_review',
+  'conditional_alternative', 'ambiguous_requirement'];
 
 export function workflowLabel(status: string | null, lang: Lang): string {
   const ar: Record<string, string> = { awaiting_review: 'بانتظار المراجعة', under_review: 'قيد المراجعة', shortlisted: 'في القائمة المختصرة', interviewing: 'المقابلة', offer_made: 'تم تقديم عرض', hired: 'تم التوظيف', rejected: 'مرفوض', withdrawn: 'منسحب', on_hold: 'معلّق' };

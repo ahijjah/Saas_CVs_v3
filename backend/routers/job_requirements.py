@@ -59,6 +59,24 @@ class GateSuggestionOut(_Strict):
     source_text: str | None
 
 
+class OptionOut(_Strict):
+    id: str
+    text: str
+    acceptance: Literal["direct", "review"]
+    all_of: list[str] | None
+
+
+class AmbiguityOut(_Strict):
+    note: str
+
+
+class LogicOut(_Strict):
+    """How the criterion's wording combines (services/requirements_v2/logic.py). Absent for an item that has no such structure."""
+    options: list[OptionOut] | None
+    examples: list[str] | None
+    ambiguity: AmbiguityOut | None
+
+
 class ItemOut(_Strict):
     id: str
     text: str
@@ -70,6 +88,17 @@ class ItemOut(_Strict):
     experience: ExperienceOut | None
     gate: GateOut | None = None
     gate_suggestion: GateSuggestionOut | None = None
+    logic: LogicOut | None = None
+    also_source_texts: list[str] | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_optional_fields(self, handler):
+        """An item without an interpretation keeps exactly the shape it always had: the two optional fields are written only when present."""
+        data = handler(self)
+        for key in ("logic", "also_source_texts"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
 
 
 class CategoryOut(_Strict):
