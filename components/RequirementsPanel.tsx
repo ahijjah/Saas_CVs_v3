@@ -6,6 +6,8 @@ import {
 import { useLanguage } from '../context/LanguageContext';
 import type { KnockoutQuestion } from '../types';
 import RequirementGateControls from './RequirementGateControls';
+import RequirementLogic from './RequirementLogic';
+import { logicProblem } from '../utils/requirementLogic';
 import { draftFromItem, gateCopy, gateProblem, requirementBadges } from '../utils/gates';
 import type { GateDraft, RequirementBadge } from '../utils/gates';
 import {
@@ -255,6 +257,11 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
     const problem = gateProblem(effective, itemDrafts[i.id]?.importance ?? i.importance, otherLinked(i.id), lang);
     return problem ? [problem] : [];
   });
+  const logicProblems = allItems.filter((i) => !itemDrafts[i.id]?.removed).flatMap((i) => {
+    const draftLogic = itemDrafts[i.id]?.logic;
+    const problem = draftLogic === undefined ? null : logicProblem(draftLogic, lang);
+    return problem ? [problem] : [];
+  });
 
   return (
     <section className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 space-y-6" aria-labelledby="requirements-heading">
@@ -472,7 +479,11 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
               if (!found) return null;
               return (
                 <li key={itemId} className="flex flex-wrap items-center gap-2 justify-between">
-                  <span dir="auto" className="text-slate-700">{found.item.text}</span>
+                  <div className="flex-1 min-w-[12rem]">
+                    <span dir="auto" className="text-slate-700">{found.item.text}</span>
+                    {found.item.source_text && <p dir="auto" className="text-xs text-slate-500">From the job description: “{found.item.source_text}”</p>}
+                    <RequirementLogic item={found.item} lang={lang} />
+                  </div>
                   {canEdit && (
                     <button type="button" className="px-3 py-1 rounded-lg border border-slate-300 text-sm disabled:opacity-50"
                       disabled={busy} onClick={() => void submit([confirmStructure(itemId)], 'Structure confirmed.')}>
@@ -529,9 +540,10 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex-1 min-w-[12rem]">
                           <p dir="auto" className="text-sm font-medium text-slate-900">{item.text}</p>
-                          {item.alternatives && item.alternatives.length > 0 && (
+                          {item.alternatives && item.alternatives.length > 0 && !item.logic?.options && (
                             <p dir="auto" className="mt-1 text-xs text-slate-600">Accepted alternatives: {item.alternatives.join(' / ')}</p>
                           )}
+                          <RequirementLogic item={item} lang={lang} />
                           {item.experience && (item.experience.subject || item.experience.min_years !== null) && (
                             <p dir="auto" className="mt-1 text-xs text-slate-600">
                               Experience{item.experience.min_years !== null ? `: ${item.experience.min_years} years` : ''}
@@ -598,9 +610,12 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
                         <button type="button" className="text-red-700 underline text-sm" onClick={() => editItem(item.id, { removed: true })}>Remove</button>
                       )}
                     </div>
-                    {item.alternatives && item.alternatives.length > 0 && (
+                    {item.alternatives && item.alternatives.length > 0 && !item.logic?.options && (
                       <p dir="auto" className="text-xs text-slate-600">One of: {item.alternatives.join(' / ')}</p>
                     )}
+                    {canEdit && (item.logic || draft.logic) ? (
+                      <RequirementLogic item={item} lang={lang} draft={draft.logic} onDraft={(next) => editItem(item.id, { logic: next })} />
+                    ) : <RequirementLogic item={item} lang={lang} />}
                     {item.experience && (item.experience.subject || item.experience.min_years !== null) && (
                       <p dir="auto" className="text-xs text-slate-600">
                         Experience{item.experience.min_years !== null ? `: ${item.experience.min_years} years` : ''}
@@ -659,7 +674,7 @@ export default function RequirementsPanel({ jobId, userRole, onReadinessChange, 
               Cancel
             </button>
             <button type="button" className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm disabled:opacity-50"
-              disabled={pendingOps.length === 0 || busy || conflict !== null || gateProblems.length > 0}
+              disabled={pendingOps.length === 0 || busy || conflict !== null || gateProblems.length > 0 || logicProblems.length > 0}
               onClick={() => void submit(pendingOps, 'Saved.', 'all', true)}>
               {busy ? 'Saving…' : 'Save changes'}
             </button>

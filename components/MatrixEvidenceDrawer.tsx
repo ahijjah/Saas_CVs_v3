@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import OptionResults from './OptionResults';
 import { getGates, GateSummaryData } from '../services/gatesApi';
 import { getItemScoring } from '../services/itemScoringApi';
 import { isItemLevel, ItemScoringView, ItemView } from '../utils/itemScoring';
@@ -80,6 +81,7 @@ export default function MatrixEvidenceDrawer({ applicationId, candidateName, foc
             ? <ul className="space-y-1">{item.evidence.map((q, i) => <li key={i} dir="auto" className="text-xs text-slate-700 border-s-2 border-slate-300 ps-2">“{q}”</li>)}</ul>
             : <p className="text-xs text-slate-500">{copy.noEvidence}</p>}
           {item.explanation && <p dir="auto" className="text-xs text-slate-600"><b>{copy.explanation}:</b> {item.explanation}</p>}
+          <OptionResults item={item} lang={lang} />
           {item.confidence != null && <p className="text-xs text-slate-600"><b>{copy.confidence}:</b> {Math.round(Number(item.confidence) * 100)}%</p>}
           {item.resolution && (
             <p data-testid={`drawer-resolution-${item.item_id}`} className="text-xs text-blue-800">

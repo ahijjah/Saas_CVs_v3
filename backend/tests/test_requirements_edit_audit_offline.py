@@ -100,7 +100,7 @@ def test_planning_records_counts_touched_generated_retired_and_structure_ids():
     (generated,) = audit.generated_item_ids
     assert ID_RE.match(generated)
     assert audit.operation_counts == {
-        "set_text": 1, "set_importance": 0, "set_item_weight": 0, "set_alternatives": 1, "set_experience": 0,
+        "set_text": 1, "set_importance": 0, "set_item_weight": 0, "set_alternatives": 1, "set_experience": 0, "set_logic": 0,
         "set_category_weight": 0, "add_item": 1, "remove_item": 1, "confirm_no_numeric_score": 0,
         "acknowledge_classification_warning": 0, "confirm_structure": 0, "resolve_structural_finding": 0,
         "reorder_items": 0, "set_gate": 0, "clear_gate": 0}

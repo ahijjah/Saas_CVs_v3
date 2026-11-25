@@ -31,7 +31,11 @@ package treats its inputs as read-only and returns new objects.
       "weight": int | None,                 # required: whole percent within the category; preferred: None
       "origin": "stated" | "from_responsibilities" | "recruiter_added",
       "source_text": str | None,            # verbatim JD wording (None for recruiter-added items)
-      "alternatives": [str, ...] | None,    # OR alternatives kept inside ONE item (>= 2 entries)
+      "alternatives": [str, ...] | None,    # OR alternatives kept inside ONE item (>= 2 entries); mirrors logic.options when there are any
+      "logic": {...} | None,                # optional (absent = unchanged): options with direct/review acceptance, AND-parts, examples,
+                                            # a flagged ambiguity. See services/requirements_v2/logic.py
+      "also_source_texts": [str, ...] | None,  # optional: verbatim wording of statements merged into this one criterion (a duplicate is
+                                            # one criterion with one weight; the source of each statement stays visible)
       "experience": {"subject": str | None, "min_years": int | None} | None,  # experience category only
       "gate_suggestion": {"suggested": True, "cue": str, "source_text": str | None}   # SERVER-OWNED, optional, see gates.py
       "gate": {"mandatory": True, "verification_method": ..., "linked_question_id": str | None,
@@ -47,6 +51,7 @@ The package itself has no side effects and never touches the database or a model
 """
 from __future__ import annotations
 
+import copy
 import re
 import uuid
 from dataclasses import dataclass
@@ -89,7 +94,7 @@ CONFIRMATION_KIND = "no_numeric_score"
 CONFIRMATION_KEYS = frozenset({"kind", "user_id", "confirmed_at", "basis_hash"})
 
 ITEM_REQUIRED_KEYS = frozenset({"id", "text", "importance", "weight", "origin"})
-ITEM_OPTIONAL_KEYS = frozenset({"source_text", "alternatives", "experience", "gate_suggestion", "gate"})
+ITEM_OPTIONAL_KEYS = frozenset({"source_text", "alternatives", "experience", "gate_suggestion", "gate", "logic", "also_source_texts"})
 ITEM_KEYS = ITEM_REQUIRED_KEYS | ITEM_OPTIONAL_KEYS
 
 ITEM_ID_RE = re.compile(r"^req_[A-Za-z0-9]{1,32}$")
@@ -158,9 +163,11 @@ def new_item_id(existing: Iterable[str] = ()) -> str:
 
 def make_item(text: str, importance: str, *, item_id: str | None = None, weight: int | None = None,
               origin: str = ORIGIN_STATED, source_text: str | None = None,
-              alternatives: list[str] | None = None, experience: dict | None = None) -> dict:
-    """Build an item dict. Does not validate (validation.py does)."""
-    return {
+              alternatives: list[str] | None = None, experience: dict | None = None,
+              logic: dict | None = None, also_source_texts: list[str] | None = None) -> dict:
+    """Build an item dict. Does not validate (validation.py does). `logic` and `also_source_texts` are added only when given, so an item
+    without them is exactly what it always was."""
+    item = {
         "id": item_id or new_item_id(),
         "text": text,
         "importance": importance,
@@ -170,6 +177,11 @@ def make_item(text: str, importance: str, *, item_id: str | None = None, weight:
         "alternatives": list(alternatives) if alternatives is not None else None,
         "experience": dict(experience) if experience is not None else None,
     }
+    if logic is not None:
+        item["logic"] = copy.deepcopy(logic)
+    if also_source_texts:
+        item["also_source_texts"] = list(also_source_texts)
+    return item
 
 
 def empty_requirements() -> dict:

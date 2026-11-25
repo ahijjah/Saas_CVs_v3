@@ -21,9 +21,11 @@ STATUS = {
 }
 FLAG = {
     "en": {"unclear_criteria": "Unclear criteria", "conflicting_evidence": "Conflicting evidence", "evidence_not_found": "Evidence not found in CV",
-           "low_confidence": "Low confidence", "processing_error": "Processing error", "unresolved_review": "Unresolved review"},
+           "low_confidence": "Low confidence", "processing_error": "Processing error", "unresolved_review": "Unresolved review",
+           "conditional_alternative": "Conditional alternative", "ambiguous_requirement": "Ambiguous requirement"},
     "ar": {"unclear_criteria": "معايير غير واضحة", "conflicting_evidence": "أدلة متعارضة", "evidence_not_found": "الدليل غير موجود في السيرة الذاتية",
-           "low_confidence": "ثقة منخفضة", "processing_error": "خطأ في المعالجة", "unresolved_review": "مراجعة غير محسومة"},
+           "low_confidence": "ثقة منخفضة", "processing_error": "خطأ في المعالجة", "unresolved_review": "مراجعة غير محسومة",
+           "conditional_alternative": "بديل مشروط", "ambiguous_requirement": "متطلب غامض"},
 }
 SUMMARY = {
     "en": {"met": "Met", "partially_met": "Partially Met", "not_met": "Not Met", "unclear": "Unclear", "yes": "Yes", "no": "No",

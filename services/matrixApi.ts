@@ -8,7 +8,8 @@ export type MandatoryStatus = 'met' | 'partially_met' | 'not_met' | 'unclear' | 
 export type PreferredStatus = 'yes' | 'no' | 'unclear' | 'not_assessed';
 export type GateStatus = 'passed' | 'failed' | 'review_required' | 'not_assessed';
 export type Eligibility = 'eligible' | 'not_eligible' | 'review_required' | 'not_assessed';
-export type FlagKind = 'unclear_criteria' | 'conflicting_evidence' | 'evidence_not_found' | 'low_confidence' | 'processing_error' | 'unresolved_review';
+export type FlagKind = 'unclear_criteria' | 'conflicting_evidence' | 'evidence_not_found' | 'low_confidence' | 'processing_error' | 'unresolved_review'
+  | 'conditional_alternative' | 'ambiguous_requirement';
 export type Severity = 'high' | 'medium' | 'low';
 export type Scope = 'job' | 'personal' | 'tenant';
 export type ColumnGroup = 'candidate' | 'decision' | 'mandatory' | 'preferred' | 'gates' | 'workflow';

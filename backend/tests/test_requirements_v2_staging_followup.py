@@ -185,8 +185,8 @@ def test_the_pinned_request_instructs_and_permits_context():
     assert request["response_format"] == {"type": "json_object"}          # no response schema narrows the answer: `context` is permitted
     assert '"context": {"location"' in system and "required whenever the job description states" in system
     assert "ALSO recorded in \"context\"" in system                      # rule 9 no longer sends a reporting line only to informational_items
-    assert system.count('"context":{"location"') >= 1                    # the worked examples show the key
-    assert "ONE item" in system and "Python or PowerShell scripting" in system and "Completeness" in system
+    assert "The role is remote and reports to the Head of Finance." in system     # rule 14 shows the context sentence worked through
+    assert "ONE item" in system and "logic.options" in system and "Completeness" in system
 
 
 def test_the_acceptance_sentence_yields_the_three_context_values_and_nothing_scored():

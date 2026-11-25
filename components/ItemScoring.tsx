@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import OptionResults from './OptionResults';
 import { getItemScoring, ItemScoringApiError, rescoreApplication, resolveItem } from '../services/itemScoringApi';
 import {
   CategoryView, isItemLevel, ItemScoringResponse, ItemScoringView, ItemView, itemScoringCopy, outcomeLabel, outcomeTone, rangeText,
@@ -98,6 +99,7 @@ export default function ItemScoring({ applicationId, userRole, lang, onOutcome, 
         ? <ul className="space-y-1">{item.evidence.map((q, i) => <li key={i} dir="auto" className="text-xs text-slate-700 border-s-2 border-slate-300 ps-2">“{q}”</li>)}</ul>
         : <p className="text-xs text-slate-500">{copy.noEvidence}</p>}
       {item.explanation && <p dir="auto" className="text-xs text-slate-600">{item.explanation}</p>}
+      <OptionResults item={item} lang={lang} />
       {item.resolution && (
         <p data-testid={`resolution-${item.item_id}`} className="text-xs text-blue-800">
           {copy.resolvedBy(item.resolution.by)} · {copy.aiSaid}: {copy.result[item.resolution.previous_result] ?? item.resolution.previous_result}

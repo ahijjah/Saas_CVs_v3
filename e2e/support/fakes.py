@@ -13,8 +13,10 @@ import threading
 
 import numpy as np
 
-def _item(text, importance, source, *, cue=None, alternatives=None, experience=None):
+def _item(text, importance, source, *, cue=None, alternatives=None, experience=None, logic=None):
     item = {"text": text, "importance": importance, "source_text": source, "origin": "stated"}
+    if logic is not None:
+        item["logic"] = logic
     if cue is not None:
         item["importance_cue"] = cue
     if alternatives is not None:
@@ -29,6 +31,41 @@ def _response(categories, weights):
                             "other_requirements")}
     cats.update(categories)
     return json.dumps({"categories": cats, "category_weights": weights, "scoreability": {"status": "scoreable"}}, ensure_ascii=False)
+
+
+def _opt(text, acceptance="direct", all_of=None):
+    return {"text": text, "acceptance": acceptance, "all_of": all_of}
+
+
+def _semantics_en() -> str:
+    """A site-supervision job description (nothing to do with the other scenarios): alternatives with a route made of two conditions, a
+    route accepted only after review, examples, a statement that can be read two ways, a language and a soft skill, each kept apart."""
+    route = "A diploma in civil engineering, or a degree in an engineering field together with two years on construction sites"
+    return _response({
+        "education": [_item("Diploma in civil engineering, or a degree in an engineering field with two years on construction sites", "required", route, logic={
+            "options": [_opt("Diploma in civil engineering"),
+                        _opt("Degree in an engineering field with two years on construction sites", all_of=["Degree in an engineering field", "Two years on construction sites"]),
+                        _opt("Long site experience where the candidate lacks a diploma", "review")], "examples": None, "ambiguity": None})],
+        "skills": [_item("Experience with scheduling software", "required", "Experience with scheduling software such as spreadsheets or a project planner",
+                         logic={"options": None, "examples": ["spreadsheets", "a project planner"], "ambiguity": None}),
+                   _item("Fluent English", "required", "Fluent English")],
+        "experience": [_item("Experience on large or complex projects", "required", "Experience on large or complex projects", logic={
+            "options": None, "examples": None, "ambiguity": "It is unclear whether both large and complex projects are needed or either one."})],
+        "soft_skills": [_item("Strong negotiation skills", "required", "Strong negotiation skills")]},
+        {"education": 30, "skills": 30, "experience": 25, "soft_skills": 15})
+
+
+def _semantics_ar() -> str:
+    route = "دبلوم في الهندسة المدنية أو بكالوريوس في الهندسة مع سنتين في مواقع البناء"
+    return _response({
+        "education": [_item("دبلوم في الهندسة المدنية أو بكالوريوس في الهندسة مع سنتين في مواقع البناء", "required", route, logic={
+            "options": [_opt("دبلوم في الهندسة المدنية"),
+                        _opt("بكالوريوس في الهندسة مع سنتين في مواقع البناء", all_of=["بكالوريوس في الهندسة", "سنتين في مواقع البناء"]),
+                        _opt("الخبرة الميدانية الطويلة لمن لا يملك دبلومًا", "review")], "examples": None, "ambiguity": None})],
+        "skills": [_item("إجادة التعامل مع برامج الجدولة", "required", "إجادة التعامل مع برامج الجدولة مثل برنامج كذا أو برنامج آخر",
+                         logic={"options": None, "examples": ["برنامج كذا", "برنامج آخر"], "ambiguity": None})],
+        "soft_skills": [_item("مهارات تفاوض قوية", "required", "مهارات تفاوض قوية")]},
+        {"education": 40, "skills": 40, "soft_skills": 20})
 
 
 def scripted_response(description: str) -> str:
@@ -49,6 +86,10 @@ def scripted_response(description: str) -> str:
                                      _item("Arabic fluency", "required", "Fluent Arabic is required")],
                           "experience": [_item("Backend experience", "preferred", "Backend experience is preferred", cue="preferred")]},
                          {"skills": 100})
+    if "SCENARIO-SEMANTICS-EN" in description:
+        return _semantics_en()
+    if "SCENARIO-SEMANTICS-AR" in description:
+        return _semantics_ar()
     if "SCENARIO-MATRIX" in description:
         return _response({"skills": [_item("SQL troubleshooting", "required", "SQL troubleshooting is required"),
                                      _item("Python", "required", "Python is required"),
@@ -107,10 +148,20 @@ def scripted_item_evaluation(user_message: str) -> str:
     requirements = json.loads(re.search(r"Requirements:\n(.*?)\n\nCV Text:", user_message, re.S).group(1))
     cv_text = user_message.split("CV Text:\n", 1)[1] if "CV Text:\n" in user_message else ""
     # A CV may state a level per requirement as "<Requirement>: advanced|basic|none|yes." and is then evaluated by that sentence, quoted exactly.
-    stated = {m.group(1).strip().lower(): (m.group(0), m.group(2)) for m in re.finditer(r"([A-Za-z][A-Za-z /]{2,40}): (advanced|basic|none|yes)\.", cv_text)}
+    stated = {m.group(1).strip().lower(): (m.group(0), m.group(2)) for m in re.finditer(r"([A-Za-z][A-Za-z /]{2,80}): (advanced|basic|none|yes)\.", cv_text)}
+    # A criterion with options is assessed leaf by leaf; the CV states a level per leaf as "Leaf o2.1: advanced|basic|none." (anything else: unknown).
+    leaf_levels = {m.group(1): (m.group(0), m.group(2)) for m in re.finditer(r"Leaf (o\d+(?:\.\d+)?): (advanced|basic|none)\.", cv_text)}
     out = []
     for r in requirements:
         text = r["requirement"].lower()
+        if r.get("leaf_ids"):
+            leaves = []
+            for leaf_id in r["leaf_ids"]:
+                sentence, level = leaf_levels.get(leaf_id, (None, None))
+                leaves.append({"leaf_id": leaf_id, "result": {"advanced": "met", "basic": "partially_met", "none": "not_met"}.get(level, "unclear"),
+                               "evidence_quotes": [sentence] if sentence else [], "explanation": f"The CV states {level or 'nothing'} for {leaf_id}.", "confidence": 0.9})
+            out.append({"item_id": r["item_id"], "option_results": leaves})
+            continue
         if text in stated:
             sentence, level = stated[text]
             result = {"advanced": "met", "basic": "partially_met", "none": "not_met", "yes": "yes"}[level]

@@ -496,7 +496,7 @@ async def _outcomes_from_item_evaluations(db: AsyncSession, application_id: str,
     """{gate key: outcome} from the CURRENT item-level run of the application, or None when it has none (older applications keep the
     separate CV check)."""
     rows = (await db.execute(
-        text("""SELECT e.item_id, e.result, e.ai_result, e.explanation, e.confidence, e.evidence
+        text("""SELECT e.item_id, e.result, e.ai_result, e.explanation, e.confidence, e.evidence, e.review_reason, e.matched_option
                 FROM application_item_evaluations e JOIN application_scoring_runs r ON r.run_id = e.run_id
                 WHERE r.application_id = CAST(:aid AS uuid) AND r.is_current AND e.importance = 'required'"""),
         {"aid": application_id})).mappings().all()
@@ -515,6 +515,11 @@ async def _outcomes_from_item_evaluations(db: AsyncSession, application_id: str,
         quote = (list(row["evidence"] or [""]) or [""])[0]
         label = {"met": "Met", "partially_met": "Partially met", "not_met": "Not met", "unclear": "Unclear"}[row["result"]]
         summary = f"Requirement evaluation: {label}." + (f" “{_clip(quote, 200)}”" if quote else "") + (" Resolved by a reviewer." if row["result"] != row["ai_result"] else "")
+        # An alternative that is accepted only after review, or an ambiguous criterion, is a case for a person: the gate needs verification, it does not fail.
+        if row["result"] == row["ai_result"] and row["review_reason"] == "conditional_alternative":
+            summary += " An alternative that is accepted only after review was met."
+        elif row["result"] == row["ai_result"] and row["review_reason"] == "ambiguous_requirement":
+            summary += " The requirement is ambiguous."
         out[gate.key] = {"result": _ITEM_TO_GATE[row["result"]], "summary": summary,
                          "confidence": None if row["confidence"] is None else float(row["confidence"])}
     return out

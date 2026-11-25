@@ -56,7 +56,7 @@ class Filters(_Strict):
     workflow_status: list[Workflow] | None = Field(None, max_length=20)
     source: list[Annotated[str, StringConstraints(pattern=r"^[a-z_]{1,40}$")]] | None = Field(None, max_length=10)
     flags: list[Literal["unclear_criteria", "conflicting_evidence", "evidence_not_found", "low_confidence", "processing_error",
-                        "unresolved_review"]] | None = Field(None, max_length=6)
+                        "unresolved_review", "conditional_alternative", "ambiguous_requirement"]] | None = Field(None, max_length=8)
     applied_after: date | None = None
     applied_before: date | None = None
     assigned_to: Annotated[str, StringConstraints(pattern=r"^(me|unassigned|[0-9a-fA-F-]{36})$")] | None = None

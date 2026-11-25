@@ -49,6 +49,7 @@ from services.requirements_v2.structural_review import (
     DECISIONS, READINESS_INVALID, STATUS_OPEN, STRUCTURAL_KEY, StructuralResolutionError, resolve_finding, structural_status,
 )
 from services.requirements_v2 import gates as gate_rules
+from services.requirements_v2.logic import normalize as normalize_logic
 from services.requirements_v2.structure import StructureError, confirm_structure, record_structure_edits, structure_status
 from services.requirements_v2.validation import validate_final, validate_structure
 
@@ -196,6 +197,13 @@ class SetExperience:
 
 
 @dataclass(frozen=True)
+class SetLogic:
+    """Correct how one criterion's wording combines (options, parts that must all be met, review-only options, examples, a flagged ambiguity)."""
+    item_id: str
+    logic: dict | None
+
+
+@dataclass(frozen=True)
 class SetCategoryWeight:
     category: str
     weight: int
@@ -266,7 +274,7 @@ REVIEW_OPERATIONS = (ConfirmNoNumericScore, AcknowledgeClassificationWarning, Co
 
 Operation = Union[SetText, SetImportance, SetItemWeight, SetAlternatives, SetExperience, SetCategoryWeight,
                   AddItem, RemoveItem, ConfirmNoNumericScore, AcknowledgeClassificationWarning, ConfirmStructure,
-                  ResolveStructuralFinding, ReorderItems, SetGate, ClearGate]
+                  ResolveStructuralFinding, ReorderItems, SetGate, ClearGate, SetLogic]
 
 # The exact field set of each operation. Anything else is refused, so a protected field can never be sent.
 OPERATION_FIELDS: dict[str, frozenset[str]] = {
@@ -275,6 +283,7 @@ OPERATION_FIELDS: dict[str, frozenset[str]] = {
     "set_item_weight": frozenset({"item_id", "weight"}),
     "set_alternatives": frozenset({"item_id", "alternatives"}),
     "set_experience": frozenset({"item_id", "experience"}),
+    "set_logic": frozenset({"item_id", "logic"}),
     "set_category_weight": frozenset({"category", "weight"}),
     "add_item": frozenset({"category", "text", "importance", "weight", "alternatives", "experience"}),
     "remove_item": frozenset({"item_id"}),
@@ -292,7 +301,7 @@ LEGACY_OPERATION_FIELDS: dict[str, frozenset[str]] = {"set_gate": frozenset({"fa
 EXPERIENCE_FIELDS = frozenset({"subject", "min_years"})
 OPERATION_NAMES: dict[type, str] = {
     SetText: "set_text", SetImportance: "set_importance", SetItemWeight: "set_item_weight",
-    SetAlternatives: "set_alternatives", SetExperience: "set_experience", SetCategoryWeight: "set_category_weight",
+    SetAlternatives: "set_alternatives", SetExperience: "set_experience", SetLogic: "set_logic", SetCategoryWeight: "set_category_weight",
     AddItem: "add_item", RemoveItem: "remove_item",
     ConfirmNoNumericScore: "confirm_no_numeric_score", AcknowledgeClassificationWarning: "acknowledge_classification_warning",
     ConfirmStructure: "confirm_structure", ResolveStructuralFinding: "resolve_structural_finding",
@@ -438,6 +447,19 @@ def _experience(value: object, pos: int) -> dict | None:
     return {"subject": value["subject"], "min_years": value["min_years"]}
 
 
+def _logic(value: object, pos: int) -> dict | None:
+    """A recruiter's corrected logic block, or None to clear it. Strict: anything the normalizer would have to drop is refused, so a
+    correction is applied exactly as sent or not at all."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise InvalidOperation(f"Operation {pos}: logic must be an object or null.")
+    clean, notes = normalize_logic(value)
+    if clean is None or notes:
+        raise InvalidOperation(f"Operation {pos}: logic is not valid" + (f" ({notes[0]})." if notes else "."))
+    return clean
+
+
 def _gate_method(value: object, pos: int) -> str | None:
     if value is not None and value not in gate_rules.VERIFICATION_METHODS:
         raise InvalidOperation(f"Operation {pos}: verification_method must be one of {', '.join(gate_rules.VERIFICATION_METHODS)}.")
@@ -461,6 +483,7 @@ _BUILDERS = {
     "set_item_weight": lambda r, p: SetItemWeight(_item_id(r["item_id"], p), _whole_or_none(r["weight"], "weight", p)),
     "set_alternatives": lambda r, p: SetAlternatives(_item_id(r["item_id"], p), _alternatives(r["alternatives"], p)),
     "set_experience": lambda r, p: SetExperience(_item_id(r["item_id"], p), _experience(r["experience"], p)),
+    "set_logic": lambda r, p: SetLogic(_item_id(r["item_id"], p), _logic(r["logic"], p)),
     "set_category_weight": lambda r, p: SetCategoryWeight(_category(r["category"], p), _whole(r["weight"], "weight", p)),
     "add_item": lambda r, p: AddItem(_category(r["category"], p), _str(r["text"], "text", p),
                                      _importance(r["importance"], p), _whole_or_none(r["weight"], "weight", p),
@@ -594,7 +617,7 @@ def _items_by_id(doc: dict) -> dict[str, dict]:
 
 def _item_content(item: dict) -> tuple:
     """What counts as a change to an existing item. Provenance and source wording never change through an operation."""
-    return (item["text"], item["importance"], item["weight"], item["alternatives"], item["experience"])
+    return (item["text"], item["importance"], item["weight"], item["alternatives"], item["experience"], item.get("logic"))
 
 
 def _save_audit(stored: dict, document: dict, ops: tuple[Operation, ...], recorded: tuple[tuple[str, str], ...],
@@ -661,6 +684,8 @@ def _apply(doc: dict, op: Operation, retired: list[str], pos: int) -> dict:
             return set_structure(doc, op.item_id, alternatives=op.alternatives)
         if isinstance(op, SetExperience):
             return set_structure(doc, op.item_id, experience=op.experience)
+        if isinstance(op, SetLogic):
+            return set_structure(doc, op.item_id, logic=op.logic)
         if isinstance(op, SetCategoryWeight):
             return set_category_weight(doc, op.category, op.weight)
         if isinstance(op, RemoveItem):
@@ -849,6 +874,8 @@ STRUCTURAL_NONE = "none"
 STRUCTURAL_VALID = "valid"
 STRUCTURAL_INVALID = "invalid"
 ITEM_FIELDS = ("id", "text", "importance", "weight", "origin", "source_text", "alternatives")
+# Optional per-item fields that are shown only when the item has them (see services/requirements_v2/logic.py).
+OPTIONAL_ITEM_FIELDS = ("logic", "also_source_texts")
 
 
 def readiness_message(code: str) -> str:
@@ -935,6 +962,9 @@ def _project_document(doc: dict) -> dict:
             projected = {k: copy.deepcopy(item[k]) for k in ITEM_FIELDS}
             exp = item.get("experience")
             projected["experience"] = None if exp is None else {"subject": exp["subject"], "min_years": exp["min_years"]}
+            for key in OPTIONAL_ITEM_FIELDS:                  # only when the item has it: an item without them keeps exactly its earlier shape
+                if item.get(key) is not None:
+                    projected[key] = copy.deepcopy(item[key])
             gate, suggestion = item.get("gate"), item.get("gate_suggestion")
             # The confirmed gate without the identity of who confirmed it; the suggestion as the extraction left it.
             projected["gate"] = None if gate is None else {

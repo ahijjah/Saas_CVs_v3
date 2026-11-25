@@ -19,7 +19,7 @@ import json
 
 from services.requirements_v2.contract import CATEGORIES
 
-_COMPARED_ITEM_FIELDS = ("id", "text", "importance", "weight", "alternatives", "experience")
+_COMPARED_ITEM_FIELDS = ("id", "text", "importance", "weight", "alternatives", "experience", "logic")
 
 
 def _category_view(doc: dict, category: str) -> dict:
